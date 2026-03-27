@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -8,6 +9,8 @@ from sqlalchemy.orm import selectinload
 from app.models.fanfic import Fanfic, FanficChapter, FanficAuthor
 from app.schemas.fanfic import FanficResponse, FanficChapterResponse
 from app.schemas.shared import PaginatedResponse, AuthorResponse
+
+logger = logging.getLogger(__name__)
 
 
 def _chapter_to_schema(ch: FanficChapter) -> FanficChapterResponse:
@@ -68,6 +71,18 @@ async def list_fanfics(
     completion_status: Optional[str] = None,
     sort: Optional[str] = None,
 ) -> PaginatedResponse[FanficResponse]:
+    filters_applied = []
+    if fandom:
+        filters_applied.append(f"fandom={fandom}")
+    if rating:
+        filters_applied.append(f"rating={rating}")
+    if completion_status:
+        filters_applied.append(f"completion_status={completion_status}")
+    logger.info(
+        "list_fanfics called | page=%d page_size=%d sort=%s filters=[%s]",
+        page, page_size, sort or "default", ", ".join(filters_applied) or "none",
+    )
+
     conditions = [Fanfic.deleted_at.is_(None)]
     if fandom:
         conditions.append(Fanfic.fandom.ilike(f"%{fandom}%"))
@@ -80,6 +95,7 @@ async def list_fanfics(
         select(func.count()).select_from(Fanfic).where(*conditions)
     )
     total = count_result.scalar_one()
+    logger.info("list_fanfics total count=%d", total)
 
     query = select(Fanfic).where(*conditions)
     if sort == "word_count":
@@ -98,6 +114,7 @@ async def list_fanfics(
     result = await db.execute(query)
     fanfics = result.scalars().all()
 
+    logger.info("list_fanfics returning %d items for page %d", len(fanfics), page)
     total_pages = ceil(total / page_size) if total > 0 else 1
     return PaginatedResponse(
         items=[_fanfic_to_schema(f) for f in fanfics],
@@ -110,6 +127,7 @@ async def list_fanfics(
 
 
 async def get_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> Optional[FanficResponse]:
+    logger.info("get_fanfic called | fanfic_id=%s", fanfic_id)
     result = await db.execute(
         select(Fanfic)
         .where(Fanfic.id == fanfic_id, Fanfic.deleted_at.is_(None))
@@ -120,7 +138,9 @@ async def get_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> Optional[FanficR
     )
     fanfic = result.scalar_one_or_none()
     if not fanfic:
+        logger.warning("get_fanfic not found | fanfic_id=%s", fanfic_id)
         return None
+    logger.info("get_fanfic found | fanfic_id=%s title=%s", fanfic_id, fanfic.title)
     return _fanfic_to_schema(fanfic, include_chapters=True)
 
 
@@ -129,6 +149,7 @@ async def get_chapter(
     fanfic_id: uuid.UUID,
     chapter_id: uuid.UUID,
 ) -> Optional[FanficChapterResponse]:
+    logger.info("get_chapter called | fanfic_id=%s chapter_id=%s", fanfic_id, chapter_id)
     result = await db.execute(
         select(FanficChapter).where(
             FanficChapter.id == chapter_id,
@@ -138,17 +159,22 @@ async def get_chapter(
     )
     chapter = result.scalar_one_or_none()
     if not chapter:
+        logger.warning("get_chapter not found | fanfic_id=%s chapter_id=%s", fanfic_id, chapter_id)
         return None
+    logger.info("get_chapter found | fanfic_id=%s chapter_id=%s title=%s", fanfic_id, chapter_id, chapter.title)
     return _chapter_to_schema(chapter)
 
 
 async def soft_delete_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> bool:
+    logger.info("soft_delete_fanfic called | fanfic_id=%s", fanfic_id)
     result = await db.execute(
         select(Fanfic).where(Fanfic.id == fanfic_id, Fanfic.deleted_at.is_(None))
     )
     fanfic = result.scalar_one_or_none()
     if not fanfic:
+        logger.warning("soft_delete_fanfic not found | fanfic_id=%s", fanfic_id)
         return False
     fanfic.deleted_at = datetime.now(timezone.utc)
     await db.commit()
+    logger.info("soft_delete_fanfic completed | fanfic_id=%s title=%s", fanfic_id, fanfic.title)
     return True

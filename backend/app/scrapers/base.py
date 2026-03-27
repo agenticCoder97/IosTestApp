@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -8,6 +9,8 @@ import httpx
 import redis.asyncio as aioredis
 from app.core.config import settings
 from app.core.constants import COOKIE_CACHE_KEY_PREFIX
+
+logger = logging.getLogger(__name__)
 
 
 class CookieExpiredError(Exception):
@@ -56,13 +59,17 @@ class BaseScraper(ABC):
 
     async def _get_cookies(self) -> tuple[list[dict], str]:
         """Load cookies and user_agent from Redis for this source_key."""
+        logger.debug("_get_cookies loading | source_key=%s", self.source_key)
         r = await aioredis.from_url(settings.redis_url)
         try:
             raw = await r.get(f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}")
             if not raw:
+                logger.warning("_get_cookies no cached cookies found | source_key=%s", self.source_key)
                 return [], "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)"
             data = json.loads(raw)
-            return data.get("cookies", []), data.get("user_agent", "")
+            cookies = data.get("cookies", [])
+            logger.info("_get_cookies loaded %d cookies | source_key=%s", len(cookies), self.source_key)
+            return cookies, data.get("user_agent", "")
         finally:
             await r.aclose()
 
@@ -76,9 +83,11 @@ class BaseScraper(ABC):
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
 
+        logger.info("_fetch starting | url=%s delay=%.1fs", url, self.request_delay_seconds)
         await asyncio.sleep(self.request_delay_seconds)
 
         for attempt in range(self.max_retries):
+            logger.info("_fetch attempt %d/%d | url=%s", attempt + 1, self.max_retries, url)
             try:
                 async with httpx.AsyncClient(
                     headers={"User-Agent": user_agent},
@@ -89,8 +98,10 @@ class BaseScraper(ABC):
                     response = await client.get(url)
 
                 if response.status_code == 200:
+                    logger.info("_fetch success | url=%s status=200 attempt=%d", url, attempt + 1)
                     return response.text
                 elif response.status_code == 403:
+                    logger.error("_fetch 403 cookie expired | url=%s", url)
                     raise CookieExpiredError(f"403 from {url} — cookies expired")
                 elif response.status_code in (429, 503):
                     retry_after = response.headers.get("Retry-After")
@@ -98,23 +109,35 @@ class BaseScraper(ABC):
                         wait = float(retry_after)
                     else:
                         wait = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(
+                        "_fetch %d backoff | url=%s wait=%.1fs attempt=%d/%d",
+                        response.status_code, url, wait, attempt + 1, self.max_retries,
+                    )
                     await asyncio.sleep(wait)
                 else:
+                    logger.error("_fetch unexpected status %d | url=%s", response.status_code, url)
                     response.raise_for_status()
             except CookieExpiredError:
                 raise
             except Exception as e:
                 if attempt == self.max_retries - 1:
+                    logger.error("_fetch max retries exhausted | url=%s error=%s", url, e)
                     raise ScraperError(f"Failed after {self.max_retries} attempts: {e}") from e
                 wait = (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(
+                    "_fetch error, retrying | url=%s attempt=%d/%d wait=%.1fs error=%s",
+                    url, attempt + 1, self.max_retries, wait, e,
+                )
                 await asyncio.sleep(wait)
 
+        logger.error("_fetch max retries exhausted (loop end) | url=%s retries=%d", url, self.max_retries)
         raise ScraperError(f"Max retries ({self.max_retries}) exhausted for {url}")
 
     async def download_image(self, url: str, dest_path: str) -> str:
         """Download image to dest_path. Returns file_path (relative to block volume)."""
         import os
         from pathlib import Path
+        logger.info("download_image starting | url=%s dest_path=%s", url, dest_path)
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
 
@@ -132,6 +155,8 @@ class BaseScraper(ABC):
         full_path = Path(settings.block_volume_path) / dest_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_bytes(response.content)
+        file_size = len(response.content)
+        logger.info("download_image complete | url=%s dest_path=%s size_bytes=%d", url, dest_path, file_size)
         return dest_path
 
     @abstractmethod
