@@ -29,7 +29,12 @@ struct ComicLibraryView: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(comics) { comic in
-                        ComicCardView(comic: comic)
+                        NavigationLink {
+                            ComicDetailView(comic: comic)
+                        } label: {
+                            ComicCardView(comic: comic)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -41,7 +46,17 @@ struct ComicLibraryView: View {
     }
 }
 
-#Preview {
+#Preview("With Comics") {
+    ComicLibraryView()
+        .modelContainer(
+            .previewContainer(
+                comics: PreviewMocks.sampleComics,
+                comicChapters: PreviewMocks.comic1Chapters
+            )
+        )
+}
+
+#Preview("Empty State") {
     ComicLibraryView()
         .modelContainer(for: LocalComic.self, inMemory: true)
 }

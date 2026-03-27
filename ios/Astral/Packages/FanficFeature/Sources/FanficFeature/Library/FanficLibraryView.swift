@@ -29,7 +29,12 @@ struct FanficLibraryView: View {
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(filteredFanfics) { fanfic in
-                        FanficRowView(fanfic: fanfic)
+                        NavigationLink {
+                            FanficDetailView(fanfic: fanfic)
+                        } label: {
+                            FanficRowView(fanfic: fanfic)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -68,6 +73,50 @@ struct FanficLibraryView: View {
             return result.sorted { $0.title < $1.title }
         }
     }
+}
+
+// MARK: - Previews
+
+#Preview("With Fanfics") {
+    NavigationStack {
+        FanficLibraryView(searchText: .constant(""))
+            .modelContainer(.previewContainer(fanfics: PreviewMocks.sampleFanfics))
+            .navigationTitle("Fan Fiction")
+    }
+}
+
+#Preview("Filtered Search") {
+    NavigationStack {
+        FanficLibraryView(searchText: .constant("starlight"))
+            .modelContainer(.previewContainer(fanfics: PreviewMocks.sampleFanfics))
+            .navigationTitle("Fan Fiction")
+    }
+}
+
+#Preview("Empty State") {
+    NavigationStack {
+        FanficLibraryView(searchText: .constant(""))
+            .modelContainer(for: LocalFanfic.self, inMemory: true)
+            .navigationTitle("Fan Fiction")
+    }
+}
+
+#Preview("Fanfic Row - Ongoing") {
+    FanficRowView(fanfic: PreviewMocks.fanfic1)
+        .padding()
+        .background(AstralColors.background)
+}
+
+#Preview("Fanfic Row - Complete") {
+    FanficRowView(fanfic: PreviewMocks.fanfic2)
+        .padding()
+        .background(AstralColors.background)
+}
+
+#Preview("Fanfic Row - Abandoned") {
+    FanficRowView(fanfic: PreviewMocks.fanfic3)
+        .padding()
+        .background(AstralColors.background)
 }
 
 enum FanficSortOption: String, CaseIterable {

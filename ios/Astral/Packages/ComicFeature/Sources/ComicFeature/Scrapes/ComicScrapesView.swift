@@ -50,6 +50,36 @@ struct ComicScrapesView: View {
     }
 }
 
+// MARK: - Previews
+
+#Preview("All Job Statuses") {
+    ComicScrapesView()
+        .modelContainer(.previewContainer(scrapeJobs: PreviewMocks.comicScrapeJobs))
+}
+
+#Preview("Empty State") {
+    ComicScrapesView()
+        .modelContainer(for: LocalScrapeJob.self, inMemory: true)
+}
+
+#Preview("Running Job Row") {
+    ScrapeJobRow(job: PreviewMocks.scrapeJobRunning)
+        .padding()
+        .background(AstralColors.background)
+}
+
+#Preview("Partial Job Row") {
+    ScrapeJobRow(job: PreviewMocks.scrapeJobPartial)
+        .padding()
+        .background(AstralColors.background)
+}
+
+#Preview("Complete Job Row") {
+    ScrapeJobRow(job: PreviewMocks.scrapeJobComplete)
+        .padding()
+        .background(AstralColors.background)
+}
+
 struct ScrapeJobRow: View {
     let job: LocalScrapeJob
 

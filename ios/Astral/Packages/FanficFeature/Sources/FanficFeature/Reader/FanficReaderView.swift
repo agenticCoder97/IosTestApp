@@ -6,6 +6,14 @@ import Networking
 struct FanficReaderView: View {
     let fanfic: LocalFanfic
     let chapter: LocalFanficChapter
+    /// Injected text skips the network call. Used only by Xcode Previews.
+    private let previewContent: String?
+
+    init(fanfic: LocalFanfic, chapter: LocalFanficChapter, previewContent: String? = nil) {
+        self.fanfic = fanfic
+        self.chapter = chapter
+        self.previewContent = previewContent
+    }
 
     @State private var chapterContent = ""
     @State private var isLoading = true
@@ -137,6 +145,11 @@ struct FanficReaderView: View {
     }
 
     private func loadChapter() async {
+        if let previewContent {
+            chapterContent = previewContent
+            isLoading = false
+            return
+        }
         do {
             let response: FanficChapterResponse = try await APIClient.shared.request(
                 .fanficChapter(fanficId: fanfic.id, chapterId: chapter.id)
@@ -147,4 +160,31 @@ struct FanficReaderView: View {
         }
         isLoading = false
     }
+}
+
+// MARK: - Previews
+
+#Preview("Reader - Dark") {
+    FanficReaderView(
+        fanfic: PreviewMocks.fanfic1,
+        chapter: PreviewMocks.fanfic1Chapters[1],
+        previewContent: PreviewMocks.sampleFanficChapterContent
+    )
+}
+
+#Preview("Reader - Sepia") {
+    let view = FanficReaderView(
+        fanfic: PreviewMocks.fanfic2,
+        chapter: PreviewMocks.fanfic1Chapters[2],
+        previewContent: PreviewMocks.sampleFanficChapterContent
+    )
+    return view
+}
+
+#Preview("Reader - No Content") {
+    FanficReaderView(
+        fanfic: PreviewMocks.fanfic3,
+        chapter: PreviewMocks.fanfic1Chapters[4], // pending chapter
+        previewContent: ""
+    )
 }

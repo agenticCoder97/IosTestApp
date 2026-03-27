@@ -52,6 +52,48 @@ struct FanficScrapesView: View {
     }
 }
 
+// MARK: - Previews
+
+#Preview("All Job Statuses") {
+    FanficScrapesView()
+        .modelContainer(.previewContainer(scrapeJobs: PreviewMocks.fanficScrapeJobs))
+}
+
+#Preview("Empty State") {
+    FanficScrapesView()
+        .modelContainer(for: LocalScrapeJob.self, inMemory: true)
+}
+
+#Preview("Running Job Row") {
+    let job = LocalScrapeJob(
+        id: UUID(),
+        contentType: "fanfic",
+        storyId: PreviewMocks.fanfic1.id,
+        status: "running",
+        chaptersScraped: 14,
+        chaptersFailed: 0,
+        totalChapters: 30
+    )
+    return FanficScrapeJobRow(job: job)
+        .padding()
+        .background(AstralColors.background)
+}
+
+#Preview("Partial + Failed Row") {
+    let job = LocalScrapeJob(
+        id: UUID(),
+        contentType: "fanfic",
+        storyId: PreviewMocks.fanfic1.id,
+        status: "partial",
+        chaptersScraped: 18,
+        chaptersFailed: 3,
+        totalChapters: 21
+    )
+    return FanficScrapeJobRow(job: job)
+        .padding()
+        .background(AstralColors.background)
+}
+
 struct FanficScrapeJobRow: View {
     let job: LocalScrapeJob
 

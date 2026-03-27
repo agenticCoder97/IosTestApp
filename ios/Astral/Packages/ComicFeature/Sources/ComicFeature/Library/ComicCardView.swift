@@ -2,6 +2,29 @@ import SwiftUI
 import Core
 import DesignSystem
 
+// MARK: - Previews
+
+#Preview("In Progress") {
+    ComicCardView(comic: PreviewMocks.comic1)
+        .frame(width: 180)
+        .padding()
+        .background(AstralColors.background)
+}
+
+#Preview("Complete + Downloaded") {
+    ComicCardView(comic: PreviewMocks.comic2)
+        .frame(width: 180)
+        .padding()
+        .background(AstralColors.background)
+}
+
+#Preview("Freshly Added") {
+    ComicCardView(comic: PreviewMocks.comic3)
+        .frame(width: 180)
+        .padding()
+        .background(AstralColors.background)
+}
+
 struct ComicCardView: View {
     let comic: LocalComic
 
