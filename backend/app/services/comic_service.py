@@ -1,0 +1,175 @@
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+from math import ceil
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from app.models.comic import Comic, ComicChapter, Page, ComicAuthor, ComicTag
+from app.models.author import Author
+from app.models.scrape import ScrapeJob
+from app.schemas.comic import ComicResponse, ComicChapterResponse, PageResponse, ComicUpdateRequest
+from app.schemas.shared import PaginatedResponse, AuthorResponse, TagResponse
+
+
+def _chapter_to_schema(ch: ComicChapter) -> ComicChapterResponse:
+    return ComicChapterResponse(
+        id=ch.id,
+        chapter_number=ch.chapter_number,
+        title=ch.title,
+        source_url=ch.source_url,
+        total_pages=ch.total_pages,
+        scrape_status=ch.scrape_status,
+        created_at=ch.created_at,
+    )
+
+
+def _comic_to_schema(comic: Comic, include_chapters: bool = False) -> ComicResponse:
+    authors = []
+    for ca in (comic.comic_authors or []):
+        if ca.author:
+            authors.append(AuthorResponse(id=ca.author.id, name=ca.author.name))
+
+    tags = []
+    for ct in (comic.comic_tags or []):
+        if ct.tag:
+            tags.append(TagResponse(id=ct.tag.id, name=ct.tag.name, tag_type=ct.tag.tag_type))
+
+    chapters = None
+    if include_chapters and comic.chapters is not None:
+        chapters = [_chapter_to_schema(ch) for ch in comic.chapters if ch.deleted_at is None]
+
+    return ComicResponse(
+        id=comic.id,
+        title=comic.title,
+        source_key=comic.source_key,
+        source_url=comic.source_url,
+        source_id=comic.source_id,
+        thumbnail_path=comic.thumbnail_path,
+        description=comic.description,
+        total_chapters=comic.total_chapters,
+        total_pages=comic.total_pages,
+        language=comic.language,
+        status=comic.status,
+        authors=authors if authors else None,
+        tags=tags if tags else None,
+        chapters=chapters,
+        created_at=comic.created_at,
+        updated_at=comic.updated_at,
+    )
+
+
+async def list_comics(
+    db: AsyncSession,
+    page: int,
+    page_size: int,
+    sort: Optional[str] = None,
+) -> PaginatedResponse[ComicResponse]:
+    base_query = select(Comic).where(Comic.deleted_at.is_(None))
+
+    count_result = await db.execute(select(func.count()).select_from(Comic).where(Comic.deleted_at.is_(None)))
+    total = count_result.scalar_one()
+
+    if sort == "title":
+        base_query = base_query.order_by(Comic.title)
+    elif sort == "updated":
+        base_query = base_query.order_by(Comic.updated_at.desc())
+    else:
+        base_query = base_query.order_by(Comic.created_at.desc())
+
+    base_query = base_query.options(
+        selectinload(Comic.comic_authors).selectinload(ComicAuthor.author),
+        selectinload(Comic.comic_tags).selectinload(ComicTag.tag),
+    ).offset((page - 1) * page_size).limit(page_size)
+
+    result = await db.execute(base_query)
+    comics = result.scalars().all()
+
+    total_pages = ceil(total / page_size) if total > 0 else 1
+    return PaginatedResponse(
+        items=[_comic_to_schema(c) for c in comics],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+    )
+
+
+async def get_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResponse]:
+    result = await db.execute(
+        select(Comic)
+        .where(Comic.id == comic_id, Comic.deleted_at.is_(None))
+        .options(
+            selectinload(Comic.comic_authors).selectinload(ComicAuthor.author),
+            selectinload(Comic.comic_tags).selectinload(ComicTag.tag),
+            selectinload(Comic.chapters),
+        )
+    )
+    comic = result.scalar_one_or_none()
+    if not comic:
+        return None
+    return _comic_to_schema(comic, include_chapters=True)
+
+
+async def get_chapter_pages(
+    db: AsyncSession,
+    comic_id: uuid.UUID,
+    chapter_id: uuid.UUID,
+) -> list[PageResponse]:
+    result = await db.execute(
+        select(Page)
+        .join(ComicChapter, Page.chapter_id == ComicChapter.id)
+        .where(
+            ComicChapter.id == chapter_id,
+            ComicChapter.comic_id == comic_id,
+            ComicChapter.deleted_at.is_(None),
+        )
+        .order_by(Page.page_number)
+    )
+    pages = result.scalars().all()
+    return [
+        PageResponse(
+            id=p.id,
+            page_number=p.page_number,
+            file_path=p.file_path,
+            source_url=p.source_url,
+            width_px=p.width_px,
+            height_px=p.height_px,
+        )
+        for p in pages
+    ]
+
+
+async def update_comic(
+    db: AsyncSession,
+    comic_id: uuid.UUID,
+    body: ComicUpdateRequest,
+) -> Optional[ComicResponse]:
+    result = await db.execute(
+        select(Comic).where(Comic.id == comic_id, Comic.deleted_at.is_(None))
+    )
+    comic = result.scalar_one_or_none()
+    if not comic:
+        return None
+
+    if body.title is not None:
+        comic.title = body.title
+    if body.thumbnail_path is not None:
+        comic.thumbnail_path = body.thumbnail_path
+
+    await db.commit()
+    await db.refresh(comic)
+    return _comic_to_schema(comic)
+
+
+async def soft_delete_comic(db: AsyncSession, comic_id: uuid.UUID) -> bool:
+    result = await db.execute(
+        select(Comic).where(Comic.id == comic_id, Comic.deleted_at.is_(None))
+    )
+    comic = result.scalar_one_or_none()
+    if not comic:
+        return False
+    comic.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return True

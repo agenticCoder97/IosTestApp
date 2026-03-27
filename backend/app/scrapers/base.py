@@ -1,0 +1,147 @@
+import asyncio
+import json
+import random
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Optional
+import httpx
+import redis.asyncio as aioredis
+from app.core.config import settings
+from app.core.constants import COOKIE_CACHE_KEY_PREFIX
+
+
+class CookieExpiredError(Exception):
+    """Raised when source returns 403 — caller should return HTTP 428 to iOS."""
+
+
+class ScraperError(Exception):
+    """Raised when max retries exhausted."""
+
+
+@dataclass
+class StoryMetadata:
+    title: str
+    source_url: str
+    source_key: str
+    source_id: Optional[str] = None
+    description: Optional[str] = None
+    language: Optional[str] = None
+    authors: list[str] = field(default_factory=list)
+    tags: list[dict] = field(default_factory=list)  # {"name": str, "tag_type": str}
+    thumbnail_url: Optional[str] = None
+    total_chapters: Optional[int] = None
+
+
+@dataclass
+class ChapterInfo:
+    chapter_number: float
+    source_url: str
+    title: Optional[str] = None
+
+
+@dataclass
+class PageInfo:
+    page_number: int
+    source_url: str
+    width_px: Optional[int] = None
+    height_px: Optional[int] = None
+
+
+class BaseScraper(ABC):
+    source_key: str
+    content_type: str
+    requires_browser: bool = False
+    request_delay_seconds: float = 1.0
+    max_retries: int = 3
+
+    async def _get_cookies(self) -> tuple[list[dict], str]:
+        """Load cookies and user_agent from Redis for this source_key."""
+        r = await aioredis.from_url(settings.redis_url)
+        try:
+            raw = await r.get(f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}")
+            if not raw:
+                return [], "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)"
+            data = json.loads(raw)
+            return data.get("cookies", []), data.get("user_agent", "")
+        finally:
+            await r.aclose()
+
+    async def _fetch(self, url: str) -> str:
+        """
+        Rate-limited fetch with backoff. All scrapers must use this.
+        403 → CookieExpiredError (caller returns 428 to iOS).
+        429/503 → exponential backoff with jitter.
+        max_retries exhausted → ScraperError.
+        """
+        cookies_list, user_agent = await self._get_cookies()
+        cookies = {c["name"]: c["value"] for c in cookies_list}
+
+        await asyncio.sleep(self.request_delay_seconds)
+
+        for attempt in range(self.max_retries):
+            try:
+                async with httpx.AsyncClient(
+                    headers={"User-Agent": user_agent},
+                    cookies=cookies,
+                    follow_redirects=True,
+                    timeout=30.0,
+                ) as client:
+                    response = await client.get(url)
+
+                if response.status_code == 200:
+                    return response.text
+                elif response.status_code == 403:
+                    raise CookieExpiredError(f"403 from {url} — cookies expired")
+                elif response.status_code in (429, 503):
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after:
+                        wait = float(retry_after)
+                    else:
+                        wait = (2 ** attempt) + random.uniform(0, 1)
+                    await asyncio.sleep(wait)
+                else:
+                    response.raise_for_status()
+            except CookieExpiredError:
+                raise
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    raise ScraperError(f"Failed after {self.max_retries} attempts: {e}") from e
+                wait = (2 ** attempt) + random.uniform(0, 1)
+                await asyncio.sleep(wait)
+
+        raise ScraperError(f"Max retries ({self.max_retries}) exhausted for {url}")
+
+    async def download_image(self, url: str, dest_path: str) -> str:
+        """Download image to dest_path. Returns file_path (relative to block volume)."""
+        import os
+        from pathlib import Path
+        cookies_list, user_agent = await self._get_cookies()
+        cookies = {c["name"]: c["value"] for c in cookies_list}
+
+        await asyncio.sleep(self.request_delay_seconds)
+
+        async with httpx.AsyncClient(
+            headers={"User-Agent": user_agent},
+            cookies=cookies,
+            follow_redirects=True,
+            timeout=60.0,
+        ) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+
+        full_path = Path(settings.block_volume_path) / dest_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_bytes(response.content)
+        return dest_path
+
+    @abstractmethod
+    async def get_story_metadata(self, url: str) -> StoryMetadata: ...
+
+    @abstractmethod
+    async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]: ...
+
+    @abstractmethod
+    async def get_chapter_pages(self, chapter_url: str) -> list[PageInfo]: ...
+
+    @abstractmethod
+    async def get_chapter_text(self, chapter_url: str) -> str: ...

@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://astral:astral@postgres:5432/astral
+      - REDIS_URL=redis://redis:6379/0
+      - BLOCK_VOLUME_PATH=/mnt/astral-media
+      - STATIC_BASE_URL=http://localhost:8000/static
+      - ARQ_MAX_JOBS=3
+      - SOFT_DELETE_DAYS=5
+      - COOKIE_CACHE_TTL_SECS=86400
+    volumes:
+      - ./app:/app/app  # hot reload in local dev
+      - astral_media:/mnt/astral-media
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - astral_net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: astral
+      POSTGRES_PASSWORD: astral
+      POSTGRES_DB: astral
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astral"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - astral_net
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - astral_net
+
+volumes:
+  postgres_data:
+  astral_media:
+
+networks:
+  astral_net:
+    driver: bridge
