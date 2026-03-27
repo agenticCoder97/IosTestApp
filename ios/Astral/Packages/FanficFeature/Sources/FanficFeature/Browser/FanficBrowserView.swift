@@ -19,16 +19,55 @@ struct FanficBrowserView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
+            // Unified Browser Action Bar
+            HStack(spacing: 12) {
+                Button(action: viewModel.goBack) {
+                    Image(systemName: "chevron.backward")
+                }
+                .disabled(!viewModel.canGoBack)
+                .foregroundColor(viewModel.canGoBack ? .primary : .secondary)
+                
+                Button(action: viewModel.goForward) {
+                    Image(systemName: "chevron.forward")
+                }
+                .disabled(!viewModel.canGoForward)
+                .foregroundColor(viewModel.canGoForward ? .primary : .secondary)
+                
+                Button(action: viewModel.reload) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .foregroundColor(.primary)
+                
+                Spacer(minLength: 8)
+                
+                Text(viewModel.currentURL?.absoluteString ?? viewModel.sourceURL.absoluteString)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                
+                Spacer(minLength: 8)
+                
+                Button(action: {
+                    Task { await viewModel.extractCookiesAndScrape() }
+                }) {
+                    Image(systemName: "arrow.down.circle")
+                }
+                .foregroundColor(viewModel.canScrape ? .primary : .secondary)
+                .disabled(!viewModel.canScrape)
+                
+                Button(action: viewModel.openInSafari) {
+                    Image(systemName: "safari")
+                }
+                .foregroundColor(viewModel.currentURL != nil ? .primary : .secondary)
+                .disabled(viewModel.currentURL == nil)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+
             // WebView
             FanficWebViewRepresentable(viewModel: viewModel)
                 .ignoresSafeArea(edges: .bottom)
-
-            if viewModel.canScrape {
-                GoldButton("Scrape", icon: "arrow.down.circle") {
-                    Task { await viewModel.extractCookiesAndScrape() }
-                }
-                .padding()
-            }
         }
         .background(AstralColors.background)
     }
@@ -47,11 +86,17 @@ final class FanficBrowserViewModel {
     var canScrape = false
     var currentURL: URL?
     var webView: WKWebView?
+    var savedURLs: [FanficSource: URL] = [:]
+    var canGoBack = false
+    var canGoForward = false
 
     var sourceURL: URL {
+        if let saved = savedURLs[selectedSource] {
+            return saved
+        }
         switch selectedSource {
-        case .ao3: URL(string: "about:blank")!
-        case .ffnet: URL(string: "about:blank")!
+        case .ao3: return URL(string: "https://archiveofourown.org")!
+        case .ffnet: return URL(string: "https://www.fanfiction.net")!
         }
     }
 
@@ -83,6 +128,31 @@ final class FanficBrowserViewModel {
             _ = job
         } catch {
             // TODO: Handle error
+        }
+    }
+
+    func evaluateCanScrape(url: URL?) {
+        guard let url = url else {
+            canScrape = false
+            return
+        }
+        let path = url.path
+        switch selectedSource {
+        case .ao3:
+            canScrape = path.contains("/works/")
+        case .ffnet:
+            canScrape = path.contains("/s/")
+        }
+    }
+
+    func goBack() { webView?.goBack() }
+    func goForward() { webView?.goForward() }
+    func reload() { webView?.reload() }
+    func openInSafari() {
+        if let url = currentURL ?? URL(string: sourceURL.absoluteString) {
+            #if os(iOS)
+            UIApplication.shared.open(url)
+            #endif
         }
     }
 }
@@ -119,6 +189,12 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             viewModel.currentURL = webView.url
+            if let url = webView.url {
+                viewModel.savedURLs[viewModel.selectedSource] = url
+            }
+            viewModel.evaluateCanScrape(url: webView.url)
+            viewModel.canGoBack = webView.canGoBack
+            viewModel.canGoForward = webView.canGoForward
 
             Task {
                 let store = webView.configuration.websiteDataStore.httpCookieStore

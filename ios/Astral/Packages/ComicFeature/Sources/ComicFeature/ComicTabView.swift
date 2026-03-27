@@ -3,8 +3,11 @@ import DesignSystem
 
 public struct ComicTabView: View {
     @State private var navigation = ComicNavigation()
+    var onSwitchTab: () -> Void
 
-    public init() {}
+    public init(onSwitchTab: @escaping () -> Void = {}) {
+        self.onSwitchTab = onSwitchTab
+    }
 
     public var body: some View {
         ZStack {
@@ -26,9 +29,21 @@ public struct ComicTabView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        Text("Comics")
-                            .font(AstralTypography.title)
-                            .foregroundStyle(AstralColors.white)
+                        HStack(spacing: 12) {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    onSwitchTab()
+                                }
+                            } label: {
+                                Image(systemName: "scroll.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(AstralColors.body)
+                            }
+                            
+                            Text("Comics")
+                                .font(AstralTypography.title)
+                                .foregroundStyle(AstralColors.white)
+                        }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {

@@ -19,17 +19,55 @@ struct ComicBrowserView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
+            // Unified Browser Action Bar
+            HStack(spacing: 12) {
+                Button(action: viewModel.goBack) {
+                    Image(systemName: "chevron.backward")
+                }
+                .disabled(!viewModel.canGoBack)
+                .foregroundColor(viewModel.canGoBack ? .primary : .secondary)
+                
+                Button(action: viewModel.goForward) {
+                    Image(systemName: "chevron.forward")
+                }
+                .disabled(!viewModel.canGoForward)
+                .foregroundColor(viewModel.canGoForward ? .primary : .secondary)
+                
+                Button(action: viewModel.reload) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .foregroundColor(.primary)
+                
+                Spacer(minLength: 8)
+                
+                Text(viewModel.currentURL?.absoluteString ?? viewModel.sourceURL.absoluteString)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                
+                Spacer(minLength: 8)
+                
+                Button(action: {
+                    Task { await viewModel.extractCookiesAndScrape() }
+                }) {
+                    Image(systemName: "arrow.down.circle")
+                }
+                .foregroundColor(viewModel.canScrape ? .primary : .secondary)
+                .disabled(!viewModel.canScrape)
+                
+                Button(action: viewModel.openInSafari) {
+                    Image(systemName: "safari")
+                }
+                .foregroundColor(viewModel.currentURL != nil ? .primary : .secondary)
+                .disabled(viewModel.currentURL == nil)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+
             // WebView
             WebViewRepresentable(viewModel: viewModel)
                 .ignoresSafeArea(edges: .bottom)
-
-            // Scrape button (shown when on a story page)
-            if viewModel.canScrape {
-                GoldButton("Scrape", icon: "arrow.down.circle") {
-                    Task { await viewModel.extractCookiesAndScrape() }
-                }
-                .padding()
-            }
         }
         .background(AstralColors.background)
     }
@@ -41,12 +79,18 @@ final class ComicBrowserViewModel {
     var canScrape = false
     var currentURL: URL?
     var webView: WKWebView?
+    var savedURLs: [ComicSource: URL] = [:]
+    var canGoBack = false
+    var canGoForward = false
 
     var sourceURL: URL {
+        if let saved = savedURLs[selectedSource] {
+            return saved
+        }
         switch selectedSource {
-        case .nhentai: URL(string: "about:blank")!
-        case .toongod: URL(string: "about:blank")!
-        case .hentai20: URL(string: "about:blank")!
+        case .nhentai: return URL(string: "https://nhentai.net")!
+        case .toongod: return URL(string: "https://www.toongod.com")!
+        case .hentai20: return URL(string: "https://hentai20.io")!
         }
     }
 
@@ -78,6 +122,33 @@ final class ComicBrowserViewModel {
             _ = job
         } catch {
             // TODO: Handle error
+        }
+    }
+
+    func evaluateCanScrape(url: URL?) {
+        guard let url = url else {
+            canScrape = false
+            return
+        }
+        let path = url.path
+        switch selectedSource {
+        case .nhentai:
+            canScrape = path.contains("/g/")
+        case .toongod:
+            canScrape = path.contains("/manga/") || path.contains("/webtoon/")
+        case .hentai20:
+            canScrape = path.contains("/manga/")
+        }
+    }
+
+    func goBack() { webView?.goBack() }
+    func goForward() { webView?.goForward() }
+    func reload() { webView?.reload() }
+    func openInSafari() {
+        if let url = currentURL ?? URL(string: sourceURL.absoluteString) {
+            #if os(iOS)
+            UIApplication.shared.open(url)
+            #endif
         }
     }
 }
@@ -114,6 +185,12 @@ struct WebViewRepresentable: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             viewModel.currentURL = webView.url
+            if let url = webView.url {
+                viewModel.savedURLs[viewModel.selectedSource] = url
+            }
+            viewModel.evaluateCanScrape(url: webView.url)
+            viewModel.canGoBack = webView.canGoBack
+            viewModel.canGoForward = webView.canGoForward
 
             // Auto-harvest cookies on every page load (architecture convention 9.2)
             Task {

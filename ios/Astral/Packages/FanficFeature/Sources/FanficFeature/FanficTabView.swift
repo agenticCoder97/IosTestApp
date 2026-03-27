@@ -4,8 +4,11 @@ import DesignSystem
 public struct FanficTabView: View {
     @State private var navigation = FanficNavigation()
     @State private var searchText = ""
+    var onSwitchTab: () -> Void
 
-    public init() {}
+    public init(onSwitchTab: @escaping () -> Void = {}) {
+        self.onSwitchTab = onSwitchTab
+    }
 
     public var body: some View {
         ZStack {
@@ -27,9 +30,21 @@ public struct FanficTabView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        Text("Fanfic")
-                            .font(AstralTypography.title)
-                            .foregroundStyle(AstralColors.white)
+                        HStack(spacing: 12) {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    onSwitchTab()
+                                }
+                            } label: {
+                                Image(systemName: "book.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(AstralColors.body)
+                            }
+                            
+                            Text("Fanfic")
+                                .font(AstralTypography.title)
+                                .foregroundStyle(AstralColors.white)
+                        }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         HStack(spacing: 16) {

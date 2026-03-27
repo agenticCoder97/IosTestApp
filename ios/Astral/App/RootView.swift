@@ -11,14 +11,13 @@ struct RootView: View {
             Group {
                 switch appState.activeTab {
                 case .comic:
-                    ComicTabView()
+                    ComicTabView(onSwitchTab: { appState.activeTab = .fanfic })
                 case .fanfic:
-                    FanficTabView()
+                    FanficTabView(onSwitchTab: { appState.activeTab = .comic })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            TabBarView(activeTab: $appState.activeTab)
         }
         .environment(appState)
         .preferredColorScheme(.dark)
