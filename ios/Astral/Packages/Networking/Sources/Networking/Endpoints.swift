@@ -171,6 +171,14 @@ public extension Endpoint {
     static func getProgress(type: String, storyId: UUID) -> Endpoint {
         Endpoint(path: "/progress/\(type)/\(storyId)")
     }
+
+    /// Fetch all progress records for a content type in one call.
+    /// Used by library ViewModels on refresh to restore reading position after a SwiftData wipe.
+    static func allProgress(contentType: String) -> Endpoint {
+        Endpoint(path: "/progress", queryItems: [
+            URLQueryItem(name: "content_type", value: contentType),
+        ])
+    }
 }
 
 // MARK: - Health

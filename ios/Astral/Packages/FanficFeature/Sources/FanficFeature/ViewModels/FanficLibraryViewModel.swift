@@ -82,6 +82,24 @@ final class FanficLibraryViewModel {
                 }
             }
             try modelContext.save()
+
+            // Sync server reading progress — restores position after a SwiftData wipe.
+            // Only advances local progress; never overwrites a chapter the user has read further.
+            let progressList: [ProgressResponse] = try await APIClient.shared.request(.allProgress(contentType: "fanfic"))
+            let progressByStoryId = Dictionary(uniqueKeysWithValues: progressList.map { ($0.storyId, $0) })
+
+            let allFanficsDescriptor = FetchDescriptor<LocalFanfic>()
+            let allFanfics = (try? modelContext.fetch(allFanficsDescriptor)) ?? []
+            for fanfic in allFanfics {
+                guard let progress = progressByStoryId[fanfic.id],
+                      progress.lastChapterNumber > fanfic.lastReadChapterNumber else { continue }
+                fanfic.lastReadChapterNumber = progress.lastChapterNumber
+                fanfic.scrollOffsetPercent = progress.scrollOffsetPercent
+                if fanfic.totalChapters > 0 {
+                    fanfic.progressPercent = Double(progress.lastChapterNumber) / Double(fanfic.totalChapters)
+                }
+            }
+            try modelContext.save()
         } catch {
             errorMessage = error.localizedDescription
         }

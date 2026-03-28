@@ -94,6 +94,22 @@ async def upsert_fanfic_progress(
     return _to_schema(progress)
 
 
+async def get_all_progress(
+    db: AsyncSession,
+    content_type: str,
+) -> list[ProgressResponse]:
+    """Return all progress records for a content type — lets iOS hydrate the library in one call."""
+    logger.info("get_all_progress called | content_type=%s", content_type)
+    result = await db.execute(
+        select(ReadingProgress).where(
+            ReadingProgress.content_type == content_type,
+        ).order_by(ReadingProgress.updated_at.desc())
+    )
+    rows = result.scalars().all()
+    logger.info("get_all_progress returning %d records | content_type=%s", len(rows), content_type)
+    return [_to_schema(p) for p in rows]
+
+
 async def get_progress(
     db: AsyncSession,
     content_type: str,

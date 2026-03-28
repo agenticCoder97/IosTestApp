@@ -1,11 +1,20 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.schemas.progress import ComicProgressRequest, FanficProgressRequest, ProgressResponse
 from app.services import progress_service
 
 router = APIRouter(prefix="/progress", tags=["progress"])
+
+
+@router.get("", response_model=list[ProgressResponse])
+async def get_all_progress(
+    content_type: str = Query(..., pattern="^(comic|fanfic)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all progress records for a content type. iOS calls this once on launch."""
+    return await progress_service.get_all_progress(db, content_type)
 
 
 @router.put("/comic/{story_id}", response_model=ProgressResponse)
