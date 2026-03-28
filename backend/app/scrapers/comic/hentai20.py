@@ -49,6 +49,14 @@ class Hentai20Scraper(BaseScraper):
         if thumb_tag:
             thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
 
+        # Author (Madara theme — same selector as toongod)
+        author_tag = soup.select_one(".author-content a")
+        authors = [author_tag.get_text(strip=True)] if author_tag else []
+
+        # Genre tags (Madara theme)
+        genre_tags = soup.select(".genres-content a")
+        tags = [{"name": a.get_text(strip=True), "tag_type": "genre"} for a in genre_tags]
+
         slug = _slug(url)
         chapter_links = soup.find_all(
             "a", href=re.compile(rf"hentai20\.io/{re.escape(slug)}-chapter-\d")
@@ -62,6 +70,8 @@ class Hentai20Scraper(BaseScraper):
             source_key=self.source_key,
             source_id=slug,
             description=description,
+            authors=authors,
+            tags=tags,
             thumbnail_url=thumbnail_url,
             total_chapters=total_chapters,
         )
