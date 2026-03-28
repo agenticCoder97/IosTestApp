@@ -94,10 +94,29 @@ struct ComicReaderView: View {
                     .allowsHitTesting(false)
             }
 
-            // Tap zones + long press
-            if !isLoading && !pages.isEmpty {
+            // Tap zones + long press (always present so user can toggle HUD to get back button)
+            if !isLoading {
                 tapZoneOverlay
             }
+
+            // Floating back button — always visible as escape hatch
+            VStack {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(.leading, 16)
+                    .padding(.top, 54)
+                    .opacity(showHUD ? 0 : 0.6)
+                    Spacer()
+                }
+                Spacer()
+            }
+            .allowsHitTesting(!showHUD)
 
             // Top HUD — slides in from above
             VStack(spacing: 0) {
