@@ -73,11 +73,12 @@ struct ComicBrowserView: View {
                 .disabled(!viewModel.canScrape || viewModel.isScraping)
                 .buttonStyle(PressButtonStyle(scale: 0.85))
 
-                Button(action: viewModel.openInSafari) {
-                    Image(systemName: "safari")
+                Button {
+                    viewModel.resetToSourceHome()
+                } label: {
+                    Image(systemName: "house")
+                        .foregroundColor(.primary)
                 }
-                .foregroundColor(viewModel.currentURL != nil ? .primary : .secondary)
-                .disabled(viewModel.currentURL == nil)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
@@ -219,12 +220,18 @@ final class ComicBrowserViewModel {
     func goBack() { webView?.goBack() }
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
-    func openInSafari() {
-        if let url = currentURL ?? URL(string: sourceURL.absoluteString) {
-            #if os(iOS)
-            UIApplication.shared.open(url)
-            #endif
+
+    func resetToSourceHome() {
+        savedURLs.removeValue(forKey: selectedSource)
+        let homeURL: URL
+        switch selectedSource {
+        case .nhentai: homeURL = URL(string: "https://nhentai.net")!
+        case .toongod: homeURL = URL(string: "https://www.toongod.org")!
+        case .hentai20: homeURL = URL(string: "https://hentai20.io")!
         }
+        webView?.load(URLRequest(url: homeURL))
+        addressBarText = homeURL.absoluteString
+        AstralLogger.info("Browser reset to \(homeURL)", context: "ComicBrowser")
     }
 }
 

@@ -187,6 +187,7 @@ struct ScrapeJobRow: View {
     var storyTitle: String? = nil
     let onSelect: () -> Void
 
+    @Environment(\.modelContext) private var modelContext
     @State private var retryRotation: Double = 0
 
     var body: some View {
@@ -293,9 +294,33 @@ struct ScrapeJobRow: View {
     }
 
     private func retryJob() async {
+        AstralLogger.info("retryJob tapped | job_id=\(job.id) status=\(job.status)", context: "ComicScrapes")
         do {
-            try await APIClient.shared.requestVoid(.retryScrape(jobId: job.id))
-        } catch {}
+            let response: ScrapeJobResponse = try await APIClient.shared.request(.retryScrape(jobId: job.id))
+            AstralLogger.info("retryJob success | new_job_id=\(response.id) status=\(response.status)", context: "ComicScrapes")
+            let newJob = LocalScrapeJob(
+                id: response.id,
+                contentType: response.contentType,
+                storyId: response.storyId,
+                status: response.status,
+                chaptersScraped: response.chaptersScraped,
+                chaptersFailed: response.chaptersFailed,
+                totalChapters: response.totalChapters,
+                createdAt: response.createdAt,
+                completedAt: response.completedAt,
+                sourceUrl: response.sourceUrl,
+                sourceKey: response.sourceKey,
+                jobType: response.jobType,
+                errorMessage: response.errorMessage,
+                currentStep: response.currentStep,
+                lastErrorType: response.lastErrorType,
+                startedAt: response.startedAt
+            )
+            modelContext.insert(newJob)
+            try? modelContext.save()
+        } catch {
+            AstralLogger.error("retryJob failed: \(error)", context: "ComicScrapes")
+        }
     }
 }
 
