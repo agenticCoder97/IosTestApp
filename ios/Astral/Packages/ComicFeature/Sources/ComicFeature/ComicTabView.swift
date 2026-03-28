@@ -50,18 +50,25 @@ public struct ComicTabView: View {
                             }
                         } label: {
                             HStack(spacing: 6) {
+                                Image(systemName: "book.fill")
+                                    .font(.system(size: 14, weight: .semibold))
                                 Text("Comics")
-                                    .font(AstralTypography.title)
-                                    .foregroundStyle(AstralColors.white)
+                                    .font(AstralTypography.titleSmall)
                                 Image(systemName: "chevron.down")
-                                    .font(.caption.weight(.semibold))
+                                    .font(.caption2.weight(.semibold))
                                     .foregroundStyle(AstralColors.muted)
                             }
+                            .foregroundStyle(AstralColors.gold)
                             .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 8)
                             .background(AstralColors.elevated)
                             .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(AstralColors.gold.opacity(0.3), lineWidth: 1)
+                            )
                         }
+                        .tint(AstralColors.gold)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
