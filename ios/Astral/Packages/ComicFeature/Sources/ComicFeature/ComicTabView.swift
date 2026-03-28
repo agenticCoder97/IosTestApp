@@ -58,15 +58,6 @@ public struct ComicTabView: View {
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(AstralColors.muted)
                             }
-                            .foregroundStyle(AstralColors.gold)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(AstralColors.elevated)
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(AstralColors.gold.opacity(0.3), lineWidth: 1)
-                            )
                         }
                         .tint(AstralColors.gold)
                     }
