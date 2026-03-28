@@ -5,7 +5,7 @@ from app.core.constants import SourceKey
 
 
 def _slug(url: str) -> str:
-    m = re.search(r"/webtoon/([^/?#]+)", url)
+    m = re.search(r"/(?:webtoon|manga)/([^/?#]+)", url)
     if not m:
         raise ValueError(f"Cannot extract toongod slug from URL: {url}")
     return m.group(1)
@@ -20,7 +20,7 @@ class ToongodScraper(BaseScraper):
 
     async def get_story_metadata(self, url: str) -> StoryMetadata:
         # Normalise to series root (strip any chapter suffix)
-        series_url = re.sub(r"/chapter-[^/]+/?$", "/", url)
+        series_url = re.sub(r"/chapter-[^/]+/?$", "/", url).replace("toongod.com", "toongod.org")
         html = await self._fetch(series_url)
         soup = BeautifulSoup(html, "lxml")
 

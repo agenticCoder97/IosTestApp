@@ -44,8 +44,79 @@ class FanfictionNetScraper(BaseScraper):
             options = chap_select.find_all("option")
             total_chapters = len(options) if options else 1
         else:
-            # No dropdown means single-chapter story
             total_chapters = 1
+
+        # Parse the metadata line:
+        # "Rated: Fiction T - English - Adventure/Romance - Harry P., ... - Words: 184,603 ..."
+        rating = None
+        language = None
+        word_count = None
+        characters = None
+        fandom = None
+        tags = []
+        completion_status = "ongoing"
+        published_at = None
+        updated_at_source = None
+
+        # Fandom from breadcrumb (e.g. "Harry Potter")
+        breadcrumb_links = soup.select("#pre_story_links a")
+        if len(breadcrumb_links) >= 2:
+            fandom = breadcrumb_links[-1].get_text(strip=True)
+
+        # Metadata span — last span in #profile_top
+        meta_spans = soup.select("#profile_top span.xgray")
+        meta_text = meta_spans[-1].get_text() if meta_spans else ""
+        if not meta_text:
+            # Fallback: grab the full text of the container
+            profile = soup.select_one("#profile_top")
+            meta_text = profile.get_text() if profile else ""
+
+        # Rating: "Fiction T", "Fiction M", "Fiction K+", etc.
+        m = re.search(r"Rated:\s*(?:Fiction\s+)?([TKMA][+]?)", meta_text)
+        if m:
+            rating = m.group(1)
+
+        # Language
+        m = re.search(r"Fiction\s+\S+\s+-\s+(\w+)\s+-", meta_text)
+        if m:
+            language = m.group(1)
+
+        # Genre (between language and characters/chapters marker)
+        m = re.search(r"Fiction\s+\S+\s+-\s+\w+\s+-\s+([^-]+?)\s+-", meta_text)
+        if m:
+            genre_text = m.group(1).strip()
+            # Genres like "Adventure/Romance" or "Drama"
+            for g in genre_text.split("/"):
+                g = g.strip()
+                if g and not re.match(r"^(Chapters|Words|Reviews)", g):
+                    tags.append({"name": g, "tag_type": "genre"})
+
+        # Characters — text segment that contains character names before " - Chapters:"
+        m = re.search(r"-\s+([A-Z][\w. ]+(?:,\s*[A-Z][\w. ]+)*)\s+-\s*Chapters:", meta_text)
+        if m:
+            characters = m.group(1).strip()
+
+        # Words
+        m = re.search(r"Words:\s*([\d,]+)", meta_text)
+        if m:
+            try:
+                word_count = int(m.group(1).replace(",", ""))
+            except ValueError:
+                pass
+
+        # Published
+        m = re.search(r"Published:\s*([A-Za-z]+ \d+,? \d{4})", meta_text)
+        if m:
+            published_at = m.group(1)
+
+        # Updated
+        m = re.search(r"Updated:\s*([A-Za-z]+ \d+,? \d{4})", meta_text)
+        if m:
+            updated_at_source = m.group(1)
+
+        # Completion — FFNet shows "Status: Complete" in metadata
+        if "Status: Complete" in meta_text or "Complete" in meta_text:
+            completion_status = "complete"
 
         return StoryMetadata(
             title=title,
@@ -55,6 +126,15 @@ class FanfictionNetScraper(BaseScraper):
             description=description,
             authors=authors,
             total_chapters=total_chapters,
+            language=language,
+            fandom=fandom,
+            rating=rating,
+            characters=characters,
+            word_count=word_count,
+            completion_status=completion_status,
+            published_at=published_at,
+            updated_at_source=updated_at_source,
+            tags=tags,
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:

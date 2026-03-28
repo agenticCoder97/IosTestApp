@@ -113,7 +113,7 @@ final class ComicBrowserViewModel {
         }
         switch selectedSource {
         case .nhentai: return URL(string: "https://nhentai.net")!
-        case .toongod: return URL(string: "https://www.toongod.com")!
+        case .toongod: return URL(string: "https://www.toongod.org")!
         case .hentai20: return URL(string: "https://hentai20.io")!
         }
     }

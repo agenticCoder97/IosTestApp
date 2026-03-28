@@ -12,7 +12,7 @@ public final class CookieStore: Sendable {
     /// Maps source_key to the actual cookie domain used by the site.
     private let sourceDomains: [String: String] = [
         "nhentai": "nhentai.net",
-        "toongod": "toongod.com",
+        "toongod": "toongod.org",
         "hentai20": "hentai20.io",
         "ao3": "archiveofourown.org",
         "ffnet": "fanfiction.net",
