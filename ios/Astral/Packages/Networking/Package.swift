@@ -16,5 +16,10 @@ let package = Package(
             name: "Networking",
             dependencies: ["Core"]
         ),
+        .testTarget(
+            name: "NetworkingTests",
+            dependencies: ["Networking", "Core"],
+            path: "Tests/NetworkingTests"
+        ),
     ]
 )

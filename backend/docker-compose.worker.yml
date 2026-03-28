@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - astral_net
+
+  arq_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env.oci
+    volumes:
+      - ./wallet:/app/wallet:ro
+      - astral_media:/mnt/astral-media
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - astral_net
+
+volumes:
+  redis_data:
+  astral_media:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/astral-media
+
+networks:
+  astral_net:
+    external: true  # Shared with docker-compose.yml api stack

@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Astral Local",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "astral",
+      "Username": "astral",
+      "PassFile": "/pgpass",
+      "SSLMode": "prefer",
+      "ConnectNow": true
+    }
+  }
+}

@@ -19,31 +19,47 @@ public struct FanficTabView: View {
                 Group {
                     switch navigation.activeSection {
                     case .library:
-                        FanficLibraryView(searchText: $searchText)
+                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
+                    case .favourites:
+                        FanficLibraryView(searchText: .constant(""), filterFavourites: true)
                     case .browse:
                         FanficBrowserView()
                     case .scrapes:
                         FanficScrapesView()
                     case .downloads:
-                        FanficLibraryView(searchText: $searchText) // Filtered to downloaded
+                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
+                    case .stats:
+                        FanficStatsView()
                     }
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        HStack(spacing: 12) {
+                        Menu {
                             Button {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     onSwitchTab()
                                 }
                             } label: {
-                                Image(systemName: "book.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(AstralColors.body)
+                                Label("Comics", systemImage: "book.fill")
                             }
-                            
-                            Text("Fanfic")
-                                .font(AstralTypography.title)
-                                .foregroundStyle(AstralColors.white)
+                            Button {
+                                // Already on Fan Fiction tab
+                            } label: {
+                                Label("Fan Fiction", systemImage: "scroll.fill")
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("Fan Fiction")
+                                    .font(AstralTypography.title)
+                                    .foregroundStyle(AstralColors.white)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(AstralColors.muted)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(AstralColors.elevated)
+                            .clipShape(Capsule())
                         }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
@@ -84,16 +100,20 @@ final class FanficNavigation {
 /// Architecture fix #9: Added .scrapes section — missing from original doc's fanfic sidebar.
 enum FanficSection: String, CaseIterable {
     case library = "Library"
+    case favourites = "Favourites"
     case browse = "Browse"
     case scrapes = "Scrapes"
     case downloads = "Downloads"
+    case stats = "Stats"
 
     var icon: String {
         switch self {
         case .library: "books.vertical"
+        case .favourites: "heart.fill"
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
         case .downloads: "arrow.down.to.line"
+        case .stats: "chart.bar"
         }
     }
 }

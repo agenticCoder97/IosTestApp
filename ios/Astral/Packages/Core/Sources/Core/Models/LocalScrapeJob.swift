@@ -15,6 +15,14 @@ public final class LocalScrapeJob {
     public var totalChapters: Int?
     public var createdAt: Date
     public var completedAt: Date?
+    // Rich fields — populated on creation and synced during polling
+    public var sourceUrl: String?
+    public var sourceKey: String?
+    public var jobType: String?
+    public var errorMessage: String?
+    public var currentStep: String?
+    public var lastErrorType: String?
+    public var startedAt: Date?
 
     public init(
         id: UUID,
@@ -25,7 +33,14 @@ public final class LocalScrapeJob {
         chaptersFailed: Int = 0,
         totalChapters: Int? = nil,
         createdAt: Date = .now,
-        completedAt: Date? = nil
+        completedAt: Date? = nil,
+        sourceUrl: String? = nil,
+        sourceKey: String? = nil,
+        jobType: String? = nil,
+        errorMessage: String? = nil,
+        currentStep: String? = nil,
+        lastErrorType: String? = nil,
+        startedAt: Date? = nil
     ) {
         self.id = id
         self.contentType = contentType
@@ -36,5 +51,12 @@ public final class LocalScrapeJob {
         self.totalChapters = totalChapters
         self.createdAt = createdAt
         self.completedAt = completedAt
+        self.sourceUrl = sourceUrl
+        self.sourceKey = sourceKey
+        self.jobType = jobType
+        self.errorMessage = errorMessage
+        self.currentStep = currentStep
+        self.lastErrorType = lastErrorType
+        self.startedAt = startedAt
     }
 }

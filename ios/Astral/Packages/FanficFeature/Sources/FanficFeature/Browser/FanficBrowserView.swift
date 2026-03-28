@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import WebKit
 import Core
 import DesignSystem
@@ -6,6 +7,7 @@ import Networking
 
 struct FanficBrowserView: View {
     @State private var viewModel = FanficBrowserViewModel()
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,12 +51,24 @@ struct FanficBrowserView: View {
                 Spacer(minLength: 8)
                 
                 Button(action: {
-                    Task { await viewModel.extractCookiesAndScrape() }
+                    Task {
+                        if let job = await viewModel.extractCookiesAndScrape() {
+                            modelContext.insert(job)
+                        }
+                    }
                 }) {
-                    Image(systemName: "arrow.down.circle")
+                    if viewModel.isScraping {
+                        ProgressView()
+                            .tint(AstralColors.gold)
+                            .scaleEffect(0.75)
+                            .frame(width: 20, height: 20)
+                    } else {
+                        Image(systemName: "arrow.down.circle")
+                            .foregroundColor(viewModel.canScrape ? AstralColors.gold : .secondary)
+                    }
                 }
-                .foregroundColor(viewModel.canScrape ? .primary : .secondary)
-                .disabled(!viewModel.canScrape)
+                .disabled(!viewModel.canScrape || viewModel.isScraping)
+                .buttonStyle(PressButtonStyle(scale: 0.85))
                 
                 Button(action: viewModel.openInSafari) {
                     Image(systemName: "safari")
@@ -70,6 +84,14 @@ struct FanficBrowserView: View {
                 .ignoresSafeArea(edges: .bottom)
         }
         .background(AstralColors.background)
+        .overlay(alignment: .bottom) {
+            if let toast = viewModel.scrapeToast {
+                ToastView(toast.message, isSuccess: toast.isSuccess)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 24)
+            }
+        }
+        .animation(AstralAnimation.smooth, value: viewModel.scrapeToast?.message)
     }
 
     private func sourceLabel(_ source: FanficSource) -> String {
@@ -84,6 +106,8 @@ struct FanficBrowserView: View {
 final class FanficBrowserViewModel {
     var selectedSource: FanficSource = .ao3
     var canScrape = false
+    var isScraping = false
+    var scrapeToast: ScrapeToast? = nil
     var currentURL: URL?
     var webView: WKWebView?
     var savedURLs: [FanficSource: URL] = [:]
@@ -100,8 +124,10 @@ final class FanficBrowserViewModel {
         }
     }
 
-    func extractCookiesAndScrape() async {
-        guard let webView, let url = currentURL else { return }
+    func extractCookiesAndScrape() async -> LocalScrapeJob? {
+        guard let webView, let url = currentURL, !isScraping else { return nil }
+        isScraping = true
+        defer { isScraping = false }
 
         let store = await webView.configuration.websiteDataStore.httpCookieStore
         let allCookies = await store.allCookies()
@@ -122,12 +148,37 @@ final class FanficBrowserViewModel {
         )
 
         do {
-            let job: ScrapeJobResponse = try await APIClient.shared.request(
-                .initiateScrape(request)
+            let response: ScrapeJobResponse = try await APIClient.shared.request(.initiateScrape(request))
+            showToast(ScrapeToast(message: "Scrape queued", isSuccess: true))
+            return LocalScrapeJob(
+                id: response.id,
+                contentType: response.contentType,
+                storyId: response.storyId,
+                status: response.status,
+                chaptersScraped: response.chaptersScraped,
+                chaptersFailed: response.chaptersFailed,
+                totalChapters: response.totalChapters,
+                createdAt: response.createdAt,
+                completedAt: response.completedAt,
+                sourceUrl: response.sourceUrl,
+                sourceKey: response.sourceKey,
+                jobType: response.jobType,
+                errorMessage: response.errorMessage,
+                currentStep: response.currentStep,
+                lastErrorType: response.lastErrorType,
+                startedAt: response.startedAt
             )
-            _ = job
         } catch {
-            // TODO: Handle error
+            showToast(ScrapeToast(message: "Scrape failed", isSuccess: false))
+            return nil
+        }
+    }
+
+    private func showToast(_ toast: ScrapeToast) {
+        scrapeToast = toast
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            scrapeToast = nil
         }
     }
 
@@ -166,6 +217,7 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         viewModel.webView = webView
+        ContentBlocker.shared.apply(to: webView)
         return webView
     }
 

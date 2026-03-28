@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    env_file:
+      - .env.oci
+    volumes:
+      - ./wallet:/app/wallet:ro
+      - astral_media:/mnt/astral-media
+    restart: unless-stopped
+    networks:
+      - astral_net
+
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - astral_media:/mnt/astral-media:ro
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    networks:
+      - astral_net
+
+  certbot:
+    image: certbot/dns-duckdns:latest
+    env_file:
+      - .env.oci
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+    # Renew every 12h; LE renews when <30d remaining
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 43200 & wait $${!}; done'"
+    restart: unless-stopped
+
+volumes:
+  astral_media:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/astral-media
+  letsencrypt:
+
+networks:
+  astral_net:
+    driver: bridge

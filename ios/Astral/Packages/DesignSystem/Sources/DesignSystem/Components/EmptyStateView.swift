@@ -5,6 +5,8 @@ public struct EmptyStateView: View {
     let title: String
     let message: String
 
+    @State private var appeared = false
+
     public init(icon: String, title: String, message: String) {
         self.icon = icon
         self.title = title
@@ -16,17 +18,28 @@ public struct EmptyStateView: View {
             Image(systemName: icon)
                 .font(.system(size: 48))
                 .foregroundStyle(AstralColors.muted)
+                .scaleEffect(appeared ? 1 : 0.5)
+                .opacity(appeared ? 1 : 0)
 
             Text(title)
                 .font(AstralTypography.title)
                 .foregroundStyle(AstralColors.white)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
 
             Text(message)
                 .font(AstralTypography.body)
                 .foregroundStyle(AstralColors.muted)
                 .multilineTextAlignment(.center)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
         }
         .padding(40)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.72).delay(0.08)) {
+                appeared = true
+            }
+        }
     }
 }
 

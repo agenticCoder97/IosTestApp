@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 public enum ContentType: String, Codable, Sendable {
     case comic
@@ -64,4 +65,22 @@ public enum ReaderBackground: String, CaseIterable, Codable, Sendable {
     case dark
     case sepia
     case paper
+}
+
+public enum ReaderFont: String, CaseIterable, Codable, Sendable {
+    case system = "System"
+    case georgia = "Georgia"
+    case palatino = "Palatino"
+    case courier = "Courier"
+    case avenir = "Avenir"
+
+    public func font(size: CGFloat) -> Font {
+        switch self {
+        case .system: .system(size: size)
+        case .georgia: .custom("Georgia", size: size)
+        case .palatino: .custom("Palatino", size: size)
+        case .courier: .custom("Courier", size: size)
+        case .avenir: .custom("Avenir", size: size)
+        }
+    }
 }

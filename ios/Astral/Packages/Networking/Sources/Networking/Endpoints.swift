@@ -151,6 +151,10 @@ public extension Endpoint {
             URLQueryItem(name: "page_size", value: "\(pageSize)"),
         ])
     }
+
+    static func scrapeJobLogs(jobId: UUID) -> Endpoint {
+        Endpoint(path: "/scrape/\(jobId)/logs")
+    }
 }
 
 // MARK: - Progress Endpoints
