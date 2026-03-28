@@ -17,6 +17,7 @@ services:
       - LOG_LEVEL=DEBUG
     volumes:
       - ./app:/app/app  # hot reload in local dev
+      - astral_media:/mnt/astral-media
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       postgres:
@@ -34,7 +35,8 @@ services:
       POSTGRES_USER: astral
       POSTGRES_PASSWORD: astral
       POSTGRES_DB: astral
-    volumes: []
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U astral"]
       interval: 5s
@@ -77,6 +79,7 @@ services:
       - LOG_LEVEL=DEBUG
     volumes:
       - ./app:/app/app
+      - astral_media:/mnt/astral-media
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,6 +98,7 @@ services:
       GUNICORN_ACCESS_LOGFILE: /dev/null
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     volumes:
+      - pgadmin_data:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ./pgadmin/pgpass:/pgpass:ro
     depends_on:
@@ -102,6 +106,10 @@ services:
     networks:
       - astral_net
 
+volumes:
+  postgres_data:
+  astral_media:
+  pgadmin_data:
 
 networks:
   astral_net:
