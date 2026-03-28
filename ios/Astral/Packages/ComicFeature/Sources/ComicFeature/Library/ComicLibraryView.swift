@@ -89,12 +89,8 @@ private struct ContinueReadingStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(comics) { comic in
-                        NavigationLink {
-                            ComicDetailView(comic: comic)
-                        } label: {
-                            ContinueReadingCard(comic: comic)
-                        }
-                        .buttonStyle(PressButtonStyle(scale: 0.94))
+                        ContinueReadingCardLink(comic: comic)
+                            .buttonStyle(PressButtonStyle(scale: 0.94))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -102,6 +98,41 @@ private struct ContinueReadingStrip: View {
             }
         }
         .padding(.bottom, 16)
+    }
+}
+
+private struct ContinueReadingCardLink: View {
+    let comic: LocalComic
+    @Query private var chapters: [LocalComicChapter]
+
+    init(comic: LocalComic) {
+        self.comic = comic
+        let comicId = comic.id
+        _chapters = Query(
+            filter: #Predicate<LocalComicChapter> { $0.comicId == comicId },
+            sort: \LocalComicChapter.chapterNumber
+        )
+    }
+
+    private var nextChapter: LocalComicChapter? {
+        let lastRead = Double(comic.lastReadChapterNumber)
+        return chapters.first { $0.chapterNumber > lastRead } ?? chapters.first
+    }
+
+    var body: some View {
+        if let chapter = nextChapter, !chapters.isEmpty {
+            NavigationLink {
+                ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
+            } label: {
+                ContinueReadingCard(comic: comic)
+            }
+        } else {
+            NavigationLink {
+                ComicDetailView(comic: comic)
+            } label: {
+                ContinueReadingCard(comic: comic)
+            }
+        }
     }
 }
 

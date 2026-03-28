@@ -7,17 +7,18 @@ struct RootView: View {
     @State private var appState = AppState()
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Group {
-                switch appState.activeTab {
-                case .comic:
-                    ComicTabView(onSwitchTab: { appState.activeTab = .fanfic })
-                case .fanfic:
-                    FanficTabView(onSwitchTab: { appState.activeTab = .comic })
+        DebugShakeDetector {
+            ZStack(alignment: .bottom) {
+                Group {
+                    switch appState.activeTab {
+                    case .comic:
+                        ComicTabView(onSwitchTab: { appState.activeTab = .fanfic })
+                    case .fanfic:
+                        FanficTabView(onSwitchTab: { appState.activeTab = .comic })
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
         }
         .environment(appState)
         .preferredColorScheme(.dark)

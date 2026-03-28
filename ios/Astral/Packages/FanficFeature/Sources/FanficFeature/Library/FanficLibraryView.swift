@@ -117,12 +117,8 @@ private struct FanficContinueReadingStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(fanfics) { fanfic in
-                        NavigationLink {
-                            FanficDetailView(fanfic: fanfic)
-                        } label: {
-                            FanficContinueCard(fanfic: fanfic)
-                        }
-                        .buttonStyle(PressButtonStyle(scale: 0.94))
+                        FanficContinueCardLink(fanfic: fanfic)
+                            .buttonStyle(PressButtonStyle(scale: 0.94))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -130,6 +126,41 @@ private struct FanficContinueReadingStrip: View {
             }
         }
         .padding(.bottom, 16)
+    }
+}
+
+private struct FanficContinueCardLink: View {
+    let fanfic: LocalFanfic
+    @Query private var chapters: [LocalFanficChapter]
+
+    init(fanfic: LocalFanfic) {
+        self.fanfic = fanfic
+        let fanficId = fanfic.id
+        _chapters = Query(
+            filter: #Predicate<LocalFanficChapter> { $0.fanficId == fanficId },
+            sort: \LocalFanficChapter.chapterNumber
+        )
+    }
+
+    private var nextChapter: LocalFanficChapter? {
+        let lastRead = Double(fanfic.lastReadChapterNumber)
+        return chapters.first { $0.chapterNumber > lastRead } ?? chapters.first
+    }
+
+    var body: some View {
+        if let chapter = nextChapter, !chapters.isEmpty {
+            NavigationLink {
+                FanficReaderView(fanfic: fanfic, chapter: chapter)
+            } label: {
+                FanficContinueCard(fanfic: fanfic)
+            }
+        } else {
+            NavigationLink {
+                FanficDetailView(fanfic: fanfic)
+            } label: {
+                FanficContinueCard(fanfic: fanfic)
+            }
+        }
     }
 }
 

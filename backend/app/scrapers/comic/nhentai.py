@@ -38,10 +38,15 @@ class NhentaiScraper(BaseScraper):
     request_delay_seconds = 1.5
     max_retries = 3
 
+    # Cache parsed gallery JSON to avoid double-fetching the same URL.
+    # nhentai blocks repeated requests; metadata + pages both need the same data.
+    _gallery_cache: dict | None = None
+
     async def get_story_metadata(self, url: str) -> StoryMetadata:
         gallery_id = _gallery_id(url)
         html = await self._fetch(f"https://nhentai.net/g/{gallery_id}/")
         gallery = _parse_gallery(html)
+        self._gallery_cache = gallery
 
         titles = gallery.get("title", {})
         title = (
@@ -87,9 +92,14 @@ class NhentaiScraper(BaseScraper):
         return [ChapterInfo(chapter_number=1.0, source_url=story_url, title="Gallery")]
 
     async def get_chapter_pages(self, chapter_url: str) -> list[PageInfo]:
-        gallery_id = _gallery_id(chapter_url)
-        html = await self._fetch(f"https://nhentai.net/g/{gallery_id}/")
-        gallery = _parse_gallery(html)
+        # Reuse cached gallery data from get_story_metadata() to avoid a second
+        # request that nhentai blocks (anti-scraping).
+        if self._gallery_cache:
+            gallery = self._gallery_cache
+        else:
+            gallery_id = _gallery_id(chapter_url)
+            html = await self._fetch(f"https://nhentai.net/g/{gallery_id}/")
+            gallery = _parse_gallery(html)
 
         media_id = gallery["media_id"]
         raw_pages = gallery["images"]["pages"]
