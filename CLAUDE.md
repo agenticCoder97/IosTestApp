@@ -97,8 +97,24 @@ Update docs when these change:
 
 ## Branch and Git Rules
 
-- The god branch is `release-1`. All feature and fix branches must be branched from `release-1` and merged back via PR.
-- Never push directly to `release-1`.
-- Use the assigned feature branch.
+```
+main                    ← production releases (god branch, protected)
+└── production          ← release candidates, tested and stable
+    └── release-1       ← current sprint integration
+        └── development ← daily work, feature branches merge here via PR
+```
+
+- `main` is the god branch. Protected — only merged from `production`.
+- `production` ← merged from `release-1` at end of sprint.
+- `release-1` ← merged from `development` when features are stable.
+- `development` ← all feature/fix branches branch from here and merge back via PR.
+- Never push directly to `main`, `production`, or `release-1`.
+- Feature branches: `feature/{name}`, `fix/{description}`, `chore/{task}`
 - Do not force-push without explicit approval.
 - Do not commit `.env` files or secrets.
+
+### Device targeting (no separate branches needed)
+- **Simulator**: `#if targetEnvironment(simulator)` → `localhost:8000`
+- **Physical device (debug)**: `#else` in DEBUG → Mac's WiFi IP (`192.168.0.108:8000`)
+- **Production (release)**: `#else` → `astral-reader.duckdns.org`
+- Change the device IP in `AppConfig.swift` if your Mac's IP changes.
