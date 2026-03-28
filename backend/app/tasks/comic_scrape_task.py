@@ -160,19 +160,32 @@ async def comic_scrape_task(ctx, job_id: str):
                 ).order_by(ComicChapter.chapter_number)
             )
             chapters_to_scrape = pending_result.scalars().all()
-            logger.info("comic_scrape_task chapters to scrape | job_id=%s count=%d", job_id, len(chapters_to_scrape))
+            total_chapters = len(chapters_to_scrape)
+            logger.info("comic_scrape_task chapters queued | job_id=%s count=%d", job_id, total_chapters)
 
             # ── Per-chapter scrape ──────────────────────────────────────────
-            for chapter in chapters_to_scrape:
+            for ch_idx, chapter in enumerate(chapters_to_scrape, start=1):
                 ch_label = f"chapter_{int(chapter.chapter_number)}"
                 job.current_step = ch_label
                 ch_start = time.perf_counter()
+                logger.info(
+                    "comic_scrape_task chapter start | job_id=%s chapter=%.1f [%d/%d] url=%s",
+                    job_id, chapter.chapter_number, ch_idx, total_chapters, chapter.source_url,
+                )
 
                 try:
                     pages = await scraper.get_chapter_pages(chapter.source_url)
+                    logger.info(
+                        "comic_scrape_task pages found | job_id=%s chapter=%.1f [%d/%d] pages=%d",
+                        job_id, chapter.chapter_number, ch_idx, total_chapters, len(pages),
+                    )
 
-                    for page_info in pages:
+                    for pg_idx, page_info in enumerate(pages, start=1):
                         dest_path = f"comics/{job.story_id}/{chapter.id}/page_{page_info.page_number:04d}.jpg"
+                        logger.debug(
+                            "comic_scrape_task downloading | job_id=%s chapter=%.1f page=%d/%d url=%s",
+                            job_id, chapter.chapter_number, pg_idx, len(pages), page_info.source_url,
+                        )
                         file_path = await scraper.download_image(page_info.source_url, dest_path)
 
                         existing_page = await db.execute(
@@ -202,8 +215,10 @@ async def comic_scrape_task(ctx, job_id: str):
                              f"Scraped {len(pages)} pages",
                              duration_ms=dur, chapter_number=chapter.chapter_number)
                     await db.commit()
-                    logger.info("comic_scrape_task chapter ok | job_id=%s chapter=%.1f pages=%d",
-                                job_id, chapter.chapter_number, len(pages))
+                    logger.info(
+                        "comic_scrape_task chapter ok | job_id=%s chapter=%.1f [%d/%d] pages=%d elapsed_ms=%d",
+                        job_id, chapter.chapter_number, ch_idx, total_chapters, len(pages), dur,
+                    )
 
                 except CookieExpiredError:
                     chapter.scrape_status = ScrapeStatus.FAILED
@@ -216,8 +231,10 @@ async def comic_scrape_task(ctx, job_id: str):
                              error_type="CookieExpiredError", duration_ms=dur,
                              chapter_number=chapter.chapter_number)
                     await db.commit()
-                    logger.error("comic_scrape_task cookie expired | job_id=%s chapter=%.1f",
-                                 job_id, chapter.chapter_number)
+                    logger.error(
+                        "comic_scrape_task cookie expired | job_id=%s chapter=%.1f [%d/%d] — stopping",
+                        job_id, chapter.chapter_number, ch_idx, total_chapters,
+                    )
                     break
 
                 except Exception as e:
@@ -231,8 +248,12 @@ async def comic_scrape_task(ctx, job_id: str):
                              error_type=type(e).__name__, duration_ms=dur,
                              chapter_number=chapter.chapter_number)
                     await db.commit()
-                    logger.error("comic_scrape_task chapter failed | job_id=%s chapter=%.1f error=%s",
-                                 job_id, chapter.chapter_number, e)
+                    logger.error(
+                        "comic_scrape_task chapter failed | job_id=%s chapter=%.1f [%d/%d] "
+                        "error=%s elapsed_ms=%d",
+                        job_id, chapter.chapter_number, ch_idx, total_chapters, e, dur,
+                        exc_info=True,
+                    )
 
         except CookieExpiredError:
             job.status = JobStatus.FAILED

@@ -62,42 +62,58 @@ class BaseScraper(ABC):
     request_delay_seconds: float = 1.0
     max_retries: int = 3
 
+    # In-process cookie cache — populated on first call, lives for the scraper
+    # instance lifetime (one task run). Invalidated on 403 so a fresh Redis
+    # read is forced after the iOS browser refreshes the session.
+    _cookie_cache: tuple[list[dict], str] | None = None
+
     async def _get_cookies(self) -> tuple[list[dict], str]:
-        """Load cookies and user_agent from Redis for this source_key."""
-        logger.debug("_get_cookies loading | source_key=%s", self.source_key)
+        """Load cookies and user_agent from Redis, cached for this scraper instance."""
+        if self._cookie_cache is not None:
+            logger.debug("_get_cookies cache hit | source_key=%s cookies=%d",
+                         self.source_key, len(self._cookie_cache[0]))
+            return self._cookie_cache
+
+        logger.debug("_get_cookies loading from Redis | source_key=%s", self.source_key)
         r = await aioredis.from_url(settings.redis_url)
         try:
             raw = await r.get(f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}")
             if not raw:
-                logger.warning("_get_cookies no cached cookies found | source_key=%s", self.source_key)
-                return [], "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)"
-            data = json.loads(raw)
-            cookies = data.get("cookies", [])
-            logger.info("_get_cookies loaded %d cookies | source_key=%s", len(cookies), self.source_key)
-            return cookies, data.get("user_agent", "")
+                # Expected for sources that don't require cookies (e.g. nhentai public).
+                # Logged at DEBUG only — this appears hundreds of times per job otherwise.
+                logger.debug("_get_cookies no cached cookies | source_key=%s (proceeding without)",
+                             self.source_key)
+                result = ([], "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)")
+            else:
+                data = json.loads(raw)
+                cookies = data.get("cookies", [])
+                user_agent = data.get("user_agent", "")
+                logger.info("_get_cookies loaded %d cookies | source_key=%s ua=%s",
+                            len(cookies), self.source_key, user_agent[:40] if user_agent else "none")
+                result = (cookies, user_agent)
+            self._cookie_cache = result
+            return result
         finally:
             await r.aclose()
 
     async def _fetch(self, url: str) -> str:
         """
-        Rate-limited fetch with backoff using curl_cffi for TLS impersonation.
-        Impersonates Safari 17.2 so Cloudflare's JA3/JA4 fingerprint checks pass
-        without a real browser.  Any cached cookies from iOS (cf_clearance etc.)
-        are still forwarded and act as a session-continuity boost.
+        Rate-limited fetch with retry + exponential backoff using curl_cffi for TLS
+        impersonation.
 
-        403 → CookieExpiredError (caller returns 428 to iOS).
+        403 → CookieExpiredError (invalidates cookie cache; caller returns 428 to iOS).
         429/503/52x → exponential backoff with jitter.
         max_retries exhausted → ScraperError.
         """
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
 
-        logger.info("_fetch starting | url=%s delay=%.1fs cookies=%d",
-                    url, self.request_delay_seconds, len(cookies))
+        logger.debug("_fetch starting | url=%s delay=%.1fs cookies=%d",
+                     url, self.request_delay_seconds, len(cookies))
         await asyncio.sleep(self.request_delay_seconds)
 
         for attempt in range(self.max_retries):
-            logger.info("_fetch attempt %d/%d | url=%s", attempt + 1, self.max_retries, url)
+            logger.debug("_fetch attempt %d/%d | url=%s", attempt + 1, self.max_retries, url)
             try:
                 async with CurlSession(impersonate=_CF_IMPERSONATE) as session:
                     response = await session.get(
@@ -108,10 +124,12 @@ class BaseScraper(ABC):
                     )
 
                 if response.status_code == 200:
-                    logger.info("_fetch success | url=%s status=200 attempt=%d", url, attempt + 1)
+                    logger.debug("_fetch ok | url=%s bytes=%d attempt=%d",
+                                 url, len(response.content), attempt + 1)
                     return response.text
                 elif response.status_code == 403:
-                    logger.error("_fetch 403 Cloudflare/auth blocked | url=%s", url)
+                    self._cookie_cache = None  # force re-read from Redis on next call
+                    logger.error("_fetch 403 blocked | url=%s — cookies invalidated", url)
                     raise CookieExpiredError(
                         f"403 from {url} — Cloudflare blocked or session expired. "
                         "Open the site in the iOS browser to refresh cookies, then retry."
@@ -123,7 +141,7 @@ class BaseScraper(ABC):
                     except ValueError:
                         wait = (2 ** attempt) + random.uniform(0, 1)
                     logger.warning(
-                        "_fetch %d backoff | url=%s wait=%.1fs attempt=%d/%d",
+                        "_fetch %d rate-limited | url=%s wait=%.1fs attempt=%d/%d",
                         response.status_code, url, wait, attempt + 1, self.max_retries,
                     )
                     await asyncio.sleep(wait)
@@ -136,7 +154,7 @@ class BaseScraper(ABC):
                 raise
             except Exception as e:
                 if attempt == self.max_retries - 1:
-                    logger.error("_fetch max retries exhausted | url=%s error=%s", url, e)
+                    logger.error("_fetch max retries exhausted | url=%s error=%s", url, e, exc_info=True)
                     err_msg = str(e) if str(e) else type(e).__name__
                     raise ScraperError(f"Failed after {self.max_retries} attempts: {err_msg}") from e
                 wait = (2 ** attempt) + random.uniform(0, 1)
@@ -152,7 +170,7 @@ class BaseScraper(ABC):
     async def download_image(self, url: str, dest_path: str) -> str:
         """Download image to dest_path. Returns file_path (relative to block volume)."""
         from pathlib import Path
-        logger.info("download_image starting | url=%s dest_path=%s", url, dest_path)
+        logger.debug("download_image | url=%s -> %s", url, dest_path)
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
 
@@ -165,13 +183,21 @@ class BaseScraper(ABC):
                 headers={"User-Agent": user_agent} if user_agent else {},
                 timeout=90,
             )
-            response.raise_for_status()
+
+        if response.status_code == 403:
+            self._cookie_cache = None
+            logger.error("download_image 403 blocked | url=%s — cookies invalidated", url)
+            raise CookieExpiredError(f"403 downloading image from {url}")
+
+        if response.status_code != 200:
+            logger.error("download_image failed | url=%s status=%d", url, response.status_code)
+            raise ScraperError(f"HTTP {response.status_code} downloading image from {url}")
 
         full_path = Path(settings.block_volume_path) / dest_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_bytes(response.content)
         file_size = len(response.content)
-        logger.info("download_image complete | url=%s dest_path=%s size_bytes=%d", url, dest_path, file_size)
+        logger.debug("download_image saved | dest=%s size_bytes=%d", dest_path, file_size)
         return dest_path
 
     @abstractmethod

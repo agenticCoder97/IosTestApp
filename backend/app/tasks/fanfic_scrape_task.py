@@ -159,13 +159,18 @@ async def fanfic_scrape_task(ctx, job_id: str):
                 ).order_by(FanficChapter.chapter_number)
             )
             chapters_to_scrape = pending_result.scalars().all()
-            logger.info("fanfic_scrape_task chapters to scrape | job_id=%s count=%d", job_id, len(chapters_to_scrape))
+            total_chapters = len(chapters_to_scrape)
+            logger.info("fanfic_scrape_task chapters queued | job_id=%s count=%d", job_id, total_chapters)
 
             # ── Per-chapter scrape ──────────────────────────────────────────
-            for chapter in chapters_to_scrape:
+            for ch_idx, chapter in enumerate(chapters_to_scrape, start=1):
                 ch_label = f"chapter_{int(chapter.chapter_number)}"
                 job.current_step = ch_label
                 ch_start = time.perf_counter()
+                logger.info(
+                    "fanfic_scrape_task chapter start | job_id=%s chapter=%.1f [%d/%d] url=%s",
+                    job_id, chapter.chapter_number, ch_idx, total_chapters, chapter.source_url,
+                )
 
                 try:
                     text = await scraper.get_chapter_text(chapter.source_url)
@@ -178,8 +183,11 @@ async def fanfic_scrape_task(ctx, job_id: str):
                              f"Scraped {chapter.word_count} words",
                              duration_ms=dur, chapter_number=chapter.chapter_number)
                     await db.commit()
-                    logger.info("fanfic_scrape_task chapter ok | job_id=%s chapter=%.1f words=%d",
-                                job_id, chapter.chapter_number, chapter.word_count)
+                    logger.info(
+                        "fanfic_scrape_task chapter ok | job_id=%s chapter=%.1f [%d/%d] words=%d elapsed_ms=%d",
+                        job_id, chapter.chapter_number, ch_idx, total_chapters,
+                        chapter.word_count, dur,
+                    )
 
                 except CookieExpiredError:
                     chapter.scrape_status = ScrapeStatus.FAILED
@@ -192,8 +200,10 @@ async def fanfic_scrape_task(ctx, job_id: str):
                              error_type="CookieExpiredError", duration_ms=dur,
                              chapter_number=chapter.chapter_number)
                     await db.commit()
-                    logger.error("fanfic_scrape_task cookie expired | job_id=%s chapter=%.1f",
-                                 job_id, chapter.chapter_number)
+                    logger.error(
+                        "fanfic_scrape_task cookie expired | job_id=%s chapter=%.1f [%d/%d] — stopping",
+                        job_id, chapter.chapter_number, ch_idx, total_chapters,
+                    )
                     break
 
                 except Exception as e:
@@ -207,8 +217,12 @@ async def fanfic_scrape_task(ctx, job_id: str):
                              error_type=type(e).__name__, duration_ms=dur,
                              chapter_number=chapter.chapter_number)
                     await db.commit()
-                    logger.error("fanfic_scrape_task chapter failed | job_id=%s chapter=%.1f error=%s",
-                                 job_id, chapter.chapter_number, e)
+                    logger.error(
+                        "fanfic_scrape_task chapter failed | job_id=%s chapter=%.1f [%d/%d] "
+                        "error=%s elapsed_ms=%d",
+                        job_id, chapter.chapter_number, ch_idx, total_chapters, e, dur,
+                        exc_info=True,
+                    )
 
         except CookieExpiredError:
             job.status = JobStatus.FAILED
