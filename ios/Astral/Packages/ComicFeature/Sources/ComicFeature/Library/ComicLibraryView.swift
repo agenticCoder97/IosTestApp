@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
 
 struct ComicLibraryView: View {
     var filterFavourites: Bool
@@ -22,7 +23,8 @@ struct ComicLibraryView: View {
     ]
 
     private var displayedComics: [LocalComic] {
-        filterFavourites ? allComics.filter { $0.isFavorite } : allComics
+        let ready = allComics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
+        return filterFavourites ? ready.filter { $0.isFavorite } : ready
     }
 
     private var inProgressComics: [LocalComic] {
@@ -61,6 +63,13 @@ struct ComicLibraryView: View {
                             }
                             .buttonStyle(PressButtonStyle())
                             .staggeredAppear(index: index)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    deleteComic(comic)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -71,6 +80,12 @@ struct ComicLibraryView: View {
         }
         .background(AstralColors.background)
         .task { await viewModel.fetchComics(modelContext: modelContext) }
+    }
+
+    private func deleteComic(_ comic: LocalComic) {
+        Task { try? await APIClient.shared.requestVoid(.deleteComic(id: comic.id)) }
+        modelContext.delete(comic)
+        try? modelContext.save()
     }
 }
 

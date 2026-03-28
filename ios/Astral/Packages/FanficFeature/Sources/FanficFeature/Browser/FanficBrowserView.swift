@@ -240,13 +240,15 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         viewModel.webView = webView
         ContentBlocker.shared.apply(to: webView)
+        webView.load(URLRequest(url: viewModel.sourceURL))
+        context.coordinator.loadedSource = viewModel.selectedSource
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        let request = URLRequest(url: viewModel.sourceURL)
-        if webView.url != viewModel.sourceURL {
-            webView.load(request)
+        if context.coordinator.loadedSource != viewModel.selectedSource {
+            context.coordinator.loadedSource = viewModel.selectedSource
+            webView.load(URLRequest(url: viewModel.sourceURL))
         }
     }
 
@@ -256,9 +258,11 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
 
     class Coordinator: NSObject, WKNavigationDelegate {
         let viewModel: FanficBrowserViewModel
+        var loadedSource: FanficSource
 
         init(viewModel: FanficBrowserViewModel) {
             self.viewModel = viewModel
+            self.loadedSource = viewModel.selectedSource
         }
 
         func webView(

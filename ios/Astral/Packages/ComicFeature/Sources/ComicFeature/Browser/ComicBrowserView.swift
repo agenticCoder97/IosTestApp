@@ -238,13 +238,16 @@ struct WebViewRepresentable: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         viewModel.webView = webView
         ContentBlocker.shared.apply(to: webView)
+        webView.load(URLRequest(url: viewModel.sourceURL))
+        context.coordinator.loadedSource = viewModel.selectedSource
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        let request = URLRequest(url: viewModel.sourceURL)
-        if webView.url != viewModel.sourceURL {
-            webView.load(request)
+        // Only reload when the user switches source tabs — not on every view update
+        if context.coordinator.loadedSource != viewModel.selectedSource {
+            context.coordinator.loadedSource = viewModel.selectedSource
+            webView.load(URLRequest(url: viewModel.sourceURL))
         }
     }
 
@@ -254,9 +257,11 @@ struct WebViewRepresentable: UIViewRepresentable {
 
     class Coordinator: NSObject, WKNavigationDelegate {
         let viewModel: ComicBrowserViewModel
+        var loadedSource: ComicSource
 
         init(viewModel: ComicBrowserViewModel) {
             self.viewModel = viewModel
+            self.loadedSource = viewModel.selectedSource
         }
 
         func webView(

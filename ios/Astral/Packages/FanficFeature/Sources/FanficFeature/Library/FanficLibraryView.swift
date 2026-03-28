@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
 
 struct FanficLibraryView: View {
     @Binding var searchText: String
@@ -29,9 +30,10 @@ struct FanficLibraryView: View {
     }
 
     private var filteredFanfics: [LocalFanfic] {
-        var result = filterFavourites
-            ? allFanfics.filter { $0.isFavorite }
-            : allFanfics
+        var result = allFanfics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
+        if filterFavourites {
+            result = result.filter { $0.isFavorite }
+        }
 
         if !searchText.isEmpty {
             result = result.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
@@ -74,6 +76,13 @@ struct FanficLibraryView: View {
                             }
                             .buttonStyle(PressButtonStyle())
                             .staggeredAppear(index: index)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    deleteFanfic(fanfic)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -100,7 +109,14 @@ struct FanficLibraryView: View {
             }
         }
     }
+
+    private func deleteFanfic(_ fanfic: LocalFanfic) {
+        Task { try? await APIClient.shared.requestVoid(.deleteFanfic(id: fanfic.id)) }
+        modelContext.delete(fanfic)
+        try? modelContext.save()
+    }
 }
+
 
 // MARK: - Continue Reading Strip
 
