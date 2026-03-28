@@ -302,6 +302,7 @@ struct FanficReaderView: View {
     }
 
     private func loadChapter() async {
+        AstralLogger.info("loadChapter: ch \(chapter.chapterNumber) (id=\(chapter.id)) for '\(fanfic.title)'", context: "FanficReader")
         if let previewContent {
             chapterContent = previewContent
             isLoading = false
@@ -312,8 +313,10 @@ struct FanficReaderView: View {
                 .fanficChapter(fanficId: fanfic.id, chapterId: chapter.id)
             )
             chapterContent = response.content ?? ""
+            AstralLogger.info("loadChapter: got \(chapterContent.count) chars", context: "FanficReader")
         } catch {
             chapterContent = "Failed to load chapter."
+            AstralLogger.error("loadChapter failed: \(error)", context: "FanficReader")
         }
         isLoading = false
     }

@@ -596,7 +596,13 @@ struct ComicReaderView: View {
         currentPage = 0
         scrolledPageID = 0
 
-        guard let chapter = currentChapter else { isLoading = false; return }
+        guard let chapter = currentChapter else {
+            AstralLogger.warning("loadPages: no currentChapter at index \(currentChapterIndex)", context: "ComicReader")
+            isLoading = false
+            return
+        }
+
+        AstralLogger.info("loadPages: chapter \(chapter.chapterNumber) (id=\(chapter.id)) for comic '\(comic.title)'", context: "ComicReader")
 
         // Persist reading progress
         comic.lastReadChapterNumber = Int(chapter.chapterNumber)
@@ -617,8 +623,9 @@ struct ComicReaderView: View {
                 .chapterPages(comicId: comic.id, chapterId: chapter.id)
             )
             pages = applyPageSkip(response)
+            AstralLogger.info("loadPages: got \(pages.count) pages", context: "ComicReader")
         } catch {
-            // pages stays empty → shows empty state
+            AstralLogger.error("loadPages failed: \(error)", context: "ComicReader")
         }
         isLoading = false
     }
