@@ -11,3 +11,4 @@ class WorkerSettings:
     cron_jobs = [cron(cleanup_task, hour=3, minute=0)]
     max_jobs = settings.arq_max_jobs
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    job_timeout = 3600  # 1 hour — multi-chapter comics with 2s/image delays can easily exceed 300s

@@ -263,6 +263,22 @@ async def comic_scrape_task(ctx, job_id: str):
                          job_id, job.error_message, total_elapsed, exc_info=True)
             return
 
+        except BaseException as e:
+            # CancelledError from ARQ timeout — BaseException is not caught by except Exception
+            job.status = JobStatus.FAILED
+            job.error_message = f"Job interrupted: {type(e).__name__}"
+            job.last_error_type = type(e).__name__
+            job.current_step = "failed"
+            job.completed_at = datetime.now(timezone.utc)
+            try:
+                import asyncio
+                await asyncio.shield(db.commit())
+            except Exception:
+                pass
+            logger.error("comic_scrape_task cancelled/interrupted | job_id=%s type=%s",
+                         job_id, type(e).__name__)
+            raise
+
         job.status = JobStatus.COMPLETE if job.chapters_failed == 0 else JobStatus.PARTIAL
         job.current_step = "done"
         job.completed_at = datetime.now(timezone.utc)
