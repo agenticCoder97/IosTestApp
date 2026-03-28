@@ -34,6 +34,16 @@ struct FanficDetailView: View {
                         .padding(.top, 8)
                 }
 
+                // Continue Reading
+                if !chapters.isEmpty {
+                    FanficContinueReadingButton(
+                        chapters: Array(chapters),
+                        lastReadChapterNumber: fanfic.lastReadChapterNumber,
+                        fanfic: fanfic
+                    )
+                    .padding(.horizontal, 16)
+                }
+
                 // Bookmarks
                 if !bookmarks.isEmpty {
                     FanficBookmarksSection(bookmarks: bookmarks, onDelete: deleteBookmark)
@@ -58,6 +68,7 @@ struct FanficDetailView: View {
                                 FanficChapterRow(
                                     chapter: chapter,
                                     isLastRead: chapter.chapterNumber == Double(fanfic.lastReadChapterNumber),
+                                    isRead: chapter.chapterNumber < Double(fanfic.lastReadChapterNumber),
                                     isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
                                 )
                             }
@@ -228,7 +239,12 @@ private struct FanficBookmarksSection: View {
 private struct FanficChapterRow: View {
     let chapter: LocalFanficChapter
     let isLastRead: Bool
+    let isRead: Bool
     let isBookmarked: Bool
+
+    private var textColor: Color {
+        isRead ? AstralColors.muted : AstralColors.white
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -236,7 +252,7 @@ private struct FanficChapterRow: View {
                 HStack(spacing: 8) {
                     Text(chapterLabel)
                         .font(AstralTypography.bodyMedium)
-                        .foregroundStyle(AstralColors.white)
+                        .foregroundStyle(textColor)
 
                     if isLastRead {
                         Text("Last Read")
@@ -295,9 +311,15 @@ private struct FanficChapterRow: View {
     private func statusIcon(for status: String) -> some View {
         switch status {
         case "scraped":
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(AstralColors.muted)
+            if isRead {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(AstralColors.muted)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(AstralColors.muted)
+            }
         case "pending":
             Image(systemName: "clock")
                 .foregroundStyle(AstralColors.muted)
@@ -306,6 +328,94 @@ private struct FanficChapterRow: View {
                 .foregroundStyle(AstralColors.error)
         default:
             EmptyView()
+        }
+    }
+}
+
+// MARK: - Continue Reading Button
+
+private struct FanficContinueReadingButton: View {
+    let chapters: [LocalFanficChapter]
+    let lastReadChapterNumber: Int
+    let fanfic: LocalFanfic
+
+    private enum ReadingState {
+        case start(LocalFanficChapter)
+        case continueReading(LocalFanficChapter)
+        case readAgain(LocalFanficChapter)
+    }
+
+    private var readingState: ReadingState? {
+        guard let firstChapter = chapters.first else { return nil }
+        if lastReadChapterNumber == 0 {
+            return .start(firstChapter)
+        }
+        if let next = chapters.first(where: { $0.chapterNumber > Double(lastReadChapterNumber) }) {
+            return .continueReading(next)
+        }
+        return .readAgain(firstChapter)
+    }
+
+    var body: some View {
+        if let state = readingState {
+            NavigationLink {
+                FanficReaderView(fanfic: fanfic, chapter: targetChapter(for: state))
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: iconName(for: state))
+                    Text(label(for: state))
+                        .font(AstralTypography.bodyMedium)
+                }
+                .foregroundStyle(labelColor(for: state))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(backgroundColor(for: state))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.97))
+        }
+    }
+
+    private func targetChapter(for state: ReadingState) -> LocalFanficChapter {
+        switch state {
+        case .start(let ch), .continueReading(let ch), .readAgain(let ch): return ch
+        }
+    }
+
+    private func iconName(for state: ReadingState) -> String {
+        switch state {
+        case .start: return "book.fill"
+        case .continueReading: return "arrow.right.circle.fill"
+        case .readAgain: return "arrow.counterclockwise"
+        }
+    }
+
+    private func label(for state: ReadingState) -> String {
+        switch state {
+        case .start(let ch):
+            let num = ch.chapterNumber
+            let formatted = num.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(num))" : "\(num)"
+            return "Start Reading — Ch. \(formatted)"
+        case .continueReading(let ch):
+            let num = ch.chapterNumber
+            let formatted = num.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(num))" : "\(num)"
+            return "Continue — Ch. \(formatted)"
+        case .readAgain:
+            return "Read Again — Ch. 1"
+        }
+    }
+
+    private func backgroundColor(for state: ReadingState) -> Color {
+        switch state {
+        case .start, .continueReading: return AstralColors.gold
+        case .readAgain: return AstralColors.elevated
+        }
+    }
+
+    private func labelColor(for state: ReadingState) -> Color {
+        switch state {
+        case .start, .continueReading: return .black
+        case .readAgain: return AstralColors.muted
         }
     }
 }
