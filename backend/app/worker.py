@@ -2,10 +2,13 @@ import logging
 from arq import cron
 from arq.connections import RedisSettings
 from app.core.config import settings
+from app.core.logging_config import configure_logging
 from app.tasks.comic_scrape_task import comic_scrape_task
 from app.tasks.fanfic_scrape_task import fanfic_scrape_task
 from app.tasks.cleanup_task import cleanup_task
 
+# Configure logging at import time — arq starts via CLI so main.py never runs
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
