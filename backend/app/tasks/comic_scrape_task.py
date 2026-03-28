@@ -139,10 +139,11 @@ async def comic_scrape_task(ctx, job_id: str):
                         select(ComicAuthor).where(
                             ComicAuthor.comic_id == comic.id,
                             ComicAuthor.author_id == author.id,
+                            ComicAuthor.role == "artist",
                         )
                     )
                     if not existing_ca.scalar_one_or_none():
-                        db.add(ComicAuthor(comic_id=comic.id, author_id=author.id))
+                        db.add(ComicAuthor(comic_id=comic.id, author_id=author.id, role="artist"))
 
                 # ── Tags ───────────────────────────────────────────────
                 for tag_dict in metadata.tags:

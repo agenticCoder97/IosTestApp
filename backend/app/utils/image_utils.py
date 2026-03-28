@@ -1,7 +1,7 @@
 import logging
 import random
 from pathlib import Path
-from typing import Optional, tuple
+from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
