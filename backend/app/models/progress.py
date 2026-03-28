@@ -19,4 +19,4 @@ class ReadingProgress(Base):
     last_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     last_page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     scroll_offset_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

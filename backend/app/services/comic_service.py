@@ -85,6 +85,7 @@ async def list_comics(
     base_query = base_query.options(
         selectinload(Comic.comic_authors).selectinload(ComicAuthor.author),
         selectinload(Comic.comic_tags).selectinload(ComicTag.tag),
+        selectinload(Comic.chapters),
     ).offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(base_query)
@@ -93,7 +94,7 @@ async def list_comics(
     logger.info("list_comics returning %d items for page %d", len(comics), page)
     total_pages = ceil(total / page_size) if total > 0 else 1
     return PaginatedResponse(
-        items=[_comic_to_schema(c) for c in comics],
+        items=[_comic_to_schema(c, include_chapters=True) for c in comics],
         total=total,
         page=page,
         page_size=page_size,

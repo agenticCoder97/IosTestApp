@@ -7,10 +7,10 @@ from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.scrape import ScrapeJob
+from app.models.scrape import ScrapeJob, ScrapeLog
 from app.models.comic import Comic
 from app.models.fanfic import Fanfic
-from app.schemas.scrape import ScrapeRequest, ScrapeJobResponse
+from app.schemas.scrape import ScrapeRequest, ScrapeJobResponse, ScrapeLogEntry
 from app.schemas.shared import PaginatedResponse
 from app.core.config import settings
 from app.core.constants import JobStatus, JobType
@@ -32,6 +32,8 @@ def _job_to_schema(job: ScrapeJob) -> ScrapeJobResponse:
         chapters_scraped=job.chapters_scraped,
         chapters_failed=job.chapters_failed,
         error_message=job.error_message,
+        current_step=job.current_step,
+        last_error_type=job.last_error_type,
         started_at=job.started_at,
         completed_at=job.completed_at,
         created_at=job.created_at,
@@ -209,6 +211,31 @@ async def retry_job(db: AsyncSession, job_id: uuid.UUID) -> ScrapeJobResponse:
         pass
 
     return _job_to_schema(retry_job)
+
+
+async def get_logs(db: AsyncSession, job_id: uuid.UUID) -> list[ScrapeLogEntry]:
+    logger.info("get_logs called | job_id=%s", job_id)
+    result = await db.execute(
+        select(ScrapeLog)
+        .where(ScrapeLog.job_id == job_id)
+        .order_by(ScrapeLog.timestamp.asc())
+    )
+    logs = result.scalars().all()
+    return [
+        ScrapeLogEntry(
+            id=log.id,
+            job_id=log.job_id,
+            timestamp=log.timestamp,
+            level=log.level,
+            step=log.step,
+            message=log.message,
+            error_type=log.error_type,
+            http_status=log.http_status,
+            duration_ms=log.duration_ms,
+            chapter_number=log.chapter_number,
+        )
+        for log in logs
+    ]
 
 
 async def delta_update(db: AsyncSession, story_id: uuid.UUID) -> ScrapeJobResponse:

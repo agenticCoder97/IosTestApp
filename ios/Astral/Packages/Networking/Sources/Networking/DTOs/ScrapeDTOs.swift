@@ -34,7 +34,22 @@ public struct ScrapeJobResponse: Codable, Sendable, Identifiable {
     public let chaptersScraped: Int
     public let chaptersFailed: Int
     public let errorMessage: String?
+    public let currentStep: String?
+    public let lastErrorType: String?
     public let startedAt: Date?
     public let completedAt: Date?
     public let createdAt: Date
+}
+
+public struct ScrapeLogEntry: Codable, Sendable, Identifiable {
+    public let id: UUID
+    public let jobId: UUID
+    public let timestamp: Date
+    public let level: String      // "info" | "warning" | "error"
+    public let step: String
+    public let message: String
+    public let errorType: String?
+    public let httpStatus: Int?
+    public let durationMs: Int?
+    public let chapterNumber: Double?
 }

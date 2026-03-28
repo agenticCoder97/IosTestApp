@@ -43,3 +43,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 3. Fanfic sidebar includes Scrapes view (missing from original doc)
 4. `fanfic_chapters.chapter_number` uses Double (was Integer in doc)
 5. `LocalAuthor` includes `updatedAt` (missing from doc)
+
+## Backend Notes
+
+- Backend lives in `backend/` — FastAPI + ARQ worker + Postgres + Redis, run via `docker-compose.local.yml`
+- Static files (comic page images, thumbnails) stored in `astral_media` Docker volume at `/mnt/astral-media`
+- FastAPI mounts `StaticFiles` at `/static` — iOS constructs URLs as `staticBaseURL + filePath`
+- `AppConfig.staticBaseURL` **must** end with a trailing `/` — no trailing slash causes `"/staticcomics/..."` 404s
+- curl_cffi impersonation: use `chrome120`, not `safari17_2` (unsupported in curl_cffi 0.7.4)
+- `ARQ_MAX_JOBS=3`, `SOFT_DELETE_DAYS=5`, `COOKIE_CACHE_TTL_SECS=86400` are standard env vars
+
+## SwiftData Gotchas
+
+- **Never name a `@Model` property `description`** — conflicts with `CustomStringConvertible`. Use `comicDescription`, `fanficDescription`, etc.
+- **Long press on a ZStack overlay blocks `ScrollView`** — use `.simultaneousGesture(LongPressGesture(...).onEnded { })` instead of `.onLongPressGesture` so the scroll and long-press recognizers coexist.
+- `scrollTargetBehavior(.paging)` + `scrollPosition(id:)` on a horizontal `ScrollView` + `LazyHStack` is the preferred paged reader pattern (smoother than `TabView(.page)`).
+- Reading progress (`lastReadChapterNumber`, `progressPercent`, `lastReadAt`) is written in `ComicReaderView.loadPages()` each time a chapter is opened — not debounced for local SwiftData writes.

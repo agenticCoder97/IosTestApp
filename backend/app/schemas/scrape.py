@@ -26,6 +26,22 @@ class ScrapeJobResponse(BaseModel):
     chapters_scraped: int
     chapters_failed: int
     error_message: Optional[str] = None
+    current_step: Optional[str] = None
+    last_error_type: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: datetime
+
+
+class ScrapeLogEntry(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: uuid.UUID
+    job_id: uuid.UUID
+    timestamp: datetime
+    level: str
+    step: str
+    message: str
+    error_type: Optional[str] = None
+    http_status: Optional[int] = None
+    duration_ms: Optional[int] = None
+    chapter_number: Optional[float] = None

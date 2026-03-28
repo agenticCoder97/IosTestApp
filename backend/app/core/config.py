@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     arq_max_jobs: int = 3
     soft_delete_days: int = 5
     cookie_cache_ttl_secs: int = 86400
+    log_level: str = "INFO"
 
     @property
     def oracle_wallet_dir(self) -> Optional[Path]:

@@ -12,7 +12,7 @@ def configure_logging() -> None:
     handler.setFormatter(logging.Formatter(fmt, datefmt=date_fmt))
 
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    root.setLevel(settings.log_level)
     root.handlers = [handler]
 
     # Quieten noisy third-party loggers

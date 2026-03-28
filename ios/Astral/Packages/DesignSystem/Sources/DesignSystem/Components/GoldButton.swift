@@ -36,7 +36,7 @@ public struct GoldButton: View {
             )
             .clipShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressButtonStyle(scale: 0.94))
     }
 }
 

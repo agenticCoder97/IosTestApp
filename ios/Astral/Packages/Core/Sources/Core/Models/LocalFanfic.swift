@@ -19,6 +19,15 @@ public final class LocalFanfic {
     public var progressPercent: Double
     public var addedAt: Date
 
+    // MARK: - Feature fields (additive — all optional/defaulted for migration safety)
+
+    /// Whether the user has starred this fanfic as a favourite.
+    public var isFavorite: Bool
+    /// Tracks the totalChapters count the user last saw, enabling new-chapter badges.
+    public var seenTotalChapters: Int
+    /// Updated when the user opens the detail view; drives "Continue Reading" sort order.
+    public var lastReadAt: Date?
+
     @Relationship(deleteRule: .cascade, inverse: \LocalFanficChapter.fanfic)
     public var chapters: [LocalFanficChapter]?
 
@@ -36,7 +45,10 @@ public final class LocalFanfic {
         lastReadChapterNumber: Int = 0,
         scrollOffsetPercent: Double? = nil,
         progressPercent: Double = 0.0,
-        addedAt: Date = .now
+        addedAt: Date = .now,
+        isFavorite: Bool = false,
+        seenTotalChapters: Int = 0,
+        lastReadAt: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -52,5 +64,19 @@ public final class LocalFanfic {
         self.scrollOffsetPercent = scrollOffsetPercent
         self.progressPercent = progressPercent
         self.addedAt = addedAt
+        self.isFavorite = isFavorite
+        self.seenTotalChapters = seenTotalChapters
+        self.lastReadAt = lastReadAt
+    }
+
+    /// Number of chapters added since the user last viewed the detail screen.
+    public var newChapterCount: Int {
+        max(0, totalChapters - seenTotalChapters)
+    }
+
+    /// Estimated words read based on progress and total word count.
+    public var estimatedWordsRead: Int {
+        guard let wc = wordCount, totalChapters > 0 else { return 0 }
+        return Int(Double(wc) * progressPercent)
     }
 }

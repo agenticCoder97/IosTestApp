@@ -21,9 +21,9 @@ class Comic(Base):
     language: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     scrape_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("scrape_jobs.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     chapters: Mapped[list["ComicChapter"]] = relationship("ComicChapter", back_populates="comic", lazy="select")
     comic_authors: Mapped[list["ComicAuthor"]] = relationship("ComicAuthor", back_populates="comic", lazy="select")
@@ -53,7 +53,7 @@ class Tag(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     tag_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class ComicTag(Base):
@@ -79,8 +79,8 @@ class ComicChapter(Base):
     source_url: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
     total_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     scrape_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     comic: Mapped["Comic"] = relationship("Comic", back_populates="chapters")
     pages: Mapped[list["Page"]] = relationship("Page", back_populates="chapter", lazy="select")

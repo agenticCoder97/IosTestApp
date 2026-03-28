@@ -1,22 +1,112 @@
+import re
+from bs4 import BeautifulSoup
 from app.scrapers.base import BaseScraper, StoryMetadata, ChapterInfo, PageInfo
 from app.core.constants import SourceKey
+
+
+def _work_id(url: str) -> str:
+    m = re.search(r"/works/(\d+)", url)
+    if not m:
+        raise ValueError(f"Cannot extract AO3 work ID from URL: {url}")
+    return m.group(1)
+
+
+def _adult(url: str) -> str:
+    """Append view_adult=true so mature works don't show the age gate."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}view_adult=true"
 
 
 class AO3Scraper(BaseScraper):
     source_key = SourceKey.AO3
     content_type = "fanfic"
-    requires_browser = False  # AO3 has no Cloudflare
-    request_delay_seconds = 2.0  # Strict AO3 rate limit
+    requires_browser = False
+    request_delay_seconds = 2.0  # AO3 rate-limit policy
     max_retries = 3
 
     async def get_story_metadata(self, url: str) -> StoryMetadata:
-        raise NotImplementedError
+        work_id = _work_id(url)
+        html = await self._fetch(_adult(f"https://archiveofourown.org/works/{work_id}"))
+        soup = BeautifulSoup(html, "lxml")
+
+        title_tag = soup.select_one("h2.title.heading")
+        title = title_tag.get_text(strip=True) if title_tag else "Unknown Title"
+
+        author_tags = soup.select("h3.byline.heading a[rel='author']")
+        authors = [a.get_text(strip=True) for a in author_tags]
+
+        summary_tag = soup.select_one(".summary blockquote")
+        description = summary_tag.get_text(separator="\n", strip=True) if summary_tag else None
+
+        # "3/10" or "3/?" or just "3"
+        chapters_dd = soup.select_one("dd.chapters")
+        total_chapters = None
+        if chapters_dd:
+            parts = chapters_dd.get_text(strip=True).split("/")
+            try:
+                total_chapters = int(parts[-1]) if parts[-1] != "?" else None
+            except ValueError:
+                pass
+
+        return StoryMetadata(
+            title=title,
+            source_url=url,
+            source_key=self.source_key,
+            source_id=work_id,
+            description=description,
+            authors=authors,
+            total_chapters=total_chapters,
+        )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:
-        raise NotImplementedError
+        work_id = _work_id(story_url)
+        html = await self._fetch(f"https://archiveofourown.org/works/{work_id}/navigate")
+        soup = BeautifulSoup(html, "lxml")
+
+        chapters = []
+        for idx, li in enumerate(soup.select("ol.chapter.index.group li"), start=1):
+            a = li.select_one("a")
+            if not a:
+                continue
+            href = a.get("href", "")
+            chapter_url = f"https://archiveofourown.org{href}" if href.startswith("/") else href
+            # Link text is "N. Chapter Title" — strip the leading number
+            raw_title = a.get_text(strip=True)
+            title = re.sub(r"^\d+\.\s*", "", raw_title)
+            chapters.append(ChapterInfo(
+                chapter_number=float(idx),
+                source_url=chapter_url,
+                title=title or f"Chapter {idx}",
+            ))
+
+        # Single-chapter works have no navigate page — fall back
+        if not chapters:
+            chapters.append(ChapterInfo(
+                chapter_number=1.0,
+                source_url=_adult(f"https://archiveofourown.org/works/{work_id}"),
+                title="Chapter 1",
+            ))
+
+        return chapters
 
     async def get_chapter_pages(self, chapter_url: str) -> list[PageInfo]:
-        raise NotImplementedError("ao3 is a fanfic source")
+        raise NotImplementedError("ao3 is a fanfic source — no pages")
 
     async def get_chapter_text(self, chapter_url: str) -> str:
-        raise NotImplementedError
+        html = await self._fetch(_adult(chapter_url))
+        soup = BeautifulSoup(html, "lxml")
+
+        content_div = soup.select_one("#chapters .userstuff") or soup.select_one(".userstuff")
+        if not content_div:
+            return ""
+
+        # Remove the landmark "Chapter Text" heading AO3 injects
+        for heading in content_div.select("h3.landmark"):
+            heading.decompose()
+
+        # Remove author end notes
+        for notes in content_div.select(".end-notes"):
+            notes.decompose()
+
+        paragraphs = [p.get_text(separator="\n", strip=True) for p in content_div.find_all("p")]
+        return "\n\n".join(p for p in paragraphs if p)

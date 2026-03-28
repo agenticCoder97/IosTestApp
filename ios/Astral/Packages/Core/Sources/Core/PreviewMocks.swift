@@ -53,7 +53,10 @@ public enum PreviewMocks {
             isDownloaded: false,
             lastReadChapterNumber: 45,
             progressPercent: 0.375,
-            addedAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 30)
+            addedAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 30),
+            isFavorite: true,
+            seenTotalChapters: 115,
+            lastReadAt: Date(timeIntervalSinceNow: -60 * 30)
         )
         return c
     }()
@@ -70,7 +73,9 @@ public enum PreviewMocks {
             isDownloaded: true,
             lastReadChapterNumber: 200,
             progressPercent: 1.0,
-            addedAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 7)
+            addedAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 7),
+            isFavorite: false,
+            seenTotalChapters: 200
         )
         return c
     }()
@@ -136,7 +141,10 @@ public enum PreviewMocks {
             lastReadChapterNumber: 12,
             scrollOffsetPercent: 0.62,
             progressPercent: 0.4,
-            addedAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 14)
+            addedAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 14),
+            isFavorite: true,
+            seenTotalChapters: 28,
+            lastReadAt: Date(timeIntervalSinceNow: -60 * 45)
         )
         return f
     }()
@@ -303,6 +311,41 @@ public enum PreviewMocks {
 
     // MARK: - Authors
 
+    // MARK: - Bookmarks
+
+    public static let comicBookmark1 = LocalBookmark(
+        id: UUID(uuidString: "77777777-0000-0000-0000-000000000001")!,
+        contentType: "comic",
+        storyId: IDs.comic1,
+        chapterNumber: 45,
+        pageNumber: 12,
+        note: "Epic fight scene here",
+        createdAt: Date(timeIntervalSinceNow: -60 * 60 * 2)
+    )
+
+    public static let comicBookmark2 = LocalBookmark(
+        id: UUID(uuidString: "77777777-0000-0000-0000-000000000002")!,
+        contentType: "comic",
+        storyId: IDs.comic1,
+        chapterNumber: 30,
+        pageNumber: 5,
+        createdAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 3)
+    )
+
+    public static let fanficBookmark1 = LocalBookmark(
+        id: UUID(uuidString: "77777777-0000-0000-0000-000000000003")!,
+        contentType: "fanfic",
+        storyId: IDs.fanfic1,
+        chapterNumber: 12,
+        scrollPercent: 0.62,
+        note: "Beautiful paragraph",
+        createdAt: Date(timeIntervalSinceNow: -60 * 20)
+    )
+
+    public static let sampleBookmarks: [LocalBookmark] = [comicBookmark1, comicBookmark2, fanficBookmark1]
+
+    // MARK: - Authors
+
     public static let author1 = LocalAuthor(
         id: IDs.author1,
         name: "Chugong",
@@ -347,7 +390,8 @@ extension ModelContainer {
         fanfics: [LocalFanfic] = [],
         fanficChapters: [LocalFanficChapter] = [],
         scrapeJobs: [LocalScrapeJob] = [],
-        authors: [LocalAuthor] = []
+        authors: [LocalAuthor] = [],
+        bookmarks: [LocalBookmark] = []
     ) -> ModelContainer {
         let schema = Schema([
             LocalComic.self,
@@ -357,6 +401,7 @@ extension ModelContainer {
             LocalScrapeJob.self,
             LocalAuthor.self,
             UserPreferences.self,
+            LocalBookmark.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         // swiftlint:disable:next force_try
@@ -368,6 +413,7 @@ extension ModelContainer {
         fanficChapters.forEach { context.insert($0) }
         scrapeJobs.forEach { context.insert($0) }
         authors.forEach { context.insert($0) }
+        bookmarks.forEach { context.insert($0) }
         return container
     }
 }

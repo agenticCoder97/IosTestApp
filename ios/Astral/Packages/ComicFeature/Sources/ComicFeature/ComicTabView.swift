@@ -18,13 +18,17 @@ public struct ComicTabView: View {
                 Group {
                     switch navigation.activeSection {
                     case .library:
-                        ComicLibraryView()
+                        ComicLibraryView(filterFavourites: false)
+                    case .favourites:
+                        ComicLibraryView(filterFavourites: true)
                     case .read:
-                        ComicLibraryView() // Filtered to in-progress reads
+                        ComicLibraryView(filterFavourites: false)
                     case .browse:
                         ComicBrowserView()
                     case .scrapes:
                         ComicScrapesView()
+                    case .stats:
+                        StatsView()
                     }
                 }
                 .toolbar {
@@ -39,8 +43,8 @@ public struct ComicTabView: View {
                                     .font(.title3)
                                     .foregroundStyle(AstralColors.body)
                             }
-                            
-                            Text("Comics")
+
+                            Text(navigation.activeSection.rawValue)
                                 .font(AstralTypography.title)
                                 .foregroundStyle(AstralColors.white)
                         }
@@ -75,16 +79,20 @@ final class ComicNavigation {
 
 enum ComicSection: String, CaseIterable {
     case library = "Library"
-    case read = "Read"
+    case favourites = "Favourites"
+    case read = "Continue Reading"
     case browse = "Browse"
     case scrapes = "Scrapes"
+    case stats = "Stats"
 
     var icon: String {
         switch self {
         case .library: "books.vertical"
+        case .favourites: "heart.fill"
         case .read: "book"
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
+        case .stats: "chart.bar"
         }
     }
 }

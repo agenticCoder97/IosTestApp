@@ -19,13 +19,17 @@ public struct FanficTabView: View {
                 Group {
                     switch navigation.activeSection {
                     case .library:
-                        FanficLibraryView(searchText: $searchText)
+                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
+                    case .favourites:
+                        FanficLibraryView(searchText: .constant(""), filterFavourites: true)
                     case .browse:
                         FanficBrowserView()
                     case .scrapes:
                         FanficScrapesView()
                     case .downloads:
-                        FanficLibraryView(searchText: $searchText) // Filtered to downloaded
+                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
+                    case .stats:
+                        FanficStatsView()
                     }
                 }
                 .toolbar {
@@ -40,8 +44,8 @@ public struct FanficTabView: View {
                                     .font(.title3)
                                     .foregroundStyle(AstralColors.body)
                             }
-                            
-                            Text("Fanfic")
+
+                            Text(navigation.activeSection.rawValue)
                                 .font(AstralTypography.title)
                                 .foregroundStyle(AstralColors.white)
                         }
@@ -84,16 +88,20 @@ final class FanficNavigation {
 /// Architecture fix #9: Added .scrapes section — missing from original doc's fanfic sidebar.
 enum FanficSection: String, CaseIterable {
     case library = "Library"
+    case favourites = "Favourites"
     case browse = "Browse"
     case scrapes = "Scrapes"
     case downloads = "Downloads"
+    case stats = "Stats"
 
     var icon: String {
         switch self {
         case .library: "books.vertical"
+        case .favourites: "heart.fill"
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
         case .downloads: "arrow.down.to.line"
+        case .stats: "chart.bar"
         }
     }
 }
