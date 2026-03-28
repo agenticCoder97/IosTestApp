@@ -11,11 +11,13 @@ final class ComicLibraryViewModel {
     func fetchComics(modelContext: ModelContext) async {
         isLoading = true
         defer { isLoading = false }
+        AstralLogger.info("fetchComics started", context: "ComicLibraryVM")
 
         do {
             let response: PaginatedResponse<ComicResponse> = try await APIClient.shared.request(
                 .comics()
             )
+            AstralLogger.info("fetchComics got \(response.items.count) comics (page \(response.page)/\(response.totalPages))", context: "ComicLibraryVM")
 
             for dto in response.items {
                 let descriptor = FetchDescriptor<LocalComic>(
@@ -76,8 +78,10 @@ final class ComicLibraryViewModel {
             try modelContext.save()
         } catch let error as APIError where error == .cookieRefreshNeeded {
             errorMessage = "Browser refresh needed"
+            AstralLogger.warning("fetchComics: cookie refresh needed", context: "ComicLibraryVM")
         } catch {
             errorMessage = error.localizedDescription
+            AstralLogger.error("fetchComics failed: \(error)", context: "ComicLibraryVM")
         }
     }
 

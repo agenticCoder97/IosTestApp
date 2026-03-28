@@ -17,6 +17,7 @@ final class FanficLibraryViewModel {
     ) async {
         isLoading = true
         defer { isLoading = false }
+        AstralLogger.info("fetchFanfics started (fandom=\(fandom ?? "nil") rating=\(rating ?? "nil"))", context: "FanficLibraryVM")
 
         do {
             let response: PaginatedResponse<FanficResponse> = try await APIClient.shared.request(
@@ -102,6 +103,7 @@ final class FanficLibraryViewModel {
             try modelContext.save()
         } catch {
             errorMessage = error.localizedDescription
+            AstralLogger.error("fetchFanfics failed: \(error)", context: "FanficLibraryVM")
         }
     }
 

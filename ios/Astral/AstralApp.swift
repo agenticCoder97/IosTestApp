@@ -25,10 +25,7 @@ struct AstralApp: App {
                 configurations: [modelConfiguration]
             )
         } catch {
-            // Schema has changed (e.g. a new @Model type was added) and the
-            // existing store is incompatible.  For this personal sideloaded app
-            // all data is re-scraped from the web, so deleting the store and
-            // starting fresh is safe.
+            AstralLogger.warning("SwiftData store incompatible — deleting and recreating: \(error)")
             let storeURL = modelConfiguration.url
             try? FileManager.default.removeItem(at: storeURL)
             // SQLite also writes -wal and -shm sidecar files; remove them too.
@@ -41,6 +38,7 @@ struct AstralApp: App {
             do {
                 return try ModelContainer(for: schema, configurations: [modelConfiguration])
             } catch let retryError {
+                AstralLogger.error("ModelContainer creation failed after retry: \(retryError)")
                 fatalError("Could not create ModelContainer: \(retryError)")
             }
         }

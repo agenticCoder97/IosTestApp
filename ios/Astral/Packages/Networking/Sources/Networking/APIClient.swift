@@ -25,42 +25,86 @@ public actor APIClient {
 
     public func request<T: Decodable & Sendable>(_ endpoint: Endpoint) async throws -> T {
         let urlRequest = try endpoint.urlRequest()
-        let (data, response) = try await session.data(for: urlRequest)
+        let method = urlRequest.httpMethod ?? "GET"
+        let path = urlRequest.url?.path ?? "?"
+        let start = CFAbsoluteTimeGetCurrent()
+
+        AstralLogger.network("\(method) \(path) →")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: urlRequest)
+        } catch {
+            let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+            AstralLogger.error("\(method) \(path) — network error: \(error.localizedDescription) (\(ms)ms)")
+            throw error
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            AstralLogger.error("\(method) \(path) — invalid response (not HTTP)")
             throw APIError.invalidResponse
         }
 
-        switch httpResponse.statusCode {
+        let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+        let status = httpResponse.statusCode
+
+        switch status {
         case 200...299:
-            return try decoder.decode(T.self, from: data)
+            AstralLogger.network("\(method) \(path) → \(status) (\(ms)ms, \(data.count)B)")
+            do {
+                return try decoder.decode(T.self, from: data)
+            } catch {
+                let preview = String(data: data.prefix(200), encoding: .utf8) ?? "<binary>"
+                AstralLogger.error("\(method) \(path) — decode failed: \(error)\nBody: \(preview)")
+                throw error
+            }
         case 428:
+            AstralLogger.warning("\(method) \(path) → 428 cookie refresh needed (\(ms)ms)")
             throw APIError.cookieRefreshNeeded
         case 404:
+            AstralLogger.warning("\(method) \(path) → 404 not found (\(ms)ms)")
             throw APIError.notFound
         case 429:
+            AstralLogger.warning("\(method) \(path) → 429 rate limited (\(ms)ms)")
             throw APIError.rateLimited
         case 500...599:
-            throw APIError.serverError(httpResponse.statusCode)
+            let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            AstralLogger.error("\(method) \(path) → \(status) server error (\(ms)ms)\n\(body)")
+            throw APIError.serverError(status)
         default:
-            throw APIError.httpError(httpResponse.statusCode)
+            let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            AstralLogger.error("\(method) \(path) → \(status) (\(ms)ms)\n\(body)")
+            throw APIError.httpError(status)
         }
     }
 
     public func requestVoid(_ endpoint: Endpoint) async throws {
         let urlRequest = try endpoint.urlRequest()
-        let (_, response) = try await session.data(for: urlRequest)
+        let method = urlRequest.httpMethod ?? "GET"
+        let path = urlRequest.url?.path ?? "?"
+        let start = CFAbsoluteTimeGetCurrent()
+
+        AstralLogger.network("\(method) \(path) →")
+
+        let (data, response) = try await session.data(for: urlRequest)
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            AstralLogger.error("\(method) \(path) — invalid response")
             throw APIError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
-            if httpResponse.statusCode == 428 {
-                throw APIError.cookieRefreshNeeded
-            }
-            throw APIError.httpError(httpResponse.statusCode)
+        let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+        let status = httpResponse.statusCode
+
+        guard (200...299).contains(status) else {
+            let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            AstralLogger.error("\(method) \(path) → \(status) (\(ms)ms)\n\(body)")
+            if status == 428 { throw APIError.cookieRefreshNeeded }
+            throw APIError.httpError(status)
         }
+
+        AstralLogger.network("\(method) \(path) → \(status) (\(ms)ms)")
     }
 }
 
