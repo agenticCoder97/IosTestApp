@@ -15,6 +15,7 @@ struct ComicScrapesView: View {
     )
     private var jobs: [LocalScrapeJob]
 
+    @Environment(\.modelContext) private var modelContext
     @State private var selectedJob: LocalScrapeJob?
 
     var body: some View {
@@ -80,6 +81,26 @@ struct ComicScrapesView: View {
             job.currentStep = response.currentStep
             job.lastErrorType = response.lastErrorType
             job.startedAt = response.startedAt
+        }
+
+        // Resolve story titles for jobs without a matching LocalComic
+        let missingStoryJobs = jobs.filter { job in
+            !comics.contains { $0.id == job.storyId }
+        }
+        for job in missingStoryJobs {
+            guard let dto: ComicResponse = try? await APIClient.shared.request(.comicDetail(id: job.storyId)) else { continue }
+            guard dto.title != "Pending scrape..." else { continue }
+            let comic = LocalComic(
+                id: dto.id,
+                title: dto.title,
+                sourceKey: dto.sourceKey,
+                thumbnailPath: dto.thumbnailPath,
+                comicDescription: dto.description,
+                totalChapters: dto.totalChapters,
+                status: dto.status,
+                seenTotalChapters: dto.totalChapters
+            )
+            modelContext.insert(comic)
         }
     }
 

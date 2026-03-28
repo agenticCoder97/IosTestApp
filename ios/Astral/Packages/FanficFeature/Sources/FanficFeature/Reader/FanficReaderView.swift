@@ -348,16 +348,18 @@ private struct FanficBookmarkSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 TextField("Heading (optional)", text: $heading)
+                    .textFieldStyle(.plain)
                     .font(AstralTypography.body)
-                    .foregroundStyle(AstralColors.white)
+                    .foregroundColor(AstralColors.white)
+                    .tint(AstralColors.gold)
                     .padding(12)
-                    .background(AstralColors.elevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 8))
 
                 Spacer()
             }
             .padding(16)
             .background(AstralColors.background)
+            .scrollContentBackground(.hidden)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

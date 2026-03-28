@@ -12,6 +12,11 @@ def _story_id(url: str) -> str:
     return m.group(1)
 
 
+def _normalize_url(url: str) -> str:
+    """Normalize m.fanfiction.net → www.fanfiction.net so cookies and selectors work."""
+    return re.sub(r"https?://m\.fanfiction\.net", "https://www.fanfiction.net", url)
+
+
 def _chapter_url(story_id: str, chapter_num: int) -> str:
     return f"https://www.fanfiction.net/s/{story_id}/{chapter_num}/"
 
@@ -24,6 +29,7 @@ class FanfictionNetScraper(BaseScraper):
     max_retries = 3
 
     async def get_story_metadata(self, url: str) -> StoryMetadata:
+        url = _normalize_url(url)
         sid = _story_id(url)
         html = await self._fetch(_chapter_url(sid, 1))
         soup = BeautifulSoup(html, "lxml")
@@ -138,6 +144,7 @@ class FanfictionNetScraper(BaseScraper):
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:
+        story_url = _normalize_url(story_url)
         sid = _story_id(story_url)
         html = await self._fetch(_chapter_url(sid, 1))
         soup = BeautifulSoup(html, "lxml")
@@ -170,6 +177,7 @@ class FanfictionNetScraper(BaseScraper):
         raise NotImplementedError("ffnet is a fanfic source — no pages")
 
     async def get_chapter_text(self, chapter_url: str) -> str:
+        chapter_url = _normalize_url(chapter_url)
         html = await self._fetch(chapter_url)
         soup = BeautifulSoup(html, "lxml")
 

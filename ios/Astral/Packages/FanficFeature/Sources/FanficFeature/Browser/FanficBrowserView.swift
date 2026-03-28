@@ -40,15 +40,18 @@ struct FanficBrowserView: View {
                 }
                 .foregroundColor(.primary)
                 
-                Spacer(minLength: 8)
-                
-                Text(viewModel.currentURL?.absoluteString ?? viewModel.sourceURL.absoluteString)
+                TextField("Enter URL", text: $viewModel.addressBarText)
+                    .textFieldStyle(.plain)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.primary)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .onSubmit { viewModel.navigateToAddress() }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 6))
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                
-                Spacer(minLength: 8)
                 
                 Button(action: {
                     Task {
@@ -109,10 +112,28 @@ final class FanficBrowserViewModel {
     var isScraping = false
     var scrapeToast: ScrapeToast? = nil
     var currentURL: URL?
+    var addressBarText: String = ""
     var webView: WKWebView?
     var savedURLs: [FanficSource: URL] = [:]
     var canGoBack = false
     var canGoForward = false
+
+    var allowedDomains: [String] {
+        switch selectedSource {
+        case .ao3: return ["archiveofourown.org"]
+        case .ffnet: return ["fanfiction.net"]
+        }
+    }
+
+    func navigateToAddress() {
+        var text = addressBarText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        if !text.hasPrefix("http://") && !text.hasPrefix("https://") {
+            text = "https://" + text
+        }
+        guard let url = URL(string: text) else { return }
+        webView?.load(URLRequest(url: url))
+    }
 
     var sourceURL: URL {
         if let saved = savedURLs[selectedSource] {
@@ -240,8 +261,22 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
             self.viewModel = viewModel
         }
 
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let host = navigationAction.request.url?.host?.lowercased() else {
+                decisionHandler(.allow)
+                return
+            }
+            let allowed = viewModel.allowedDomains.contains { host.hasSuffix($0) }
+            decisionHandler(allowed ? .allow : .cancel)
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             viewModel.currentURL = webView.url
+            viewModel.addressBarText = webView.url?.absoluteString ?? ""
             if let url = webView.url {
                 viewModel.savedURLs[viewModel.selectedSource] = url
             }

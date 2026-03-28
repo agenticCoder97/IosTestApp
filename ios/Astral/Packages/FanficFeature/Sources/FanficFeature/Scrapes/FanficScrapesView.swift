@@ -17,6 +17,7 @@ struct FanficScrapesView: View {
     )
     private var jobs: [LocalScrapeJob]
 
+    @Environment(\.modelContext) private var modelContext
     @State private var selectedJob: LocalScrapeJob?
 
     var body: some View {
@@ -82,6 +83,28 @@ struct FanficScrapesView: View {
             job.currentStep = response.currentStep
             job.lastErrorType = response.lastErrorType
             job.startedAt = response.startedAt
+        }
+
+        // Resolve story titles for jobs without a matching LocalFanfic
+        let missingStoryJobs = jobs.filter { job in
+            !fanfics.contains { $0.id == job.storyId }
+        }
+        for job in missingStoryJobs {
+            guard let dto: FanficResponse = try? await APIClient.shared.request(.fanficDetail(id: job.storyId)) else { continue }
+            guard dto.title != "Pending scrape..." else { continue }
+            let fanfic = LocalFanfic(
+                id: dto.id,
+                title: dto.title,
+                sourceKey: dto.sourceKey,
+                summary: dto.summary,
+                fandom: dto.fandom,
+                rating: dto.rating,
+                completionStatus: dto.completionStatus,
+                wordCount: dto.wordCount,
+                totalChapters: dto.totalChapters,
+                seenTotalChapters: dto.totalChapters
+            )
+            modelContext.insert(fanfic)
         }
     }
 
