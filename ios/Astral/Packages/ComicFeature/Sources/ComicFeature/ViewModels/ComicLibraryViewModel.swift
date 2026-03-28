@@ -57,6 +57,23 @@ final class ComicLibraryViewModel {
                 }
             }
             try modelContext.save()
+
+            // Sync server reading progress — restores position after a SwiftData wipe.
+            // Only advances local progress; never overwrites a chapter the user has read further.
+            let progressList: [ProgressResponse] = try await APIClient.shared.request(.allProgress(contentType: "comic"))
+            let progressByStoryId = Dictionary(uniqueKeysWithValues: progressList.map { ($0.storyId, $0) })
+
+            let allComicsDescriptor = FetchDescriptor<LocalComic>()
+            let allComics = (try? modelContext.fetch(allComicsDescriptor)) ?? []
+            for comic in allComics {
+                guard let progress = progressByStoryId[comic.id],
+                      progress.lastChapterNumber > comic.lastReadChapterNumber else { continue }
+                comic.lastReadChapterNumber = progress.lastChapterNumber
+                if comic.totalChapters > 0 {
+                    comic.progressPercent = Double(progress.lastChapterNumber) / Double(comic.totalChapters)
+                }
+            }
+            try modelContext.save()
         } catch let error as APIError where error == .cookieRefreshNeeded {
             errorMessage = "Browser refresh needed"
         } catch {

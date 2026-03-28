@@ -149,7 +149,8 @@ final class FanficBrowserViewModel {
 
         do {
             let response: ScrapeJobResponse = try await APIClient.shared.request(.initiateScrape(request))
-            showToast(ScrapeToast(message: "Scrape queued", isSuccess: true))
+            let alreadyDone = response.status == "complete" || response.status == "partial"
+            showToast(ScrapeToast(message: alreadyDone ? "Already in library" : "Scrape queued", isSuccess: true))
             return LocalScrapeJob(
                 id: response.id,
                 contentType: response.contentType,

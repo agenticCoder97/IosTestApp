@@ -59,3 +59,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Long press on a ZStack overlay blocks `ScrollView`** — use `.simultaneousGesture(LongPressGesture(...).onEnded { })` instead of `.onLongPressGesture` so the scroll and long-press recognizers coexist.
 - `scrollTargetBehavior(.paging)` + `scrollPosition(id:)` on a horizontal `ScrollView` + `LazyHStack` is the preferred paged reader pattern (smoother than `TabView(.page)`).
 - Reading progress (`lastReadChapterNumber`, `progressPercent`, `lastReadAt`) is written in `ComicReaderView.loadPages()` each time a chapter is opened — not debounced for local SwiftData writes.
+
+## AI Agent Rules
+
+### Required scratchpad workflow
+
+All AI agents must keep reasoning notes in `scratchpad/*.md`.
+
+Rules:
+- Create or update a markdown file in `scratchpad/` for task-level thinking.
+- Scratchpad notes are for planning, intermediate reasoning, and working assumptions only.
+- Use the lowest-capability / lowest-cost model available when generating scratchpad notes.
+- Do not use an expensive frontier model for scratchpad drafting.
+- Do not place secrets, credentials, tokens, or sensitive user data in scratchpad files.
+
+Suggested naming:
+- `scratchpad/claude-YYYY-MM-DD-task-name.md`
+
+### General coding rules
+
+- Read files before changing them.
+- Prefer minimum viable edits.
+- Keep parsing, heuristics, and scoring out of page components when possible.
+- Extend config/feature/store modules before adding UI-only hacks.
+- Run `npm run build` after changes.
+- Run targeted Playwright coverage for analysis changes when practical.
+
+### Documentation rules
+
+Update docs when these change:
+- RuleSheets workflow
+- persistence behavior
+- logging/observability
+- benchmark commands
+- major routes or surface behavior
+- scratchpad process
+
+## Branch and Git Rules
+
+- The god branch is `release-1`. All feature and fix branches must be branched from `release-1` and merged back via PR.
+- Never push directly to `release-1`.
+- Use the assigned feature branch.
+- Do not force-push without explicit approval.
+- Do not commit `.env` files or secrets.
