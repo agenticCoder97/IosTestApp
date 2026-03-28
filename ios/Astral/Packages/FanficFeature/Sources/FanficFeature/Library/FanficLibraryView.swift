@@ -207,18 +207,42 @@ struct FanficRowView: View {
         return Double(fanfic.lastReadChapterNumber) / Double(fanfic.totalChapters)
     }
 
+    private func thumbnailURL(_ path: String) -> URL? {
+        if path.hasPrefix("http") { return URL(string: path) }
+        return URL(string: AppConfig.staticBaseURL + path)
+    }
+
+    private var fanficPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(AstralColors.elevated)
+            .frame(width: 50, height: 70)
+            .overlay {
+                Image(systemName: "scroll")
+                    .foregroundStyle(AstralColors.muted)
+            }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
-                // Thumbnail placeholder with new-chapter badge
+                // Thumbnail with new-chapter badge
                 ZStack(alignment: .topTrailing) {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(AstralColors.elevated)
-                        .frame(width: 50, height: 70)
-                        .overlay {
-                            Image(systemName: "scroll")
-                                .foregroundStyle(AstralColors.muted)
+                    if let path = fanfic.thumbnailPath, let url = thumbnailURL(path) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            default:
+                                fanficPlaceholder
+                            }
                         }
+                        .frame(width: 50, height: 70)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    } else {
+                        fanficPlaceholder
+                    }
 
                     if fanfic.newChapterCount > 0 {
                         Text("+\(fanfic.newChapterCount)")
@@ -279,7 +303,19 @@ struct FanficRowView: View {
                             if let wc = fanfic.wordCount {
                                 StatusBadge("\(wc / 1000)K words", color: AstralColors.muted)
                             }
+                            if let pairing = fanfic.pairing, !pairing.isEmpty {
+                                StatusBadge(pairing, color: AstralColors.gold)
+                            }
+                            if let characters = fanfic.characters, !characters.isEmpty {
+                                StatusBadge(characters, color: AstralColors.muted)
+                            }
                         }
+                    }
+
+                    if let updated = fanfic.updatedAtSource {
+                        Text("Updated \(updated, format: .dateTime.month(.abbreviated).day().year())")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
                     }
                 }
             }

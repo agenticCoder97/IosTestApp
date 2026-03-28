@@ -17,6 +17,15 @@ struct ComicCardView: View {
         return Double(comic.lastReadChapterNumber) / Double(comic.totalChapters)
     }
 
+    private var sourceIcon: String {
+        switch comic.sourceKey {
+        case "nhentai": "n.square.fill"
+        case "toongod": "t.square.fill"
+        case "hentai20": "h.square.fill"
+        default: "questionmark.square.fill"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Thumbnail
@@ -31,6 +40,8 @@ struct ComicCardView: View {
                             image
                                 .resizable()
                                 .scaledToFill()
+                                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                                .clipped()
                         default:
                             Image(systemName: "book.fill")
                                 .font(.system(size: 32))
@@ -71,6 +82,16 @@ struct ComicCardView: View {
                 }
             }
             .animation(AstralAnimation.bouncy, value: comic.newChapterCount)
+            // Source icon
+            .overlay(alignment: .bottomLeading) {
+                Image(systemName: sourceIcon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AstralColors.white)
+                    .padding(6)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(6)
+            }
             // Favourite heart — bouncy toggle with symbol morph
             .overlay(alignment: .bottomTrailing) {
                 Button {

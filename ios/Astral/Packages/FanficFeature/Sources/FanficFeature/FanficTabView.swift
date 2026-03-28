@@ -34,20 +34,32 @@ public struct FanficTabView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
-                        HStack(spacing: 12) {
+                        Menu {
                             Button {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     onSwitchTab()
                                 }
                             } label: {
-                                Image(systemName: "book.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(AstralColors.body)
+                                Label("Comics", systemImage: "book.fill")
                             }
-
-                            Text(navigation.activeSection.rawValue)
-                                .font(AstralTypography.title)
-                                .foregroundStyle(AstralColors.white)
+                            Button {
+                                // Already on Fan Fiction tab
+                            } label: {
+                                Label("Fan Fiction", systemImage: "scroll.fill")
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("Fan Fiction")
+                                    .font(AstralTypography.title)
+                                    .foregroundStyle(AstralColors.white)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(AstralColors.muted)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(AstralColors.elevated)
+                            .clipShape(Capsule())
                         }
                     }
                     ToolbarItem(placement: .topBarTrailing) {

@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import AsyncSessionLocal
-from app.models.comic import Comic, ComicChapter, Page
+from app.models.comic import Comic, ComicChapter, Page, ComicAuthor, ComicTag, Tag
+from app.models.author import Author
 from app.models.scrape import ScrapeJob, ScrapeLog
 from app.core.constants import ScrapeStatus, JobStatus
 from app.scrapers.base import CookieExpiredError, ScraperError
@@ -114,6 +115,58 @@ async def comic_scrape_task(ctx, job_id: str):
                 if metadata.total_chapters:
                     comic.total_chapters = metadata.total_chapters
                     job.total_chapters = metadata.total_chapters
+                if metadata.category:
+                    comic.category = metadata.category
+
+                # ── Thumbnail ──────────────────────────────────────────
+                if metadata.thumbnail_url and not comic.thumbnail_path:
+                    try:
+                        dest = f"comics/{job.story_id}/thumbnail.jpg"
+                        comic.thumbnail_path = await scraper.download_image(metadata.thumbnail_url, dest)
+                        logger.info("comic_scrape_task thumbnail saved | job_id=%s path=%s", job_id, comic.thumbnail_path)
+                    except Exception as e:
+                        logger.warning("comic_scrape_task thumbnail failed | job_id=%s error=%s", job_id, e)
+
+                # ── Authors ────────────────────────────────────────────
+                for author_name in metadata.authors:
+                    author_result = await db.execute(select(Author).where(Author.name == author_name))
+                    author = author_result.scalar_one_or_none()
+                    if not author:
+                        author = Author(name=author_name)
+                        db.add(author)
+                        await db.flush()
+                    existing_ca = await db.execute(
+                        select(ComicAuthor).where(
+                            ComicAuthor.comic_id == comic.id,
+                            ComicAuthor.author_id == author.id,
+                        )
+                    )
+                    if not existing_ca.scalar_one_or_none():
+                        db.add(ComicAuthor(comic_id=comic.id, author_id=author.id))
+
+                # ── Tags ───────────────────────────────────────────────
+                for tag_dict in metadata.tags:
+                    tag_name = tag_dict.get("name", "").strip()
+                    tag_type = tag_dict.get("tag_type", "tag").strip()
+                    if not tag_name:
+                        continue
+                    tag_result = await db.execute(
+                        select(Tag).where(Tag.name == tag_name, Tag.tag_type == tag_type)
+                    )
+                    tag = tag_result.scalar_one_or_none()
+                    if not tag:
+                        tag = Tag(name=tag_name, tag_type=tag_type)
+                        db.add(tag)
+                        await db.flush()
+                    existing_ct = await db.execute(
+                        select(ComicTag).where(
+                            ComicTag.comic_id == comic.id,
+                            ComicTag.tag_id == tag.id,
+                        )
+                    )
+                    if not existing_ct.scalar_one_or_none():
+                        db.add(ComicTag(comic_id=comic.id, tag_id=tag.id))
+
             await db.commit()
 
             # ── Chapter list ────────────────────────────────────────────────

@@ -38,6 +38,17 @@ class StoryMetadata:
     tags: list[dict] = field(default_factory=list)  # {"name": str, "tag_type": str}
     thumbnail_url: Optional[str] = None
     total_chapters: Optional[int] = None
+    # Extended metadata (populated by some scrapers)
+    category: Optional[str] = None
+    fandom: Optional[str] = None
+    rating: Optional[str] = None
+    warnings: Optional[str] = None
+    characters: Optional[str] = None
+    pairing: Optional[str] = None
+    word_count: Optional[int] = None
+    completion_status: Optional[str] = None
+    published_at: Optional[str] = None   # ISO 8601 string
+    updated_at_source: Optional[str] = None  # ISO 8601 string
 
 
 @dataclass

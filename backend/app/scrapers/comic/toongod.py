@@ -33,6 +33,14 @@ class ToongodScraper(BaseScraper):
         desc_tag = soup.select_one(".summary__content p, .summary__content")
         description = desc_tag.get_text(strip=True) if desc_tag else None
 
+        thumb_tag = soup.select_one(".summary_image img")
+        thumbnail_url = None
+        if thumb_tag:
+            thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
+
+        genre_tags = soup.select(".genres-content a")
+        tags = [{"name": a.get_text(strip=True), "tag_type": "genre"} for a in genre_tags]
+
         chapter_items = soup.select(".wp-manga-chapter")
         total_chapters = len(chapter_items) or None
 
@@ -43,6 +51,8 @@ class ToongodScraper(BaseScraper):
             source_id=_slug(url),
             description=description,
             authors=authors,
+            tags=tags,
+            thumbnail_url=thumbnail_url,
             total_chapters=total_chapters,
         )
 

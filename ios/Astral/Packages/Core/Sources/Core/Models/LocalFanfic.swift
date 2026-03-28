@@ -28,6 +28,21 @@ public final class LocalFanfic {
     /// Updated when the user opens the detail view; drives "Continue Reading" sort order.
     public var lastReadAt: Date?
 
+    /// Thumbnail image path (generic placeholder for fanfics)
+    public var thumbnailPath: String?
+    /// Characters in the story
+    public var characters: String?
+    /// Relationship/pairing
+    public var pairing: String?
+    /// Content warnings
+    public var warnings: String?
+    /// Date the story was first published
+    public var publishedAt: Date?
+    /// Date the story was last updated at source
+    public var updatedAtSource: Date?
+    /// JSON-encoded array of tag dicts from API
+    public var tagsJSON: String?
+
     @Relationship(deleteRule: .cascade, inverse: \LocalFanficChapter.fanfic)
     public var chapters: [LocalFanficChapter]?
 

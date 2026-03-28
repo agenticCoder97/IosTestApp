@@ -40,6 +40,8 @@ struct ComicReaderView: View {
     @State private var showPageActions = false
     @State private var longPressedPage: PageResponse?
     @State private var scrolledPageID: Int? = 0  // drives paged scroll position
+    @State private var showRotateHint = false
+    @AppStorage("hideRotateHint") private var hideRotateHint = false
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -57,6 +59,7 @@ struct ComicReaderView: View {
         self.previewPages = previewPages
         let idx = chapters.firstIndex(where: { $0.id == chapter.id }) ?? 0
         _currentChapterIndex = State(initialValue: idx)
+        _readingMode = State(initialValue: comic.sourceKey == "nhentai" ? .rightToLeft : .webtoon)
     }
 
     private var currentChapter: LocalComicChapter? { chapters[safe: currentChapterIndex] }
@@ -148,8 +151,37 @@ struct ComicReaderView: View {
         .navigationBarHidden(true)
         .statusBarHidden(!showHUD)
         .task(id: currentChapterIndex) { await loadPages() }
-        .onAppear   { UIApplication.shared.isIdleTimerDisabled = true  }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = true
+            if !hideRotateHint, UIDevice.current.orientation.isPortrait || !UIDevice.current.orientation.isValidInterfaceOrientation {
+                withAnimation { showRotateHint = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    withAnimation { showRotateHint = false }
+                }
+            }
+        }
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .overlay(alignment: .top) {
+            if showRotateHint {
+                HStack(spacing: 8) {
+                    Image(systemName: "rotate.right")
+                    Text("Rotate for best reading experience")
+                }
+                .font(AstralTypography.caption)
+                .foregroundStyle(AstralColors.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .padding(.top, 60)
+                .onTapGesture {
+                    withAnimation { showRotateHint = false }
+                    hideRotateHint = true
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .confirmationDialog(
             "Page \(currentPage + 1)",
             isPresented: $showPageActions,
@@ -168,19 +200,20 @@ struct ComicReaderView: View {
             ZStack {
                 Circle()
                     .fill(.ultraThinMaterial)
-                    .frame(width: 54, height: 54)
-                VStack(spacing: 2) {
+                    .frame(width: 58, height: 58)
+                VStack(spacing: 1) {
                     Text("\(currentChapterIndex + 1)")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(AstralColors.white)
                         .monospacedDigit()
                         .contentTransition(.numericText())
                         .animation(AstralAnimation.quick, value: currentChapterIndex)
                     Capsule()
                         .fill(AstralColors.muted)
-                        .frame(width: 20, height: 1)
+                        .frame(width: 22, height: 1.5)
+                        .rotationEffect(.degrees(-45))
                     Text("\(chapters.count)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(AstralColors.muted)
                         .monospacedDigit()
                 }
@@ -477,6 +510,26 @@ struct ComicReaderView: View {
                 }
             }
 
+            // Page skip
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Skip First Pages")
+                    .font(AstralTypography.captionMedium)
+                    .foregroundStyle(AstralColors.muted)
+
+                Stepper(value: Binding(
+                    get: { comic.skipFirstNPages },
+                    set: { newVal in
+                        comic.skipFirstNPages = newVal
+                        try? modelContext.save()
+                    }
+                ), in: 0...10) {
+                    Text("\(comic.skipFirstNPages) page\(comic.skipFirstNPages == 1 ? "" : "s")")
+                        .font(AstralTypography.body)
+                        .foregroundStyle(AstralColors.white)
+                }
+                .tint(AstralColors.gold)
+            }
+
             // Brightness dim
             VStack(alignment: .leading, spacing: 10) {
                 Text("Brightness")
@@ -484,11 +537,11 @@ struct ComicReaderView: View {
                     .foregroundStyle(AstralColors.muted)
 
                 HStack(spacing: 12) {
-                    Image(systemName: "sun.min.fill")
+                    Image(systemName: "sun.max.fill")
                         .foregroundStyle(AstralColors.muted)
                     Slider(value: $brightnessOverlay, in: 0...0.75)
                         .tint(AstralColors.gold)
-                    Image(systemName: "sun.max.fill")
+                    Image(systemName: "sun.min.fill")
                         .foregroundStyle(AstralColors.muted)
                 }
             }
@@ -532,6 +585,11 @@ struct ComicReaderView: View {
 
     // MARK: - Loading
 
+    private func applyPageSkip(_ allPages: [PageResponse]) -> [PageResponse] {
+        guard comic.skipFirstNPages > 0 else { return allPages }
+        return Array(allPages.dropFirst(comic.skipFirstNPages))
+    }
+
     private func loadPages() async {
         isLoading = true
         pages = []
@@ -558,7 +616,7 @@ struct ComicReaderView: View {
             let response: [PageResponse] = try await APIClient.shared.request(
                 .chapterPages(comicId: comic.id, chapterId: chapter.id)
             )
-            pages = response
+            pages = applyPageSkip(response)
         } catch {
             // pages stays empty → shows empty state
         }

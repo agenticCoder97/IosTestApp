@@ -21,7 +21,7 @@ public final class ContentBlocker {
         guard !isCompiling else { return }
         isCompiling = true
         WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: "AstralAdBlock_v2",
+            forIdentifier: "AstralAdBlock_v3",
             encodedContentRuleList: Self.rulesJSON
         ) { [weak self] list, error in
             guard let self else { return }
@@ -82,8 +82,33 @@ public final class ContentBlocker {
       {"trigger":{"url-filter":"\\\\.teads\\\\.tv","load-type":["third-party"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":"\\\\.spotxchange\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":"\\\\.spotx\\\\.tv","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.magsrv\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.realsrv\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.tsyndicate\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.a-ads\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.bidvertiser\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.plugrush\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.trafficstars\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.ad-maven\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.admaven\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.adxxx\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.clickaine\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.cpmstar\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.disqus\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.fastclick\\\\.net","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.frtyd\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.galaksion\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.imasdk\\\\.googleapis\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.mixpanel\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.nativery\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.richaudience\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.serving-sys\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.smartadserver\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.ssp\\\\.yahoo\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.vdo\\\\.ai","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.vidoomy\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":".*[/=?&](?:ad|ads|advert|advertisement|banner|popup|popunder|interstitial)[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
-      {"trigger":{"url-filter":".*"},"action":{"type":"css-display-none","selector":"[id*='google_ads'],[id*='doubleclick'],[class*='ad-unit'],[class*='ad-slot'],[class*='adsbygoogle'],[id*='aswift'],[class*='popup-ad'],[class*='popunder'],[class*='overlay-ad']"}}
+      {"trigger":{"url-filter":".*"},"action":{"type":"css-display-none","selector":"[id*='google_ads'],[id*='doubleclick'],[class*='ad-unit'],[class*='ad-slot'],[class*='adsbygoogle'],[id*='aswift'],[class*='popup-ad'],[class*='popunder'],[class*='overlay-ad'],[class*='sticky-ad'],[class*='floating-ad'],[class*='popup-overlay'],[id*='ad-container'],[class*='ad-container'],[class*='ad-banner'],[class*='advert-wrapper'],[id*='advert'],[class*='interstitial']"}}
     ]
     """
 }

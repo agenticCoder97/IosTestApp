@@ -44,6 +44,11 @@ class Hentai20Scraper(BaseScraper):
         desc_tag = soup.select_one(".summary__content, .entry-content > p, .description")
         description = desc_tag.get_text(strip=True) if desc_tag else None
 
+        thumb_tag = soup.select_one(".summary_image img, .tab-thumb img, .post-title img")
+        thumbnail_url = None
+        if thumb_tag:
+            thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
+
         slug = _slug(url)
         chapter_links = soup.find_all(
             "a", href=re.compile(rf"hentai20\.io/{re.escape(slug)}-chapter-\d")
@@ -57,6 +62,7 @@ class Hentai20Scraper(BaseScraper):
             source_key=self.source_key,
             source_id=slug,
             description=description,
+            thumbnail_url=thumbnail_url,
             total_chapters=total_chapters,
         )
 

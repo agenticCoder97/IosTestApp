@@ -62,6 +62,12 @@ class NhentaiScraper(BaseScraper):
             for t in tags
             if t.get("type") not in ("language", "artist")
         ]
+        category = next((t["name"] for t in tags if t.get("type") == "category"), None)
+
+        media_id = gallery.get("media_id")
+        cover = gallery.get("images", {}).get("cover", {})
+        cover_ext = _EXT_MAP.get(cover.get("t", "j"), "jpg")
+        thumbnail_url = f"https://t.nhentai.net/galleries/{media_id}/cover.{cover_ext}" if media_id else None
 
         return StoryMetadata(
             title=title,
@@ -71,6 +77,8 @@ class NhentaiScraper(BaseScraper):
             authors=authors,
             language=language,
             tags=tag_list,
+            thumbnail_url=thumbnail_url,
+            category=category,
             total_chapters=1,
         )
 

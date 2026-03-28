@@ -177,14 +177,23 @@ private struct FanficBookmarksSection: View {
                 VStack(spacing: 0) {
                     ForEach(bookmarks) { bookmark in
                         HStack {
-                            Text(bookmark.displayLabel)
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.body)
-                            if let note = bookmark.note {
-                                Text("— \(note)")
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let heading = bookmark.heading {
+                                    Text(heading)
+                                        .font(AstralTypography.captionMedium)
+                                        .foregroundStyle(AstralColors.white)
+                                        .lineLimit(1)
+                                }
+                                Text(bookmark.displayLabel)
                                     .font(AstralTypography.caption)
-                                    .foregroundStyle(AstralColors.muted)
+                                    .foregroundStyle(AstralColors.body)
                                     .lineLimit(1)
+                                if let note = bookmark.note {
+                                    Text("— \(note)")
+                                        .font(AstralTypography.caption)
+                                        .foregroundStyle(AstralColors.muted)
+                                        .lineLimit(1)
+                                }
                             }
                             Spacer()
                             Button {

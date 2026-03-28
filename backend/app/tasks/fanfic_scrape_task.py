@@ -5,8 +5,10 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import AsyncSessionLocal
-from app.models.fanfic import Fanfic, FanficChapter
+from app.models.fanfic import Fanfic, FanficChapter, FanficAuthor
+from app.models.author import Author
 from app.models.scrape import ScrapeJob, ScrapeLog
+from app.utils.image_utils import ensure_fanfic_covers, random_fanfic_cover
 from app.core.constants import ScrapeStatus, JobStatus
 from app.scrapers.base import CookieExpiredError, ScraperError
 from app.scrapers.fanfic.ao3 import AO3Scraper
@@ -105,7 +107,7 @@ async def fanfic_scrape_task(ctx, job_id: str):
             if fanfic:
                 fanfic.title = metadata.title
                 if metadata.description is not None:
-                    fanfic.description = metadata.description
+                    fanfic.summary = metadata.description
                 if metadata.language is not None:
                     fanfic.language = metadata.language
                 if metadata.source_id is not None:
@@ -113,6 +115,57 @@ async def fanfic_scrape_task(ctx, job_id: str):
                 if metadata.total_chapters:
                     fanfic.total_chapters = metadata.total_chapters
                     job.total_chapters = metadata.total_chapters
+
+                # ── Extended metadata ──────────────────────────────────
+                if metadata.fandom:
+                    fanfic.fandom = metadata.fandom
+                if metadata.rating:
+                    fanfic.rating = metadata.rating
+                if metadata.warnings:
+                    fanfic.warnings = metadata.warnings
+                if metadata.characters:
+                    fanfic.characters = metadata.characters
+                if metadata.pairing:
+                    fanfic.pairing = metadata.pairing
+                if metadata.word_count:
+                    fanfic.word_count = metadata.word_count
+                if metadata.completion_status:
+                    fanfic.completion_status = metadata.completion_status
+                if metadata.published_at:
+                    try:
+                        fanfic.published_at = datetime.strptime(metadata.published_at, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    except (ValueError, TypeError):
+                        pass
+                if metadata.updated_at_source:
+                    try:
+                        fanfic.updated_at_source = datetime.strptime(metadata.updated_at_source, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    except (ValueError, TypeError):
+                        pass
+
+                # ── Authors ────────────────────────────────────────────
+                for author_name in metadata.authors:
+                    author_result = await db.execute(select(Author).where(Author.name == author_name))
+                    author = author_result.scalar_one_or_none()
+                    if not author:
+                        author = Author(name=author_name)
+                        db.add(author)
+                        await db.flush()
+                    existing_fa = await db.execute(
+                        select(FanficAuthor).where(
+                            FanficAuthor.fanfic_id == fanfic.id,
+                            FanficAuthor.author_id == author.id,
+                        )
+                    )
+                    if not existing_fa.scalar_one_or_none():
+                        db.add(FanficAuthor(fanfic_id=fanfic.id, author_id=author.id))
+
+                # ── Thumbnail (generic placeholder) ────────────────────
+                if not fanfic.thumbnail_path:
+                    from app.core.config import settings
+                    ensure_fanfic_covers(settings.block_volume_path)
+                    fanfic.thumbnail_path = random_fanfic_cover()
+                    logger.info("fanfic_scrape_task thumbnail assigned | job_id=%s path=%s", job_id, fanfic.thumbnail_path)
+
             await db.commit()
 
             # ── Chapter list ────────────────────────────────────────────────

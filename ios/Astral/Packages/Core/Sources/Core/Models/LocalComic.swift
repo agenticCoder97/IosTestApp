@@ -25,6 +25,15 @@ public final class LocalComic {
     /// Updated when the user opens the detail view; drives "Continue Reading" sort order.
     public var lastReadAt: Date?
 
+    /// nhentai category (nullable)
+    public var category: String?
+    /// JSON-encoded array of {name, tag_type} dicts from API
+    public var tagsJSON: String?
+    /// JSON-encoded array of {id, name} dicts from API
+    public var authorsJSON: String?
+    /// Number of initial pages to skip per chapter (e.g. credit pages in webtoons)
+    public var skipFirstNPages: Int
+
     @Relationship(deleteRule: .cascade, inverse: \LocalComicChapter.comic)
     public var chapters: [LocalComicChapter]?
 
@@ -42,7 +51,8 @@ public final class LocalComic {
         addedAt: Date = .now,
         isFavorite: Bool = false,
         seenTotalChapters: Int = 0,
-        lastReadAt: Date? = nil
+        lastReadAt: Date? = nil,
+        skipFirstNPages: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -58,6 +68,7 @@ public final class LocalComic {
         self.isFavorite = isFavorite
         self.seenTotalChapters = seenTotalChapters
         self.lastReadAt = lastReadAt
+        self.skipFirstNPages = skipFirstNPages
     }
 
     /// Number of chapters added since the user last viewed the detail screen.

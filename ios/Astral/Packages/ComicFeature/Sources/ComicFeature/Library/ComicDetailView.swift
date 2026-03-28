@@ -7,6 +7,7 @@ struct ComicDetailView: View {
     let comic: LocalComic
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.comicNavigation) private var comicNavigation
     @Query private var chapters: [LocalComicChapter]
     @Query private var bookmarks: [LocalBookmark]
 
@@ -24,43 +25,134 @@ struct ComicDetailView: View {
         )
     }
 
+    private var decodedTags: [[String: String]] {
+        guard let json = comic.tagsJSON, let data = json.data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]]
+        else { return [] }
+        return arr
+    }
+
+    private var decodedAuthors: [[String: String]] {
+        guard let json = comic.authorsJSON, let data = json.data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]]
+        else { return [] }
+        return arr
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // MARK: Thumbnail + description header
-                if comic.thumbnailPath != nil || comic.comicDescription != nil {
-                    HStack(alignment: .top, spacing: 12) {
-                        if let path = comic.thumbnailPath {
-                            AsyncImage(url: thumbnailURL(path)) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .scaledToFill()
-                                default:
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(AstralColors.elevated)
-                                        .overlay {
-                                            Image(systemName: "book.fill")
-                                                .foregroundStyle(AstralColors.muted)
-                                        }
-                                }
+                // MARK: Hero thumbnail
+                ZStack(alignment: .bottomLeading) {
+                    if let path = comic.thumbnailPath, let url = thumbnailURL(path) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            default:
+                                Rectangle()
+                                    .fill(AstralColors.elevated)
+                                    .overlay {
+                                        Image(systemName: "book.fill")
+                                            .font(.system(size: 48))
+                                            .foregroundStyle(AstralColors.muted)
+                                    }
                             }
-                            .frame(width: 100)
-                            .aspectRatio(3/4, contentMode: .fit)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
+                    } else {
+                        Rectangle()
+                            .fill(AstralColors.elevated)
+                            .overlay {
+                                Image(systemName: "book.fill")
+                                    .font(.system(size: 48))
+                                    .foregroundStyle(AstralColors.muted)
+                            }
+                    }
 
-                        if let desc = comic.comicDescription {
-                            Text(desc)
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.body)
-                                .lineLimit(8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                    // Title overlay with gradient
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.85)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 120)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(comic.title)
+                            .font(AstralTypography.title)
+                            .foregroundStyle(AstralColors.white)
+                            .lineLimit(3)
+
+                        HStack(spacing: 8) {
+                            StatusBadge(comic.sourceKey)
+                            StatusBadge(comic.status)
+                            if comic.totalChapters > 0 {
+                                StatusBadge("\(comic.totalChapters) ch", color: AstralColors.muted)
+                            }
                         }
                     }
                     .padding(16)
                 }
+                .frame(maxWidth: .infinity)
+                .aspectRatio(3/4, contentMode: .fit)
+                .clipped()
+
+                // MARK: Metadata section
+                VStack(alignment: .leading, spacing: 12) {
+                    if let desc = comic.comicDescription, !desc.isEmpty {
+                        Text(desc)
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.body)
+                            .lineLimit(6)
+                    }
+
+                    if let category = comic.category {
+                        HStack(spacing: 6) {
+                            Text("Category")
+                                .font(AstralTypography.caption)
+                                .foregroundStyle(AstralColors.muted)
+                            Button { comicNavigation?.searchFor(category) } label: {
+                                StatusBadge(category)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    if !decodedAuthors.isEmpty {
+                        HStack(spacing: 6) {
+                            Text("Authors")
+                                .font(AstralTypography.caption)
+                                .foregroundStyle(AstralColors.muted)
+                            ForEach(decodedAuthors, id: \.self) { author in
+                                if let name = author["name"] {
+                                    Button { comicNavigation?.searchFor(name) } label: {
+                                        StatusBadge(name, color: AstralColors.gold)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+
+                    if !decodedTags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(decodedTags, id: \.self) { tag in
+                                    if let name = tag["name"] {
+                                        Button { comicNavigation?.searchFor(name) } label: {
+                                            StatusBadge(name, color: AstralColors.body)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(16)
 
                 // MARK: Bookmarks section
                 if !bookmarks.isEmpty {
@@ -114,7 +206,7 @@ struct ComicDetailView: View {
         }
         .background(AstralColors.background)
         .navigationTitle(comic.title)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             comic.seenTotalChapters = comic.totalChapters
             comic.lastReadAt = .now

@@ -29,6 +29,9 @@ final class ComicLibraryViewModel {
                     existing.comicDescription = dto.description
                     existing.totalChapters = dto.totalChapters
                     existing.status = dto.status
+                    existing.category = dto.category
+                    existing.tagsJSON = Self.encodeTagsJSON(dto.tags)
+                    existing.authorsJSON = Self.encodeAuthorsJSON(dto.authors)
                     localComic = existing
                 } else {
                     // New entry — seed seenTotalChapters to current count so no phantom badge
@@ -42,6 +45,9 @@ final class ComicLibraryViewModel {
                         status: dto.status,
                         seenTotalChapters: dto.totalChapters
                     )
+                    comic.category = dto.category
+                    comic.tagsJSON = Self.encodeTagsJSON(dto.tags)
+                    comic.authorsJSON = Self.encodeAuthorsJSON(dto.authors)
                     modelContext.insert(comic)
                     localComic = comic
                 }
@@ -56,6 +62,20 @@ final class ComicLibraryViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private static func encodeTagsJSON(_ tags: [TagResponse]?) -> String? {
+        guard let tags, !tags.isEmpty else { return nil }
+        let dicts = tags.map { ["name": $0.name, "tag_type": $0.tagType] }
+        guard let data = try? JSONSerialization.data(withJSONObject: dicts) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func encodeAuthorsJSON(_ authors: [AuthorResponse]?) -> String? {
+        guard let authors, !authors.isEmpty else { return nil }
+        let dicts = authors.map { ["id": $0.id.uuidString, "name": $0.name] }
+        guard let data = try? JSONSerialization.data(withJSONObject: dicts) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     private func upsertChapters(

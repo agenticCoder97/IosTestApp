@@ -20,6 +20,7 @@ class Comic(Base):
     total_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     language: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    category: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     scrape_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("scrape_jobs.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

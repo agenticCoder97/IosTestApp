@@ -54,6 +54,7 @@ def _comic_to_schema(comic: Comic, include_chapters: bool = False) -> ComicRespo
         total_pages=comic.total_pages,
         language=comic.language,
         status=comic.status,
+        category=comic.category,
         authors=authors if authors else None,
         tags=tags if tags else None,
         chapters=chapters,

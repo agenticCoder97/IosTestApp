@@ -39,6 +39,7 @@ class ComicResponse(BaseModel):
     total_pages: int
     language: Optional[str] = None
     status: str
+    category: Optional[str] = None
     authors: Optional[list[AuthorResponse]] = None
     tags: Optional[list[TagResponse]] = None
     chapters: Optional[list[ComicChapterResponse]] = None

@@ -38,13 +38,61 @@ class AO3Scraper(BaseScraper):
         summary_tag = soup.select_one(".summary blockquote")
         description = summary_tag.get_text(separator="\n", strip=True) if summary_tag else None
 
+        # Rating
+        rating_tag = soup.select_one("dd.rating.tags a")
+        rating = rating_tag.get_text(strip=True) if rating_tag else None
+
+        # Fandom
+        fandom_tags = soup.select("dd.fandom.tags a")
+        fandom = ", ".join(a.get_text(strip=True) for a in fandom_tags) or None
+
+        # Relationships / Pairings
+        rel_tags = soup.select("dd.relationship.tags a")
+        pairing = ", ".join(a.get_text(strip=True) for a in rel_tags) or None
+
+        # Characters
+        char_tags = soup.select("dd.character.tags a")
+        characters = ", ".join(a.get_text(strip=True) for a in char_tags) or None
+
+        # Warnings
+        warn_tags = soup.select("dd.warning.tags a")
+        warnings = ", ".join(a.get_text(strip=True) for a in warn_tags) or None
+
+        # Freeform tags
+        free_tags = soup.select("dd.freeform.tags a")
+        tag_list = [{"name": a.get_text(strip=True), "tag_type": "freeform"} for a in free_tags]
+
+        # Word count
+        words_dd = soup.select_one("dd.words")
+        word_count = None
+        if words_dd:
+            try:
+                word_count = int(words_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        # Dates
+        pub_dd = soup.select_one("dd.published")
+        published_at = pub_dd.get_text(strip=True) if pub_dd else None
+
+        status_dd = soup.select_one("dd.status")
+        updated_at_source = status_dd.get_text(strip=True) if status_dd else None
+
         # "3/10" or "3/?" or just "3"
         chapters_dd = soup.select_one("dd.chapters")
         total_chapters = None
+        completion_status = "ongoing"
         if chapters_dd:
             parts = chapters_dd.get_text(strip=True).split("/")
             try:
-                total_chapters = int(parts[-1]) if parts[-1] != "?" else None
+                total = parts[-1]
+                if total == "?":
+                    total_chapters = None
+                    completion_status = "ongoing"
+                else:
+                    total_chapters = int(total)
+                    posted = int(parts[0]) if len(parts) > 1 else total_chapters
+                    completion_status = "complete" if posted >= total_chapters else "ongoing"
             except ValueError:
                 pass
 
@@ -55,7 +103,17 @@ class AO3Scraper(BaseScraper):
             source_id=work_id,
             description=description,
             authors=authors,
+            tags=tag_list,
             total_chapters=total_chapters,
+            fandom=fandom,
+            rating=rating,
+            warnings=warnings,
+            characters=characters,
+            pairing=pairing,
+            word_count=word_count,
+            completion_status=completion_status,
+            published_at=published_at,
+            updated_at_source=updated_at_source,
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:

@@ -23,6 +23,11 @@ struct FanficReaderView: View {
     @State private var fontSize: CGFloat = 16
     @State private var lineHeight: CGFloat = 1.6
     @State private var background: ReaderBackground = .dark
+    @State private var fontFamily: ReaderFont = .system
+    @State private var paragraphSpacing: CGFloat = 12
+    @State private var horizontalMargin: CGFloat = 20
+    @State private var showBookmarkSheet = false
+    @State private var bookmarkParagraphIndex: Int?
 
     var body: some View {
         ZStack {
@@ -34,7 +39,7 @@ struct FanficReaderView: View {
                     .scaleEffect(1.2)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: paragraphSpacing) {
                         if let title = chapter.title {
                             Text(title)
                                 .font(AstralTypography.title)
@@ -45,15 +50,24 @@ struct FanficReaderView: View {
                             .font(AstralTypography.caption)
                             .foregroundStyle(AstralColors.muted)
 
-                        Text(chapterContent)
-                            .font(.system(size: fontSize))
-                            .lineSpacing((lineHeight - 1.0) * fontSize)
-                            .foregroundStyle(textColor)
-                            // Live preview as sliders move
-                            .animation(AstralAnimation.quick, value: fontSize)
-                            .animation(AstralAnimation.quick, value: lineHeight)
+                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
+                            Text(paragraph)
+                                .font(fontFamily.font(size: fontSize))
+                                .lineSpacing((lineHeight - 1.0) * fontSize)
+                                .foregroundStyle(textColor)
+                                .simultaneousGesture(
+                                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                                        bookmarkParagraphIndex = index
+                                        showBookmarkSheet = true
+                                    }
+                                )
+                        }
                     }
-                    .padding(20)
+                    .padding(.horizontal, horizontalMargin)
+                    .padding(.vertical, 20)
+                    .animation(AstralAnimation.quick, value: fontSize)
+                    .animation(AstralAnimation.quick, value: lineHeight)
+                    .animation(AstralAnimation.quick, value: horizontalMargin)
                     .padding(.bottom, 100)
                 }
             }
@@ -83,6 +97,27 @@ struct FanficReaderView: View {
             }
         }
         .task { await loadChapter() }
+        .sheet(isPresented: $showBookmarkSheet) {
+            FanficBookmarkSheet(
+                paragraphText: bookmarkParagraphIndex.flatMap { paragraphs.indices.contains($0) ? paragraphs[$0] : nil } ?? "",
+                chapterTitle: chapter.title,
+                chapterNumber: chapter.chapterNumber,
+                wordOffset: bookmarkParagraphIndex.flatMap { wordOffsetForParagraph($0) } ?? 0,
+                onSave: { selectedText, heading, wordOffset in
+                    let bookmark = LocalBookmark(
+                        contentType: "fanfic",
+                        storyId: fanfic.id,
+                        chapterNumber: chapter.chapterNumber,
+                        wordOffset: wordOffset,
+                        selectedText: selectedText,
+                        heading: heading
+                    )
+                    modelContext.insert(bookmark)
+                    try? modelContext.save()
+                }
+            )
+            .presentationDetents([.medium])
+        }
     }
 
     private var backgroundColor: Color {
@@ -106,17 +141,18 @@ struct FanficReaderView: View {
             ZStack {
                 Circle()
                     .fill(.ultraThinMaterial)
-                    .frame(width: 54, height: 54)
-                VStack(spacing: 2) {
+                    .frame(width: 58, height: 58)
+                VStack(spacing: 1) {
                     Text(chapterDisplayNum)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(AstralColors.white)
                         .monospacedDigit()
                     Capsule()
                         .fill(AstralColors.muted)
-                        .frame(width: 20, height: 1)
+                        .frame(width: 22, height: 1.5)
+                        .rotationEffect(.degrees(-45))
                     Text("\(fanfic.totalChapters)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(AstralColors.muted)
                         .monospacedDigit()
                 }
@@ -172,6 +208,52 @@ struct FanficReaderView: View {
                     .tint(AstralColors.gold)
             }
 
+            // Font family
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ReaderFont.allCases, id: \.self) { font in
+                        Button {
+                            withAnimation(AstralAnimation.bouncy) { fontFamily = font }
+                        } label: {
+                            Text(font.rawValue)
+                                .font(font.font(size: 13))
+                                .foregroundStyle(fontFamily == font ? AstralColors.gold : AstralColors.body)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(fontFamily == font ? AstralColors.gold.opacity(0.15) : AstralColors.elevated)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Paragraph spacing
+            HStack {
+                Image(systemName: "text.alignleft")
+                    .foregroundStyle(AstralColors.muted)
+                    .frame(width: 24)
+                Slider(value: $paragraphSpacing, in: 4...28, step: 2)
+                    .tint(AstralColors.gold)
+                Text("\(Int(paragraphSpacing))pt")
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+                    .frame(width: 32)
+            }
+
+            // Horizontal margins
+            HStack {
+                Image(systemName: "arrow.left.and.right")
+                    .foregroundStyle(AstralColors.muted)
+                    .frame(width: 24)
+                Slider(value: $horizontalMargin, in: 12...40, step: 4)
+                    .tint(AstralColors.gold)
+                Text("\(Int(horizontalMargin))pt")
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+                    .frame(width: 32)
+            }
+
             // Background picker — animated ring selection
             HStack(spacing: 16) {
                 ForEach(ReaderBackground.allCases, id: \.self) { bg in
@@ -208,6 +290,17 @@ struct FanficReaderView: View {
         }
     }
 
+    private var paragraphs: [String] {
+        chapterContent
+            .components(separatedBy: "\n\n")
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    private func wordOffsetForParagraph(_ index: Int) -> Int {
+        paragraphs.prefix(index)
+            .reduce(0) { $0 + $1.split(separator: " ").count }
+    }
+
     private func loadChapter() async {
         if let previewContent {
             chapterContent = previewContent
@@ -223,6 +316,75 @@ struct FanficReaderView: View {
             chapterContent = "Failed to load chapter."
         }
         isLoading = false
+    }
+}
+
+// MARK: - Bookmark Sheet
+
+private struct FanficBookmarkSheet: View {
+    let paragraphText: String
+    let chapterTitle: String?
+    let chapterNumber: Double
+    let wordOffset: Int
+    let onSave: (String, String?, Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var heading: String = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Bookmark this passage")
+                    .font(AstralTypography.bodyMedium)
+                    .foregroundStyle(AstralColors.white)
+
+                Text(snippetText)
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.body)
+                    .lineLimit(4)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AstralColors.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                TextField("Heading (optional)", text: $heading)
+                    .font(AstralTypography.body)
+                    .foregroundStyle(AstralColors.white)
+                    .padding(12)
+                    .background(AstralColors.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Spacer()
+            }
+            .padding(16)
+            .background(AstralColors.background)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(AstralColors.muted)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(
+                            snippetText,
+                            heading.isEmpty ? chapterTitle : heading,
+                            wordOffset
+                        )
+                        dismiss()
+                    }
+                    .foregroundStyle(AstralColors.gold)
+                }
+            }
+            .onAppear {
+                heading = chapterTitle ?? ""
+            }
+        }
+    }
+
+    private var snippetText: String {
+        let words = paragraphText.split(separator: " ")
+        let preview = words.prefix(20).joined(separator: " ")
+        return words.count > 20 ? preview + "…" : preview
     }
 }
 

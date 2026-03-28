@@ -17,6 +17,12 @@ public final class LocalBookmark {
     /// Optional user note attached to the bookmark.
     public var note: String?
     public var createdAt: Date
+    /// Word offset for fanfic word-level bookmarks.
+    public var wordOffset: Int?
+    /// The word or short text passage the user long-pressed to create this bookmark.
+    public var selectedText: String?
+    /// Section heading (defaults to chapter title) for context.
+    public var heading: String?
 
     public init(
         id: UUID = UUID(),
@@ -26,7 +32,10 @@ public final class LocalBookmark {
         pageNumber: Int? = nil,
         scrollPercent: Double? = nil,
         note: String? = nil,
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        wordOffset: Int? = nil,
+        selectedText: String? = nil,
+        heading: String? = nil
     ) {
         self.id = id
         self.contentType = contentType
@@ -36,6 +45,9 @@ public final class LocalBookmark {
         self.scrollPercent = scrollPercent
         self.note = note
         self.createdAt = createdAt
+        self.wordOffset = wordOffset
+        self.selectedText = selectedText
+        self.heading = heading
     }
 
     /// Human-readable label for display in bookmark lists.
@@ -43,6 +55,9 @@ public final class LocalBookmark {
         let chStr = chapterNumber.truncatingRemainder(dividingBy: 1) == 0
             ? "Ch. \(Int(chapterNumber))"
             : "Ch. \(chapterNumber)"
+        if let text = selectedText, !text.isEmpty {
+            return "\(chStr) — \"\(text)\""
+        }
         if let page = pageNumber {
             return "\(chStr), Page \(page)"
         }

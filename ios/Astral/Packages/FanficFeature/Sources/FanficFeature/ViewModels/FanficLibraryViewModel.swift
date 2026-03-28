@@ -43,6 +43,12 @@ final class FanficLibraryViewModel {
                     existing.completionStatus = dto.completionStatus
                     existing.wordCount = dto.wordCount
                     existing.totalChapters = dto.totalChapters
+                    existing.thumbnailPath = dto.thumbnailPath
+                    existing.characters = dto.characters
+                    existing.pairing = dto.relationship
+                    existing.warnings = dto.warnings
+                    existing.publishedAt = dto.publishedAt
+                    existing.updatedAtSource = dto.updatedAtSource
                     localFanfic = existing
                 } else {
                     let fanfic = LocalFanfic(
@@ -57,6 +63,12 @@ final class FanficLibraryViewModel {
                         totalChapters: dto.totalChapters,
                         seenTotalChapters: dto.totalChapters
                     )
+                    fanfic.thumbnailPath = dto.thumbnailPath
+                    fanfic.characters = dto.characters
+                    fanfic.pairing = dto.relationship
+                    fanfic.warnings = dto.warnings
+                    fanfic.publishedAt = dto.publishedAt
+                    fanfic.updatedAtSource = dto.updatedAtSource
                     modelContext.insert(fanfic)
                     localFanfic = fanfic
                 }

@@ -14,6 +14,7 @@ public struct ComicResponse: Codable, Sendable, Identifiable {
     public let status: String
     public let authors: [AuthorResponse]?
     public let tags: [TagResponse]?
+    public let category: String?
     public let chapters: [ComicChapterResponse]?
     public let createdAt: Date
     public let updatedAt: Date
