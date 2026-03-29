@@ -46,6 +46,7 @@ struct ComicReaderView: View {
     @State private var scrolledPageID: Int? = 0  // drives paged scroll position
     @State private var showRotateHint = false
     @AppStorage("hideRotateHint") private var hideRotateHint = false
+    @AppStorage("forceLandscape") private var forceLandscape = true
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -179,7 +180,9 @@ struct ComicReaderView: View {
         .task(id: currentChapterIndex) { await loadPages() }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
-            if !hideRotateHint, UIDevice.current.orientation.isPortrait || !UIDevice.current.orientation.isValidInterfaceOrientation {
+            if forceLandscape {
+                setLandscape(true)
+            } else if !hideRotateHint, UIDevice.current.orientation.isPortrait || !UIDevice.current.orientation.isValidInterfaceOrientation {
                 withAnimation { showRotateHint = true }
                 Task {
                     try? await Task.sleep(for: .seconds(3))
@@ -187,7 +190,10 @@ struct ComicReaderView: View {
                 }
             }
         }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+            if forceLandscape { setLandscape(false) }
+        }
         .overlay(alignment: .top) {
             if showRotateHint {
                 HStack(spacing: 8) {
@@ -407,6 +413,17 @@ struct ComicReaderView: View {
         if !showHUD { showSettings = false }
     }
 
+    private func setLandscape(_ landscape: Bool) {
+        if landscape {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape))
+        } else {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .all))
+            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
+        }
+    }
+
     // MARK: - Top Bar
 
     private var topBar: some View {
@@ -612,6 +629,22 @@ struct ComicReaderView: View {
                     Image(systemName: "sun.max.fill")
                         .foregroundStyle(AstralColors.muted)
                 }
+            }
+
+            // Landscape lock toggle
+            HStack {
+                Image(systemName: "rectangle.landscape.rotate")
+                    .foregroundStyle(AstralColors.muted)
+                Text("Force Landscape")
+                    .font(AstralTypography.body)
+                    .foregroundStyle(AstralColors.white)
+                Spacer()
+                Toggle("", isOn: $forceLandscape)
+                    .tint(AstralColors.gold)
+                    .labelsHidden()
+            }
+            .onChange(of: forceLandscape) { _, newVal in
+                setLandscape(newVal)
             }
         }
         .padding(.horizontal, 16)

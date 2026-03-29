@@ -12,6 +12,10 @@ struct ComicDetailView: View {
     @Query private var chapters: [LocalComicChapter]
     @Query private var bookmarks: [LocalBookmark]
     @State private var selectedChapter: LocalComicChapter?
+    @State private var scrollOffset: CGFloat = 0
+
+    // Height of the hero image — used to derive title opacity
+    private let heroAspect: CGFloat = 3.0 / 4.0
 
     init(comic: LocalComic) {
         self.comic = comic
@@ -27,6 +31,8 @@ struct ComicDetailView: View {
         )
     }
 
+    // MARK: - Decoded metadata
+
     private var decodedTags: [[String: String]] {
         guard let json = comic.tagsJSON, let data = json.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]]
@@ -41,198 +47,230 @@ struct ComicDetailView: View {
         return arr
     }
 
+    private var formattedAddedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: comic.addedAt)
+    }
+
+    // MARK: - Title overlay opacity
+
+    /// Fades the title out as the user scrolls down past ~30 % of the hero height.
+    /// scrollOffset is negative when scrolled down (coordinate space flips).
+    private func titleOpacity(heroHeight: CGFloat) -> Double {
+        // scrollOffset > 0 means pulled down (bounce) — keep full opacity.
+        // scrollOffset < 0 means scrolled up — fade from 0 % scroll to 40 % of hero height.
+        let fadeRange: CGFloat = heroHeight * 0.4
+        guard scrollOffset < 0 else { return 1.0 }
+        let progress = min(abs(scrollOffset) / fadeRange, 1.0)
+        return Double(1.0 - progress)
+    }
+
+    // MARK: - Body
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // MARK: Hero thumbnail
-                ZStack(alignment: .bottomLeading) {
-                    if let path = comic.thumbnailPath, let url = thumbnailURL(path) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            default:
-                                Rectangle()
-                                    .fill(AstralColors.elevated)
-                                    .overlay {
-                                        Image(systemName: "book.fill")
-                                            .font(.system(size: 48))
-                                            .foregroundStyle(AstralColors.muted)
-                                    }
-                            }
-                        }
-                    } else {
-                        Rectangle()
-                            .fill(AstralColors.elevated)
-                            .overlay {
-                                Image(systemName: "book.fill")
-                                    .font(.system(size: 48))
-                                    .foregroundStyle(AstralColors.muted)
-                            }
-                    }
+        GeometryReader { geo in
+            let heroHeight = geo.size.width / heroAspect
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // MARK: Hero + floating title
+                    ZStack(alignment: .bottomLeading) {
+                        heroThumbnail
+                            .frame(maxWidth: .infinity)
+                            .aspectRatio(heroAspect, contentMode: .fit)
+                            .clipped()
 
-                    // Title overlay with gradient
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.85)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 120)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
+                        // Full-width gradient at bottom of thumbnail
+                        LinearGradient(
+                            colors: [.clear, AstralColors.background],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: heroHeight * 0.55)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(comic.title)
-                            .font(AstralTypography.title)
-                            .foregroundStyle(AstralColors.white)
-                            .lineLimit(3)
+                        // Floating title — fades on scroll
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(comic.title)
+                                .font(AstralTypography.title)
+                                .foregroundStyle(AstralColors.white)
+                                .lineLimit(3)
+                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
 
-                        HStack(spacing: 8) {
-                            StatusBadge(comic.sourceKey)
-                            StatusBadge(comic.status)
-                            if comic.totalChapters > 0 {
-                                StatusBadge("\(comic.totalChapters) ch", color: AstralColors.muted)
-                            }
-                        }
-                    }
-                    .padding(16)
-                }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(3/4, contentMode: .fit)
-                .clipped()
-
-                // MARK: Metadata section
-                VStack(alignment: .leading, spacing: 12) {
-                    if let desc = comic.comicDescription, !desc.isEmpty {
-                        Text(desc)
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.body)
-                            .lineLimit(6)
-                    }
-
-                    if let category = comic.category {
-                        HStack(spacing: 6) {
-                            Text("Category")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
-                            Button { comicNavigation?.searchFor(category) } label: {
-                                StatusBadge(category)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    if !decodedAuthors.isEmpty {
-                        HStack(spacing: 6) {
-                            Text("Authors")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
-                            ForEach(decodedAuthors, id: \.self) { author in
-                                if let name = author["name"] {
-                                    Button { comicNavigation?.searchFor(name) } label: {
-                                        StatusBadge(name, color: AstralColors.gold)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }
-
-                    if !decodedTags.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
-                                ForEach(decodedTags, id: \.self) { tag in
-                                    if let name = tag["name"] {
-                                        Button { comicNavigation?.searchFor(name) } label: {
-                                            StatusBadge(name, color: AstralColors.body)
+                                StatusBadge(comic.sourceKey.uppercased())
+                                StatusBadge(comic.status)
+                            }
+                        }
+                        .padding(16)
+                        .opacity(titleOpacity(heroHeight: heroHeight))
+                    }
+
+                    // MARK: Metadata section
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        // Authors row
+                        if !decodedAuthors.isEmpty {
+                            metadataRow(label: "Artists") {
+                                ForEach(decodedAuthors, id: \.self) { author in
+                                    if let name = author["name"] {
+                                        Button {
+                                            AstralLogger.info("Author tapped: \(name)", context: "ComicDetail")
+                                        } label: {
+                                            StatusBadge(name, color: AstralColors.gold)
                                         }
                                         .buttonStyle(.plain)
                                     }
                                 }
                             }
                         }
-                    }
-                }
-                .padding(16)
 
-                // MARK: Continue Reading button
-                if !chapters.isEmpty {
-                    if let nextChapter = nextUnreadChapter {
-                        Button {
-                            AstralLogger.info("Continue button tapped: ch \(nextChapter.chapterNumber)", context: "ComicDetail")
-                            selectedChapter = nextChapter
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: comic.lastReadChapterNumber == 0 ? "book.fill" : "arrow.right.circle.fill")
-                                Text(comic.lastReadChapterNumber == 0
-                                     ? "Start Reading"
-                                     : "Continue — Ch. \(Int(nextChapter.chapterNumber))")
-                                    .font(AstralTypography.bodyMedium)
+                        // Category row
+                        if let category = comic.category, !category.isEmpty {
+                            metadataRow(label: "Category") {
+                                Button {
+                                    AstralLogger.info("Category tapped: \(category)", context: "ComicDetail")
+                                } label: {
+                                    StatusBadge(category, color: AstralColors.body)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .foregroundStyle(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(AstralColors.gold)
-                            .clipShape(Capsule())
                         }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
+
+                        // Tags — horizontal scroll
+                        if !decodedTags.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Tags")
+                                    .font(AstralTypography.captionMedium)
+                                    .foregroundStyle(AstralColors.muted)
+                                    .textCase(.uppercase)
+                                    .tracking(0.8)
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(decodedTags, id: \.self) { tag in
+                                            if let name = tag["name"] {
+                                                Button {
+                                                    AstralLogger.info("Tag tapped: \(name)", context: "ComicDetail")
+                                                } label: {
+                                                    StatusBadge(name, color: AstralColors.body)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 1) // avoid clipping capsule shadows
+                                }
+                            }
+                        }
+
+                        Divider()
+                            .background(AstralColors.elevated)
+
+                        // Pages / Source / Added
+                        HStack(spacing: 20) {
+                            if comic.totalChapters > 0 {
+                                infoCell(label: "Chapters", value: "\(comic.totalChapters)")
+                            }
+                            infoCell(label: "Source", value: comic.sourceKey.uppercased())
+                            infoCell(label: "Added", value: formattedAddedDate)
+                        }
                     }
-                }
+                    .padding(16)
 
-                // MARK: Bookmarks section
-                if !bookmarks.isEmpty {
-                    BookmarksSection(bookmarks: bookmarks, onDelete: deleteBookmark)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 8)
-                }
-
-                // MARK: Chapter list
-                if chapters.isEmpty {
-                    EmptyStateView(
-                        icon: "book.closed",
-                        title: "No Chapters Yet",
-                        message: "Scrape this comic from the browser to load its chapters."
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 60)
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(chapters) { chapter in
+                    // MARK: Continue Reading button
+                    if !chapters.isEmpty {
+                        if let nextChapter = nextUnreadChapter {
                             Button {
-                                AstralLogger.info("Chapter tapped: \(chapter.chapterNumber) id=\(chapter.id)", context: "ComicDetail")
-                                selectedChapter = chapter
+                                AstralLogger.info("Continue button tapped: ch \(nextChapter.chapterNumber)", context: "ComicDetail")
+                                selectedChapter = nextChapter
                             } label: {
-                                ComicChapterRow(
-                                    chapter: chapter,
-                                    isLastRead: chapter.chapterNumber == Double(comic.lastReadChapterNumber),
-                                    isRead: chapter.chapterNumber < Double(comic.lastReadChapterNumber),
-                                    isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
-                                )
+                                HStack(spacing: 8) {
+                                    Image(systemName: comic.lastReadChapterNumber == 0 ? "book.fill" : "arrow.right.circle.fill")
+                                    Text(comic.lastReadChapterNumber == 0
+                                         ? "Start Reading"
+                                         : "Continue — Ch. \(Int(nextChapter.chapterNumber))")
+                                        .font(AstralTypography.bodyMedium)
+                                }
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(AstralColors.gold)
+                                .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button {
-                                    withAnimation(AstralAnimation.bouncy) {
-                                        addBookmark(for: chapter)
-                                    }
-                                } label: {
-                                    Label("Bookmark", systemImage: "bookmark")
-                                }
-                                .tint(AstralColors.gold)
-                            }
-
-                            Divider()
-                                .background(AstralColors.elevated)
-                                .padding(.leading, 16)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
                         }
                     }
-                    .padding(.bottom, 100)
+
+                    // MARK: Bookmarks section
+                    if !bookmarks.isEmpty {
+                        BookmarksSection(bookmarks: bookmarks, onDelete: deleteBookmark)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 8)
+                    }
+
+                    // MARK: Chapter list
+                    if chapters.isEmpty {
+                        EmptyStateView(
+                            icon: "book.closed",
+                            title: "No Chapters Yet",
+                            message: "Scrape this comic from the browser to load its chapters."
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(chapters) { chapter in
+                                Button {
+                                    AstralLogger.info("Chapter tapped: \(chapter.chapterNumber) id=\(chapter.id)", context: "ComicDetail")
+                                    selectedChapter = chapter
+                                } label: {
+                                    ComicChapterRow(
+                                        chapter: chapter,
+                                        isLastRead: chapter.chapterNumber == Double(comic.lastReadChapterNumber),
+                                        isRead: chapter.chapterNumber < Double(comic.lastReadChapterNumber),
+                                        isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        withAnimation(AstralAnimation.bouncy) {
+                                            addBookmark(for: chapter)
+                                        }
+                                    } label: {
+                                        Label("Bookmark", systemImage: "bookmark")
+                                    }
+                                    .tint(AstralColors.gold)
+                                }
+
+                                Divider()
+                                    .background(AstralColors.elevated)
+                                    .padding(.leading, 16)
+                            }
+                        }
+                        .padding(.bottom, 100)
+                    }
                 }
+                // Track scroll offset via a background GeometryReader in the scroll coordinate space
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(
+                                key: ScrollOffsetKey.self,
+                                value: proxy.frame(in: .named("scroll")).minY
+                            )
+                    }
+                )
+            }
+            .coordinateSpace(name: "scroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { value in
+                scrollOffset = value
             }
         }
         .background(AstralColors.background)
@@ -247,6 +285,70 @@ struct ComicDetailView: View {
             try? modelContext.save()
         }
     }
+
+    // MARK: - Hero thumbnail
+
+    @ViewBuilder
+    private var heroThumbnail: some View {
+        if let path = comic.thumbnailPath, let url = thumbnailURL(path) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    thumbnailPlaceholder
+                }
+            }
+        } else {
+            thumbnailPlaceholder
+        }
+    }
+
+    private var thumbnailPlaceholder: some View {
+        Rectangle()
+            .fill(AstralColors.elevated)
+            .overlay {
+                Image(systemName: "book.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(AstralColors.muted)
+            }
+    }
+
+    // MARK: - Metadata helpers
+
+    /// A labelled row with horizontally-wrapping badge chips inside a FlowLayout-style HStack.
+    @ViewBuilder
+    private func metadataRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(AstralTypography.captionMedium)
+                .foregroundStyle(AstralColors.muted)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            HStack(spacing: 6) {
+                content()
+            }
+        }
+    }
+
+    /// A small two-line stat cell (label above, value below).
+    private func infoCell(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(AstralTypography.captionMedium)
+                .foregroundStyle(AstralColors.muted)
+                .textCase(.uppercase)
+                .tracking(0.8)
+            Text(value)
+                .font(AstralTypography.bodyMedium)
+                .foregroundStyle(AstralColors.white)
+        }
+    }
+
+    // MARK: - Private helpers
 
     private var nextUnreadChapter: LocalComicChapter? {
         if comic.lastReadChapterNumber == 0 { return chapters.first }
@@ -271,6 +373,15 @@ struct ComicDetailView: View {
     private func deleteBookmark(_ bookmark: LocalBookmark) {
         modelContext.delete(bookmark)
         try? modelContext.save()
+    }
+}
+
+// MARK: - Scroll offset preference key
+
+private struct ScrollOffsetKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
