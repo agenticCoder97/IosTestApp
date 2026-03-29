@@ -239,7 +239,7 @@ async def comic_scrape_task(ctx, job_id: str):
                         job_id, chapter.chapter_number, ch_idx, total_chapters, len(pages),
                     )
 
-                    async with db.no_autoflush:
+                    with db.no_autoflush():
                         for pg_idx, page_info in enumerate(pages, start=1):
                             dest_path = f"comics/{job.story_id}/{chapter.id}/page_{page_info.page_number:04d}.jpg"
                             logger.debug(
