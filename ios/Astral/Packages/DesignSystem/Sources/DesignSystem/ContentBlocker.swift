@@ -11,6 +11,22 @@ public final class ContentBlocker {
 
     private init() {}
 
+    /// Pre-compile rules on app launch so they're ready before the first page load.
+    public func precompile() {
+        guard compiledList == nil, !isCompiling else { return }
+        isCompiling = true
+        WKContentRuleListStore.default().compileContentRuleList(
+            forIdentifier: "AstralAdBlock_v4",
+            encodedContentRuleList: Self.rulesJSON
+        ) { [weak self] list, _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.isCompiling = false
+                if let list { self.compiledList = list }
+            }
+        }
+    }
+
     /// Applies the content blocker to the given WKWebView.
     /// Compiles rules asynchronously on first call; subsequent calls are instant.
     public func apply(to webView: WKWebView) {
