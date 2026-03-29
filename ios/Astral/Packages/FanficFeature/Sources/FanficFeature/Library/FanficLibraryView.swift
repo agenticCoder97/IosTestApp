@@ -259,6 +259,14 @@ struct FanficRowView: View {
         return URL(string: AppConfig.staticBaseURL + path)
     }
 
+    private var sourceIcon: String {
+        switch fanfic.sourceKey {
+        case "ao3": "a.square.fill"
+        case "ffnet": "f.square.fill"
+        default: "questionmark.square.fill"
+        }
+    }
+
     private var fanficPlaceholder: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(AstralColors.elevated)
@@ -306,6 +314,7 @@ struct FanficRowView: View {
                 .animation(AstralAnimation.bouncy, value: fanfic.newChapterCount)
 
                 VStack(alignment: .leading, spacing: 4) {
+                    // Title + source icon + favourite
                     HStack(spacing: 6) {
                         Text(fanfic.title)
                             .font(AstralTypography.bodyMedium)
@@ -314,7 +323,10 @@ struct FanficRowView: View {
 
                         Spacer()
 
-                        // Favourite heart — bouncy toggle
+                        Image(systemName: sourceIcon)
+                            .font(.system(size: 14))
+                            .foregroundStyle(AstralColors.muted)
+
                         Button {
                             withAnimation(AstralAnimation.bouncy) {
                                 fanfic.isFavorite.toggle()
@@ -331,47 +343,68 @@ struct FanficRowView: View {
                         .buttonStyle(.plain)
                     }
 
-                    if let summary = fanfic.summary {
+                    // Summary
+                    if let summary = fanfic.summary, !summary.isEmpty {
                         Text(summary)
                             .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.muted)
+                            .foregroundStyle(AstralColors.body)
                             .lineLimit(2)
                     }
 
+                    // Tags row — fandom, rating, status, word count
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
-                            if let fandom = fanfic.fandom {
+                            if let fandom = fanfic.fandom, !fandom.isEmpty {
                                 StatusBadge(fandom)
                             }
-                            if let rating = fanfic.rating {
+                            if let rating = fanfic.rating, !rating.isEmpty {
                                 StatusBadge(rating)
                             }
                             StatusBadge(fanfic.completionStatus)
-                            if let wc = fanfic.wordCount {
+                            if let wc = fanfic.wordCount, wc > 0 {
                                 StatusBadge("\(wc / 1000)K words", color: AstralColors.muted)
-                            }
-                            if let pairing = fanfic.pairing, !pairing.isEmpty {
-                                StatusBadge(pairing, color: AstralColors.gold)
-                            }
-                            if let characters = fanfic.characters, !characters.isEmpty {
-                                StatusBadge(characters, color: AstralColors.muted)
                             }
                         }
                     }
 
-                    if let updated = fanfic.updatedAtSource {
-                        Text("Updated \(updated, format: .dateTime.month(.abbreviated).day().year())")
+                    // Metadata row — chapters, dates
+                    HStack(spacing: 12) {
+                        Label("\(fanfic.totalChapters) ch", systemImage: "book.pages")
                             .font(AstralTypography.caption)
                             .foregroundStyle(AstralColors.muted)
+
+                        if let published = fanfic.publishedAt {
+                            Label(published.formatted(.dateTime.month(.abbreviated).year()), systemImage: "calendar")
+                                .font(AstralTypography.caption)
+                                .foregroundStyle(AstralColors.muted)
+                        }
+
+                        if let updated = fanfic.updatedAtSource {
+                            Label(updated.formatted(.dateTime.month(.abbreviated).day()), systemImage: "arrow.clockwise")
+                                .font(AstralTypography.caption)
+                                .foregroundStyle(AstralColors.muted)
+                        }
                     }
                 }
             }
 
-            if fanfic.totalChapters > 0 {
-                ProgressBarView(progress: progressPercent)
-                Text("\(fanfic.lastReadChapterNumber)/\(fanfic.totalChapters) chapters")
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
+            // Progress — circular + text like comic cards
+            if fanfic.totalChapters > 0 && fanfic.lastReadChapterNumber > 0 {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .stroke(AstralColors.muted.opacity(0.2), lineWidth: 2.5)
+                        Circle()
+                            .trim(from: 0, to: progressPercent)
+                            .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                            .rotationEffect(.degrees(-135))
+                    }
+                    .frame(width: 18, height: 18)
+
+                    Text("\(fanfic.lastReadChapterNumber)/\(fanfic.totalChapters) chapters")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(AstralColors.body)
+                }
             }
         }
         .padding(12)
