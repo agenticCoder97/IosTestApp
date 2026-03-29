@@ -28,6 +28,7 @@ struct FanficReaderView: View {
     @State private var horizontalMargin: CGFloat = 20
     @State private var showBookmarkSheet = false
     @State private var bookmarkParagraphIndex: Int?
+    @State private var readingSession: LocalReadingSession?
 
     var body: some View {
         ZStack {
@@ -97,6 +98,28 @@ struct FanficReaderView: View {
             }
         }
         .task { await loadChapter() }
+        .onAppear {
+            // Track reading session
+            let session = LocalReadingSession(contentType: "fanfic", storyId: fanfic.id)
+            modelContext.insert(session)
+            // Persist reading progress
+            fanfic.lastReadChapterNumber = Int(chapter.chapterNumber)
+            fanfic.lastReadAt = .now
+            if fanfic.totalChapters > 0 {
+                fanfic.progressPercent = Double(fanfic.lastReadChapterNumber) / Double(fanfic.totalChapters)
+                if fanfic.progressPercent >= 1.0 && fanfic.completedAt == nil {
+                    fanfic.completedAt = .now
+                }
+            }
+            try? modelContext.save()
+            readingSession = session
+        }
+        .onDisappear {
+            if let readingSession {
+                readingSession.endedAt = .now
+                try? modelContext.save()
+            }
+        }
         .sheet(isPresented: $showBookmarkSheet) {
             FanficBookmarkSheet(
                 paragraphText: bookmarkParagraphIndex.flatMap { paragraphs.indices.contains($0) ? paragraphs[$0] : nil } ?? "",

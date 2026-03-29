@@ -15,6 +15,7 @@ struct AstralApp: App {
             UserPreferences.self,
             LocalScrapeJob.self,
             LocalBookmark.self,
+            LocalReadingSession.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,

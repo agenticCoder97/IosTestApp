@@ -358,6 +358,31 @@ public enum PreviewMocks {
         updatedAt: Date(timeIntervalSinceNow: -60 * 60 * 24 * 7)
     )
 
+    // MARK: - Reading Sessions
+
+    public static let sampleReadingSessions: [LocalReadingSession] = {
+        var sessions: [LocalReadingSession] = []
+        // Generate sessions over the last 60 days for realistic heatmap data
+        for daysAgo in 0..<60 {
+            // Skip some days to create natural gaps
+            if daysAgo % 7 == 3 || daysAgo % 11 == 0 { continue }
+            let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: .now)!
+            let sessionCount = daysAgo % 5 == 0 ? 2 : 1
+            for s in 0..<sessionCount {
+                let start = Calendar.current.date(byAdding: .hour, value: 20 + s, to: Calendar.current.startOfDay(for: date))!
+                let end = Calendar.current.date(byAdding: .minute, value: Int.random(in: 15...90), to: start)!
+                sessions.append(LocalReadingSession(
+                    contentType: daysAgo % 3 == 0 ? "fanfic" : "comic",
+                    storyId: daysAgo % 3 == 0 ? IDs.fanfic1 : IDs.comic1,
+                    startedAt: start,
+                    endedAt: end,
+                    chaptersRead: Int.random(in: 1...4)
+                ))
+            }
+        }
+        return sessions
+    }()
+
     // MARK: - UserPreferences
 
     public static let defaultPrefs = UserPreferences(
@@ -391,7 +416,8 @@ extension ModelContainer {
         fanficChapters: [LocalFanficChapter] = [],
         scrapeJobs: [LocalScrapeJob] = [],
         authors: [LocalAuthor] = [],
-        bookmarks: [LocalBookmark] = []
+        bookmarks: [LocalBookmark] = [],
+        readingSessions: [LocalReadingSession] = []
     ) -> ModelContainer {
         let schema = Schema([
             LocalComic.self,
@@ -402,6 +428,7 @@ extension ModelContainer {
             LocalAuthor.self,
             UserPreferences.self,
             LocalBookmark.self,
+            LocalReadingSession.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         // swiftlint:disable:next force_try
@@ -414,6 +441,7 @@ extension ModelContainer {
         scrapeJobs.forEach { context.insert($0) }
         authors.forEach { context.insert($0) }
         bookmarks.forEach { context.insert($0) }
+        readingSessions.forEach { context.insert($0) }
         return container
     }
 }

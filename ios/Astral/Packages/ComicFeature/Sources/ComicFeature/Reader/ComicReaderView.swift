@@ -47,6 +47,7 @@ struct ComicReaderView: View {
     @State private var showRotateHint = false
     @AppStorage("hideRotateHint") private var hideRotateHint = false
     @AppStorage("forceLandscape") private var forceLandscape = true
+    @State private var readingSession: LocalReadingSession?
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -179,6 +180,10 @@ struct ComicReaderView: View {
         .statusBarHidden(!showHUD)
         .task(id: currentChapterIndex) { await loadPages() }
         .onAppear {
+            let session = LocalReadingSession(contentType: "comic", storyId: comic.id)
+            modelContext.insert(session)
+            try? modelContext.save()
+            readingSession = session
             UIApplication.shared.isIdleTimerDisabled = true
             if forceLandscape {
                 setLandscape(true)
@@ -191,6 +196,10 @@ struct ComicReaderView: View {
             }
         }
         .onDisappear {
+            if let readingSession {
+                readingSession.endedAt = .now
+                try? modelContext.save()
+            }
             UIApplication.shared.isIdleTimerDisabled = false
             if forceLandscape { setLandscape(false) }
         }
@@ -735,7 +744,11 @@ struct ComicReaderView: View {
         comic.lastReadAt = .now
         if comic.totalChapters > 0 {
             comic.progressPercent = Double(comic.lastReadChapterNumber) / Double(comic.totalChapters)
+            if comic.progressPercent >= 1.0 && comic.completedAt == nil {
+                comic.completedAt = .now
+            }
         }
+        readingSession?.chaptersRead += 1
         try? modelContext.save()
 
         if let previewPages {
