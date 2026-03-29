@@ -11,9 +11,10 @@ from curl_cffi.requests import AsyncSession as CurlSession
 from app.core.config import settings
 from app.core.constants import COOKIE_CACHE_KEY_PREFIX
 
-# Impersonate Chrome 120 — well-supported by curl_cffi 0.7.x and passes
-# Cloudflare's TLS/JA3 fingerprint checks without a real browser.
-_CF_IMPERSONATE = "chrome120"
+# Impersonate Safari iOS 17.2 — matches the TLS fingerprint of the iOS
+# WKWebView that harvests Cloudflare cookies. Using Chrome here would cause
+# cf_clearance cookies (issued to Safari) to be rejected by Cloudflare.
+_CF_IMPERSONATE = "safari17_2_ios"
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,10 @@ class BaseScraper(ABC):
         logger.debug("_get_cookies loading from Redis | source_key=%s", self.source_key)
         r = await aioredis.from_url(settings.redis_url)
         try:
-            raw = await r.get(f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}")
+            # source_key is a SourceKey enum — .value gives the raw string ("nhentai")
+            # that matches the key format used by the iOS app's cookie store
+            key = self.source_key.value if hasattr(self.source_key, 'value') else str(self.source_key)
+            raw = await r.get(f"{COOKIE_CACHE_KEY_PREFIX}{key}")
             if not raw:
                 # Expected for sources that don't require cookies (e.g. nhentai public).
                 # Logged at DEBUG only — this appears hundreds of times per job otherwise.
@@ -153,7 +157,7 @@ class BaseScraper(ABC):
                     r = await aioredis.from_url(settings.redis_url)
                     try:
                         await r.set(
-                            f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}",
+                            f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key.value if hasattr(self.source_key, 'value') else self.source_key}",
                             json.dumps(cache_data),
                             ex=settings.cookie_cache_ttl_secs,
                         )
@@ -226,7 +230,7 @@ class BaseScraper(ABC):
                 r = await aioredis.from_url(settings.redis_url)
                 try:
                     await r.set(
-                        f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}",
+                        f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key.value if hasattr(self.source_key, 'value') else self.source_key}",
                         json.dumps(cache_data),
                         ex=settings.cookie_cache_ttl_secs,
                     )
@@ -268,10 +272,13 @@ class BaseScraper(ABC):
             logger.debug("_fetch attempt %d/%d | url=%s", attempt + 1, self.max_retries, url)
             try:
                 async with CurlSession(impersonate=_CF_IMPERSONATE) as session:
+                    headers = {}
+                    if user_agent:
+                        headers["User-Agent"] = user_agent
                     response = await session.get(
                         url,
                         cookies=cookies,
-                        headers={"User-Agent": user_agent} if user_agent else {},
+                        headers=headers,
                         timeout=60,
                     )
 
