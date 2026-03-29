@@ -795,7 +795,7 @@ private struct NextChapterTrigger: View {
     let onProgressChange: (CGFloat) -> Void
     let progress: CGFloat
 
-    private let triggerHeight: CGFloat = 100
+    private let triggerHeight: CGFloat = 180
 
     var body: some View {
         GeometryReader { geo in
