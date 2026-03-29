@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Core
+import DesignSystem
 
 @main
 struct AstralApp: App {
@@ -47,6 +48,7 @@ struct AstralApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .task { ContentBlocker.shared.precompile() }
         }
         .modelContainer(sharedModelContainer)
     }
