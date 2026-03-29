@@ -239,32 +239,33 @@ async def comic_scrape_task(ctx, job_id: str):
                         job_id, chapter.chapter_number, ch_idx, total_chapters, len(pages),
                     )
 
-                    for pg_idx, page_info in enumerate(pages, start=1):
-                        dest_path = f"comics/{job.story_id}/{chapter.id}/page_{page_info.page_number:04d}.jpg"
-                        logger.debug(
-                            "comic_scrape_task downloading | job_id=%s chapter=%.1f page=%d/%d url=%s",
-                            job_id, chapter.chapter_number, pg_idx, len(pages), page_info.source_url,
-                        )
-                        file_path = await scraper.download_image(page_info.source_url, dest_path)
-
-                        existing_page = await db.execute(
-                            select(Page).where(
-                                Page.chapter_id == chapter.id,
-                                Page.page_number == page_info.page_number,
+                    async with db.no_autoflush:
+                        for pg_idx, page_info in enumerate(pages, start=1):
+                            dest_path = f"comics/{job.story_id}/{chapter.id}/page_{page_info.page_number:04d}.jpg"
+                            logger.debug(
+                                "comic_scrape_task downloading | job_id=%s chapter=%.1f page=%d/%d url=%s",
+                                job_id, chapter.chapter_number, pg_idx, len(pages), page_info.source_url,
                             )
-                        )
-                        page = existing_page.scalar_one_or_none()
-                        if not page:
-                            db.add(Page(
-                                chapter_id=chapter.id,
-                                page_number=page_info.page_number,
-                                file_path=file_path,
-                                source_url=page_info.source_url,
-                                width_px=page_info.width_px,
-                                height_px=page_info.height_px,
-                            ))
-                        else:
-                            page.file_path = file_path
+                            file_path = await scraper.download_image(page_info.source_url, dest_path)
+
+                            existing_page = await db.execute(
+                                select(Page).where(
+                                    Page.chapter_id == chapter.id,
+                                    Page.page_number == page_info.page_number,
+                                )
+                            )
+                            page = existing_page.scalar_one_or_none()
+                            if not page:
+                                db.add(Page(
+                                    chapter_id=chapter.id,
+                                    page_number=page_info.page_number,
+                                    file_path=file_path,
+                                    source_url=page_info.source_url,
+                                    width_px=page_info.width_px,
+                                    height_px=page_info.height_px,
+                                ))
+                            else:
+                                page.file_path = file_path
 
                     chapter.total_pages = len(pages)
                     chapter.scrape_status = ScrapeStatus.SCRAPED
