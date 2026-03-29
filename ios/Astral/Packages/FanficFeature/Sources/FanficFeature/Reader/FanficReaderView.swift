@@ -29,6 +29,7 @@ struct FanficReaderView: View {
     @State private var showBookmarkSheet = false
     @State private var bookmarkParagraphIndex: Int?
     @State private var readingSession: LocalReadingSession?
+    @State private var hasRestoredScroll = false
 
     var body: some View {
         ZStack {
@@ -39,37 +40,59 @@ struct FanficReaderView: View {
                     .tint(AstralColors.gold)
                     .scaleEffect(1.2)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: paragraphSpacing) {
-                        if let title = chapter.title {
-                            Text(title)
-                                .font(AstralTypography.title)
-                                .foregroundStyle(textColor)
-                        }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: paragraphSpacing) {
+                            if let title = chapter.title {
+                                Text(title)
+                                    .font(AstralTypography.title)
+                                    .foregroundStyle(textColor)
+                            }
 
-                        Text("Chapter \(chapter.chapterNumber, specifier: "%.0f")")
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.muted)
+                            Text("Chapter \(chapter.chapterNumber, specifier: "%.0f")")
+                                .font(AstralTypography.caption)
+                                .foregroundStyle(AstralColors.muted)
 
-                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
-                            Text(paragraph)
-                                .font(fontFamily.font(size: fontSize))
-                                .lineSpacing((lineHeight - 1.0) * fontSize)
-                                .foregroundStyle(textColor)
-                                .simultaneousGesture(
-                                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                                        bookmarkParagraphIndex = index
-                                        showBookmarkSheet = true
+                            ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
+                                Text(paragraph)
+                                    .font(fontFamily.font(size: fontSize))
+                                    .lineSpacing((lineHeight - 1.0) * fontSize)
+                                    .foregroundStyle(textColor)
+                                    .id(index)
+                                    .onAppear {
+                                        // Track scroll progress as paragraph fraction
+                                        if paragraphs.count > 1 {
+                                            fanfic.scrollOffsetPercent = Double(index) / Double(paragraphs.count - 1)
+                                        }
                                     }
-                                )
+                                    .simultaneousGesture(
+                                        LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                                            bookmarkParagraphIndex = index
+                                            showBookmarkSheet = true
+                                        }
+                                    )
+                            }
+                        }
+                        .padding(.horizontal, horizontalMargin)
+                        .padding(.vertical, 20)
+                        .animation(AstralAnimation.quick, value: fontSize)
+                        .animation(AstralAnimation.quick, value: lineHeight)
+                        .animation(AstralAnimation.quick, value: horizontalMargin)
+                        .padding(.bottom, 100)
+                    }
+                    .onAppear {
+                        // Restore scroll position after content renders
+                        if !hasRestoredScroll,
+                           let pct = fanfic.scrollOffsetPercent, pct > 0,
+                           Int(chapter.chapterNumber) == fanfic.lastReadChapterNumber,
+                           !paragraphs.isEmpty {
+                            hasRestoredScroll = true
+                            let targetIndex = min(Int(pct * Double(paragraphs.count - 1)), paragraphs.count - 1)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                withAnimation { proxy.scrollTo(targetIndex, anchor: .top) }
+                            }
                         }
                     }
-                    .padding(.horizontal, horizontalMargin)
-                    .padding(.vertical, 20)
-                    .animation(AstralAnimation.quick, value: fontSize)
-                    .animation(AstralAnimation.quick, value: lineHeight)
-                    .animation(AstralAnimation.quick, value: horizontalMargin)
-                    .padding(.bottom, 100)
                 }
             }
 
@@ -113,10 +136,30 @@ struct FanficReaderView: View {
             }
             try? modelContext.save()
             readingSession = session
+            // Sync progress to backend
+            Task {
+                let body = FanficProgressRequest(
+                    lastChapterNumber: Int(chapter.chapterNumber),
+                    scrollOffsetPercent: fanfic.scrollOffsetPercent
+                )
+                let _: ProgressResponse? = try? await APIClient.shared.request(
+                    .updateFanficProgress(storyId: fanfic.id, body: body)
+                )
+            }
         }
         .onDisappear {
+            // Save final scroll position to backend
             if let readingSession {
                 readingSession.endedAt = .now
+                Task {
+                    let body = FanficProgressRequest(
+                        lastChapterNumber: fanfic.lastReadChapterNumber,
+                        scrollOffsetPercent: fanfic.scrollOffsetPercent
+                    )
+                    let _: ProgressResponse? = try? await APIClient.shared.request(
+                        .updateFanficProgress(storyId: fanfic.id, body: body)
+                    )
+                }
                 try? modelContext.save()
             }
         }

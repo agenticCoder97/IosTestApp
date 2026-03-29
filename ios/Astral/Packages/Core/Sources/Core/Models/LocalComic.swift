@@ -33,6 +33,8 @@ public final class LocalComic {
     public var authorsJSON: String?
     /// Number of initial pages to skip per chapter (e.g. credit pages in webtoons)
     public var skipFirstNPages: Int
+    /// Page number within the current chapter (1-based) — for resume-at-page
+    public var lastReadPageNumber: Int
     /// Date when the user first completed this comic (progressPercent reached 1.0)
     public var completedAt: Date?
 
@@ -71,6 +73,7 @@ public final class LocalComic {
         self.seenTotalChapters = seenTotalChapters
         self.lastReadAt = lastReadAt
         self.skipFirstNPages = skipFirstNPages
+        self.lastReadPageNumber = 0
     }
 
     /// Number of chapters added since the user last viewed the detail screen.
