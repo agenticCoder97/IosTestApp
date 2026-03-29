@@ -55,7 +55,7 @@ struct ComicCardView: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .aspectRatio(3/4, contentMode: .fit)
+            .aspectRatio(0.7, contentMode: .fit)
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 4) {
                     if comic.isDownloaded {
@@ -120,12 +120,24 @@ struct ComicCardView: View {
                 .foregroundStyle(AstralColors.white)
                 .lineLimit(2)
 
-            // Progress bar
+            // Progress
             if comic.totalChapters > 0 {
-                ProgressBarView(progress: progressPercent)
-                Text("\(comic.lastReadChapterNumber)/\(comic.totalChapters)")
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
+                HStack(spacing: 6) {
+                    // Circular progress
+                    ZStack {
+                        Circle()
+                            .stroke(AstralColors.muted.opacity(0.2), lineWidth: 2.5)
+                        Circle()
+                            .trim(from: 0, to: progressPercent)
+                            .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                            .rotationEffect(.degrees(-135))
+                    }
+                    .frame(width: 22, height: 22)
+
+                    Text("\(comic.lastReadChapterNumber)/\(comic.totalChapters)")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(AstralColors.body)
+                }
             }
         }
         .astralCard()
