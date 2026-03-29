@@ -39,6 +39,7 @@ struct ComicReaderView: View {
     @State private var brightnessOverlay: Double = 0.0
     @State private var showPageActions = false
     @State private var longPressedPage: PageResponse?
+    @Query private var bookmarks: [LocalBookmark]
     @State private var scrolledPageID: Int? = 0  // drives paged scroll position
     @State private var showRotateHint = false
     @AppStorage("hideRotateHint") private var hideRotateHint = false
@@ -60,6 +61,12 @@ struct ComicReaderView: View {
         let idx = chapters.firstIndex(where: { $0.id == chapter.id }) ?? 0
         _currentChapterIndex = State(initialValue: idx)
         _readingMode = State(initialValue: comic.sourceKey == "nhentai" ? .rightToLeft : .webtoon)
+        let comicId = comic.id
+        _bookmarks = Query(
+            filter: #Predicate<LocalBookmark> { $0.storyId == comicId && $0.contentType == "comic" },
+            sort: \LocalBookmark.createdAt,
+            order: .reverse
+        )
     }
 
     private var currentChapter: LocalComicChapter? { chapters[safe: currentChapterIndex] }
@@ -280,7 +287,7 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
                 toggleHUD()
             }
         )
@@ -319,7 +326,7 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
                 toggleHUD()
             }
         )
@@ -411,6 +418,16 @@ struct ComicReaderView: View {
             }
 
             Spacer()
+
+            Button {
+                bookmarkCurrentChapter()
+            } label: {
+                Image(systemName: isCurrentChapterBookmarked ? "bookmark.fill" : "bookmark")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(isCurrentChapterBookmarked ? AstralColors.gold : AstralColors.white)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
 
             Button {
                 withAnimation(AstralAnimation.snappy) { showSettings.toggle() }
@@ -604,6 +621,32 @@ struct ComicReaderView: View {
             currentChapterIndex += 1
             currentPage = 0
         }
+    }
+
+    // MARK: - Bookmark
+
+    private var isCurrentChapterBookmarked: Bool {
+        guard let chapter = currentChapter else { return false }
+        return bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+    }
+
+    private func bookmarkCurrentChapter() {
+        guard let chapter = currentChapter else { return }
+        if let existing = bookmarks.first(where: { $0.chapterNumber == chapter.chapterNumber }) {
+            modelContext.delete(existing)
+            AstralLogger.info("Bookmark removed: ch \(chapter.chapterNumber)", context: "ComicReader")
+        } else {
+            let bookmark = LocalBookmark(
+                contentType: "comic",
+                storyId: comic.id,
+                chapterNumber: chapter.chapterNumber,
+                pageNumber: currentPage + 1,
+                heading: chapter.title ?? "Chapter \(Int(chapter.chapterNumber))"
+            )
+            modelContext.insert(bookmark)
+            AstralLogger.info("Bookmark added: ch \(chapter.chapterNumber) page \(currentPage + 1)", context: "ComicReader")
+        }
+        try? modelContext.save()
     }
 
     // MARK: - Long Press Actions
