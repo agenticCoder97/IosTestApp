@@ -77,6 +77,7 @@ class BaseScraper(ABC):
     # instance lifetime (one task run). Invalidated on 403 so a fresh Redis
     # read is forced after the iOS browser refreshes the session.
     _cookie_cache: tuple[list[dict], str] | None = None
+    _browser_cookie_attempted: bool = False  # only try headless browser once per scraper instance
 
     async def _get_cookies(self) -> tuple[list[dict], str]:
         """Load cookies and user_agent from Redis, cached for this scraper instance."""
@@ -107,14 +108,152 @@ class BaseScraper(ABC):
         finally:
             await r.aclose()
 
+    async def _fetch_via_browser(self, url: str) -> str | None:
+        """
+        Fetch page content using headless Chromium. Used as last resort when
+        curl_cffi and httpx both get 403. Returns HTML string or None on failure.
+        Also caches cookies in Redis for future image downloads.
+        """
+        from app.utils.playwright_client import acquire_browser
+
+        logger.info("_fetch_via_browser starting | source_key=%s url=%s", self.source_key, url)
+        try:
+            async with acquire_browser() as browser:
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) "
+                              "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 "
+                              "Mobile/15E148 Safari/604.1",
+                    viewport={"width": 390, "height": 844},
+                )
+                page = await context.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+
+                # Wait for Cloudflare challenge if present
+                title = await page.title()
+                if "just a moment" in title.lower():
+                    logger.info("_fetch_via_browser waiting for Cloudflare challenge | url=%s", url)
+                    await asyncio.sleep(8)
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+
+                html = await page.content()
+
+                # Cache cookies for image downloads
+                browser_cookies = await context.cookies()
+                await context.close()
+
+                if browser_cookies:
+                    cookie_dtos = [
+                        {"name": c["name"], "value": c["value"], "domain": c.get("domain", "")}
+                        for c in browser_cookies
+                    ]
+                    cache_data = {
+                        "cookies": cookie_dtos,
+                        "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
+                    }
+                    r = await aioredis.from_url(settings.redis_url)
+                    try:
+                        await r.set(
+                            f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}",
+                            json.dumps(cache_data),
+                            ex=settings.cookie_cache_ttl_secs,
+                        )
+                    finally:
+                        await r.aclose()
+                    self._cookie_cache = None
+
+                logger.info("_fetch_via_browser success | url=%s bytes=%d cookies=%d",
+                            url, len(html), len(browser_cookies))
+                return html
+
+        except Exception as e:
+            logger.error("_fetch_via_browser failed | url=%s error=%s", url, e)
+            return None
+
+    async def _refresh_cookies_via_browser(self, url: str) -> bool:
+        """
+        Launch headless Chromium, navigate to the site, wait for Cloudflare
+        challenge to resolve, extract cookies, and store them in Redis.
+        Returns True if cookies were obtained, False otherwise.
+        """
+        from app.utils.playwright_client import acquire_browser
+
+        # Derive the site root from the URL for the initial navigation
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        site_root = f"{parsed.scheme}://{parsed.netloc}/"
+
+        logger.info("_refresh_cookies_via_browser starting | source_key=%s url=%s", self.source_key, site_root)
+        try:
+            async with acquire_browser() as browser:
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) "
+                              "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 "
+                              "Mobile/15E148 Safari/604.1",
+                    viewport={"width": 390, "height": 844},
+                )
+                page = await context.new_page()
+
+                # Navigate and wait for Cloudflare challenge to resolve
+                await page.goto(site_root, wait_until="networkidle", timeout=30000)
+
+                # Some Cloudflare challenges need a few seconds after networkidle
+                await asyncio.sleep(3)
+
+                # Check if we actually got past the challenge
+                title = await page.title()
+                if "just a moment" in title.lower() or "attention required" in title.lower():
+                    # Still on challenge page — wait longer
+                    logger.warning("_refresh_cookies_via_browser still on challenge page, waiting 10s | title=%s", title)
+                    await asyncio.sleep(10)
+
+                # Extract all cookies
+                browser_cookies = await context.cookies()
+                await context.close()
+
+                if not browser_cookies:
+                    logger.warning("_refresh_cookies_via_browser no cookies obtained | source_key=%s", self.source_key)
+                    return False
+
+                # Store in Redis with the same format as iOS cookie store
+                cookie_dtos = [
+                    {"name": c["name"], "value": c["value"], "domain": c.get("domain", "")}
+                    for c in browser_cookies
+                ]
+                cache_data = {
+                    "cookies": cookie_dtos,
+                    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
+                }
+                r = await aioredis.from_url(settings.redis_url)
+                try:
+                    await r.set(
+                        f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key}",
+                        json.dumps(cache_data),
+                        ex=settings.cookie_cache_ttl_secs,
+                    )
+                finally:
+                    await r.aclose()
+
+                # Invalidate in-process cache so next _get_cookies reads fresh from Redis
+                self._cookie_cache = None
+
+                logger.info(
+                    "_refresh_cookies_via_browser success | source_key=%s cookies=%d",
+                    self.source_key, len(cookie_dtos),
+                )
+                return True
+
+        except Exception as e:
+            logger.error("_refresh_cookies_via_browser failed | source_key=%s error=%s", self.source_key, e)
+            return False
+
     async def _fetch(self, url: str) -> str:
         """
         Rate-limited fetch with retry + exponential backoff using curl_cffi for TLS
         impersonation.
 
-        403 → CookieExpiredError (invalidates cookie cache; caller returns 428 to iOS).
-        429/503/52x → exponential backoff with jitter.
-        max_retries exhausted → ScraperError.
+        On 403: retries up to max_retries. If all fail with 403 and browser cookies
+        haven't been tried yet, launches headless Chromium to solve Cloudflare challenge,
+        caches the cookies, and retries once more.
         """
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
@@ -122,6 +261,8 @@ class BaseScraper(ABC):
         logger.debug("_fetch starting | url=%s delay=%.1fs cookies=%d",
                      url, self.request_delay_seconds, len(cookies))
         await asyncio.sleep(self.request_delay_seconds)
+
+        consecutive_403 = 0
 
         for attempt in range(self.max_retries):
             logger.debug("_fetch attempt %d/%d | url=%s", attempt + 1, self.max_retries, url)
@@ -139,12 +280,30 @@ class BaseScraper(ABC):
                                  url, len(response.content), attempt + 1)
                     return response.text
                 elif response.status_code == 403:
-                    self._cookie_cache = None  # force re-read from Redis on next call
-                    logger.error("_fetch 403 blocked | url=%s — cookies invalidated", url)
-                    raise CookieExpiredError(
-                        f"403 from {url} — Cloudflare blocked or session expired. "
-                        "Open the site in the iOS browser to refresh cookies, then retry."
-                    )
+                    consecutive_403 += 1
+                    self._cookie_cache = None
+
+                    # On 2nd 403: fetch the page directly via headless browser
+                    if consecutive_403 >= 2 and not self._browser_cookie_attempted:
+                        self._browser_cookie_attempted = True
+                        logger.info("_fetch 403 x%d — fetching via headless browser | url=%s",
+                                    consecutive_403, url)
+                        html = await self._fetch_via_browser(url)
+                        if html and len(html) > 500:
+                            return html
+
+                    if consecutive_403 >= self.max_retries:
+                        logger.error("_fetch 403 blocked | url=%s — all retries exhausted", url)
+                        raise CookieExpiredError(
+                            f"403 from {url} — Cloudflare blocked even after headless browser attempt. "
+                            "Open the site in the iOS browser to refresh cookies, then retry."
+                        )
+
+                    wait = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning("_fetch 403, retrying | url=%s attempt=%d/%d wait=%.1fs",
+                                   url, attempt + 1, self.max_retries, wait)
+                    await asyncio.sleep(wait)
+
                 elif response.status_code in (429, 503, 525, 520, 521, 522, 523, 524):
                     retry_after = response.headers.get("Retry-After")
                     try:

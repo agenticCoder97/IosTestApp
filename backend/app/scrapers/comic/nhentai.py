@@ -47,7 +47,8 @@ class NhentaiScraper(BaseScraper):
     _gallery_cache: dict | None = None
 
     async def _fetch(self, url: str) -> str:
-        """Override: use httpx — curl_cffi's TLS fingerprint is blocked by nhentai."""
+        """Override: use httpx — curl_cffi's TLS fingerprint is blocked by nhentai.
+        On 2nd 403, falls back to headless browser cookie refresh from BaseScraper."""
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
         await asyncio.sleep(self.request_delay_seconds)
@@ -58,6 +59,7 @@ class NhentaiScraper(BaseScraper):
             "Accept-Language": "en-US,en;q=0.9",
             "Referer": "https://nhentai.net/",
         }
+        consecutive_403 = 0
         for attempt in range(self.max_retries):
             try:
                 async with httpx.AsyncClient(follow_redirects=True, timeout=60, headers=headers) as client:
@@ -66,10 +68,20 @@ class NhentaiScraper(BaseScraper):
                     logger.debug("_fetch(httpx) ok | url=%s bytes=%d", url, len(response.content))
                     return response.text
                 elif response.status_code == 403:
-                    raise ScraperError(f"403 from {url} — nhentai blocked the request. Open nhentai in the browser to refresh cookies.")
+                    consecutive_403 += 1
+                    if consecutive_403 >= 2 and not self._browser_cookie_attempted:
+                        self._browser_cookie_attempted = True
+                        logger.info("_fetch(httpx) 403 x%d — fetching via headless browser | url=%s", consecutive_403, url)
+                        html = await self._fetch_via_browser(url)
+                        if html and len(html) > 500:
+                            return html
+                    if consecutive_403 >= self.max_retries:
+                        from app.scrapers.base import CookieExpiredError
+                        raise CookieExpiredError(f"403 from {url} — nhentai blocked even after browser attempt.")
+                    await asyncio.sleep((2 ** attempt) + 0.5)
                 else:
                     raise ScraperError(f"HTTP {response.status_code} from {url}")
-            except ScraperError:
+            except (ScraperError, CookieExpiredError):
                 raise
             except Exception as e:
                 if attempt == self.max_retries - 1:

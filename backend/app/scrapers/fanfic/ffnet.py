@@ -35,39 +35,46 @@ class FanfictionNetScraper(BaseScraper):
 
     async def _fetch(self, url: str) -> str:
         """Override: use httpx instead of curl_cffi for FFNet.
-        FFNet doesn't use Cloudflare but detects curl_cffi's TLS fingerprint."""
+        On 2nd 403, falls back to headless browser cookie refresh."""
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
 
         await asyncio.sleep(self.request_delay_seconds)
 
+        headers = {
+            "User-Agent": user_agent or "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+        }
+        consecutive_403 = 0
         for attempt in range(self.max_retries):
             try:
-                headers = {
-                    "User-Agent": user_agent or "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Connection": "keep-alive",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                }
                 async with httpx.AsyncClient(
-                    follow_redirects=True,
-                    timeout=60,
-                    http2=True,
-                    headers=headers,
+                    follow_redirects=True, timeout=60, http2=True, headers=headers,
                 ) as client:
                     response = await client.get(url, cookies=cookies)
                 if response.status_code == 200:
                     logger.debug("_fetch(httpx) ok | url=%s bytes=%d", url, len(response.content))
                     return response.text
                 elif response.status_code == 403:
-                    raise ScraperError(f"403 from {url} — FFNet blocked the request")
+                    consecutive_403 += 1
+                    if consecutive_403 >= 2 and not self._browser_cookie_attempted:
+                        self._browser_cookie_attempted = True
+                        logger.info("_fetch(httpx) 403 x%d — fetching via headless browser | url=%s", consecutive_403, url)
+                        html = await self._fetch_via_browser(url)
+                        if html and len(html) > 500:
+                            return html
+                    if consecutive_403 >= self.max_retries:
+                        from app.scrapers.base import CookieExpiredError
+                        raise CookieExpiredError(f"403 from {url} — FFNet blocked even after browser attempt.")
+                    await asyncio.sleep((2 ** attempt) + 0.5)
                 else:
                     raise ScraperError(f"HTTP {response.status_code} from {url}")
-            except (ScraperError,):
+            except (ScraperError, CookieExpiredError):
                 raise
             except Exception as e:
                 if attempt == self.max_retries - 1:
