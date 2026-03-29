@@ -11,13 +11,33 @@ struct FanficBrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Source picker
-            Picker("Source", selection: $viewModel.selectedSource) {
-                ForEach(FanficSource.allCases, id: \.self) { source in
-                    Text(sourceLabel(source)).tag(source)
+            // Source dropdown
+            HStack {
+                Menu {
+                    ForEach(FanficSource.allCases, id: \.self) { source in
+                        Button {
+                            viewModel.selectedSource = source
+                        } label: {
+                            Label(sourceLabel(source), systemImage: viewModel.selectedSource == source ? "checkmark" : "")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 14))
+                        Text(sourceLabel(viewModel.selectedSource))
+                            .font(AstralTypography.bodyMedium)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(AstralColors.muted)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(AstralColors.elevated, in: Capsule())
                 }
+                .tint(AstralColors.gold)
+                Spacer()
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 

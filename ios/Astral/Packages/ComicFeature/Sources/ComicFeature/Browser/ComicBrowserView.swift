@@ -11,13 +11,33 @@ struct ComicBrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Source picker
-            Picker("Source", selection: $viewModel.selectedSource) {
-                ForEach(ComicSource.allCases, id: \.self) { source in
-                    Text(source.rawValue).tag(source)
+            // Source dropdown
+            HStack {
+                Menu {
+                    ForEach(ComicSource.allCases, id: \.self) { source in
+                        Button {
+                            viewModel.selectedSource = source
+                        } label: {
+                            Label(source.rawValue, systemImage: viewModel.selectedSource == source ? "checkmark" : "")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 14))
+                        Text(viewModel.selectedSource.rawValue)
+                            .font(AstralTypography.bodyMedium)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(AstralColors.muted)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(AstralColors.elevated, in: Capsule())
                 }
+                .tint(AstralColors.gold)
+                Spacer()
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
@@ -116,7 +136,7 @@ struct ComicBrowserView: View {
 
 @MainActor @Observable
 final class ComicBrowserViewModel {
-    var selectedSource: ComicSource = .nhentai
+    var selectedSource: ComicSource = .hentai20
     var canScrape = false
     var isScraping = false
     var isLoading = false
