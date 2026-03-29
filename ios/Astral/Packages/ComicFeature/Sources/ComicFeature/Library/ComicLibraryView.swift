@@ -52,11 +52,13 @@ struct ComicLibraryView: View {
 
                 if displayedComics.isEmpty {
                     EmptyStateView(
-                        icon: filterFavourites ? "heart" : "book.closed",
-                        title: filterFavourites ? "No Favourites Yet" : "No Comics Yet",
+                        icon: filterFavourites ? "heart" : (viewModel.errorMessage != nil ? "wifi.slash" : "book.closed"),
+                        title: filterFavourites ? "No Favourites Yet" : (viewModel.errorMessage != nil ? "Offline" : "No Comics Yet"),
                         message: filterFavourites
                             ? "Tap the heart on any comic to add it here."
-                            : "Browse a source and scrape your first comic to get started."
+                            : (viewModel.errorMessage != nil
+                                ? "Backend unreachable. Previously synced comics will appear here."
+                                : "Browse a source and scrape your first comic to get started.")
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.top, 80)

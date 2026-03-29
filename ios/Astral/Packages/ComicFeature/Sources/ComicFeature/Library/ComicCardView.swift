@@ -59,7 +59,7 @@ struct ComicCardView: View {
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 4) {
                     if comic.isDownloaded {
-                        StatusBadge.downloaded()
+                        StatusBadge.savedToDevice()
                     }
                     if comic.status == "partial" {
                         StatusBadge.partial()

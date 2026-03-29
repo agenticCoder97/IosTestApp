@@ -13,6 +13,8 @@ struct ComicDetailView: View {
     @Query private var bookmarks: [LocalBookmark]
     @State private var selectedChapter: LocalComicChapter?
     @State private var scrollOffset: CGFloat = 0
+    @State private var isDownloading = false
+    @State private var downloadProgress: (Int, Int) = (0, 0)
 
     // Height of the hero image — used to derive title opacity
     private let heroAspect: CGFloat = 3.0 / 4.0
@@ -200,6 +202,65 @@ struct ComicDetailView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
                             .padding(.bottom, 4)
+                        }
+                    }
+
+                    // MARK: Download to device
+                    if !chapters.isEmpty {
+                        let savedCount = chapters.filter { $0.localPagesPath != nil }.count
+                        let allSaved = savedCount == chapters.count
+
+                        if isDownloading {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .tint(AstralColors.gold)
+                                Text("Saving \(downloadProgress.0)/\(downloadProgress.1)...")
+                                    .font(AstralTypography.caption)
+                                    .foregroundStyle(AstralColors.body)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(AstralColors.elevated)
+                            .clipShape(Capsule())
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
+                        } else {
+                            Button {
+                                if allSaved {
+                                    ChapterDownloadService.shared.deleteAllChapters(
+                                        comic: comic, chapters: chapters, modelContext: modelContext
+                                    )
+                                } else {
+                                    isDownloading = true
+                                    Task {
+                                        await ChapterDownloadService.shared.downloadAllChapters(
+                                            comic: comic, chapters: chapters,
+                                            modelContext: modelContext
+                                        ) { done, total in
+                                            downloadProgress = (done, total)
+                                        }
+                                        isDownloading = false
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: allSaved ? "arrow.down.circle.fill" : "arrow.down.to.line")
+                                    Text(allSaved
+                                         ? "Saved to Device (\(savedCount) ch)"
+                                         : savedCount > 0
+                                            ? "Save Remaining (\(chapters.count - savedCount) ch)"
+                                            : "Save to Device")
+                                        .font(AstralTypography.bodyMedium)
+                                }
+                                .foregroundStyle(allSaved ? AstralColors.success : AstralColors.body)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(AstralColors.elevated)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
                         }
                     }
 
@@ -507,7 +568,9 @@ private struct ComicChapterRow: View {
                             .font(AstralTypography.caption)
                             .foregroundStyle(AstralColors.muted)
                     }
-                    if chapter.isDownloaded {
+                    if chapter.localPagesPath != nil {
+                        StatusBadge.savedToDevice()
+                    } else if chapter.isDownloaded {
                         StatusBadge.downloaded()
                     }
                 }

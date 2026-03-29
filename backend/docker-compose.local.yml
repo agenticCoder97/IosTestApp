@@ -77,6 +77,8 @@ services:
       - SOFT_DELETE_DAYS=5
       - COOKIE_CACHE_TTL_SECS=86400
       - LOG_LEVEL=DEBUG
+      - SCRAPE_CHAPTER_CONCURRENCY=4
+      - SCRAPE_PAGE_CONCURRENCY=8
     volumes:
       - ./app:/app/app
       - astral_media:/mnt/astral-media

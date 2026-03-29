@@ -65,11 +65,13 @@ struct FanficLibraryView: View {
 
                 if filteredFanfics.isEmpty {
                     EmptyStateView(
-                        icon: filterFavourites ? "heart" : "scroll",
-                        title: filterFavourites ? "No Favourites Yet" : "No Fan Fiction Yet",
+                        icon: filterFavourites ? "heart" : (viewModel.errorMessage != nil ? "wifi.slash" : "scroll"),
+                        title: filterFavourites ? "No Favourites Yet" : (viewModel.errorMessage != nil ? "Offline" : "No Fan Fiction Yet"),
                         message: filterFavourites
                             ? "Tap the heart on any story to add it here."
-                            : "Browse AO3 or FFNet and scrape your first story."
+                            : (viewModel.errorMessage != nil
+                                ? "Backend unreachable. Previously synced stories will appear here."
+                                : "Browse AO3 or FFNet and scrape your first story.")
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.top, 80)

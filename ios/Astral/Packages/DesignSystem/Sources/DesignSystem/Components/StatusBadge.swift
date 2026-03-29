@@ -36,6 +36,10 @@ public extension StatusBadge {
     static func scraping() -> StatusBadge {
         StatusBadge("Scraping...", color: AstralColors.gold)
     }
+
+    static func savedToDevice() -> StatusBadge {
+        StatusBadge("Saved", color: Color(hex: 0x5C9DFF))
+    }
 }
 
 #Preview {

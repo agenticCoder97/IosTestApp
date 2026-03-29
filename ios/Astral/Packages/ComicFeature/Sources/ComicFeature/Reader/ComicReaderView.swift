@@ -48,6 +48,9 @@ struct ComicReaderView: View {
     @AppStorage("hideRotateHint") private var hideRotateHint = false
     @AppStorage("forceLandscape") private var forceLandscape = true
     @State private var readingSession: LocalReadingSession?
+    @State private var localPageURLs: [URL]?
+    @State private var prevChapterPull: CGFloat = 0
+    @State private var prevChapterTriggered = false
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -297,10 +300,40 @@ struct ComicReaderView: View {
     private var webtoonReader: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
-                ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                    ComicPageView(page: page)
-                        .id(index)
-                        .onAppear { currentPage = index }
+                // Previous chapter pull trigger at top of scroll content
+                if !isFirstChapter {
+                    PrevChapterTrigger(
+                        onProgressChange: { progress in
+                            prevChapterPull = progress
+                            if progress >= 1.0 && !prevChapterTriggered {
+                                prevChapterTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    goToPrevChapter()
+                                    prevChapterTriggered = false
+                                    prevChapterPull = 0
+                                }
+                            }
+                        },
+                        progress: prevChapterPull
+                    )
+                }
+
+                if let localURLs = localPageURLs, !localURLs.isEmpty {
+                    // Device-saved pages — load from local files
+                    ForEach(Array(localURLs.enumerated()), id: \.offset) { index, url in
+                        LocalPageView(fileURL: url)
+                            .id(index)
+                            .onAppear { currentPage = index }
+                    }
+                } else {
+                    // Network pages
+                    ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
+                        ComicPageView(page: page)
+                            .id(index)
+                            .onAppear { currentPage = index }
+                    }
                 }
 
                 // Next chapter pull trigger at bottom of scroll content
@@ -753,10 +786,21 @@ struct ComicReaderView: View {
 
         if let previewPages {
             pages = previewPages
+            localPageURLs = nil
             isLoading = false
             return
         }
 
+        // Try local files first (device-saved chapter)
+        if let urls = ChapterDownloadService.shared.localPageURLs(for: chapter), !urls.isEmpty {
+            localPageURLs = urls
+            pages = []  // empty — webtoon reader will use localPageURLs directly
+            AstralLogger.info("loadPages: using \(urls.count) local pages", context: "ComicReader")
+            isLoading = false
+            return
+        }
+
+        localPageURLs = nil
         do {
             let response: [PageResponse] = try await APIClient.shared.request(
                 .chapterPages(comicId: comic.id, chapterId: chapter.id)
@@ -823,6 +867,33 @@ struct ComicPageView: View {
     }
 }
 
+/// Renders a page image from a local file URL (device-saved chapters).
+private struct LocalPageView: View {
+    let fileURL: URL
+
+    var body: some View {
+        if let uiImage = UIImage(contentsOfFile: fileURL.path) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+        } else {
+            Rectangle()
+                .fill(AstralColors.elevated)
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .overlay {
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .font(.title2)
+                        Text("Failed to load")
+                            .font(AstralTypography.caption)
+                    }
+                    .foregroundStyle(AstralColors.muted)
+                }
+        }
+    }
+}
+
 // MARK: - Helpers
 
 private extension Array {
@@ -831,30 +902,70 @@ private extension Array {
     }
 }
 
-// MARK: - Next Chapter Trigger
+// MARK: - Chapter Triggers
 
-/// Placed at the bottom of the webtoon scroll content. Uses GeometryReader
-/// to track how far the user has scrolled this view into the screen.
-/// As the view scrolls up from below, progress fills from 0 → 1.
-private struct NextChapterTrigger: View {
+private let chapterTriggerHeight: CGFloat = 260
+
+/// Placed at the top of webtoon scroll content — scroll up to load previous chapter.
+private struct PrevChapterTrigger: View {
     let onProgressChange: (CGFloat) -> Void
     let progress: CGFloat
-
-    private let triggerHeight: CGFloat = 180
 
     var body: some View {
         GeometryReader { geo in
             let frame = geo.frame(in: .global)
-            let screenH = UIScreen.main.bounds.height
-            // How much of the trigger is visible (scrolled into viewport from below)
-            let visible = max(0, screenH - frame.minY)
-            let pct = min(visible / triggerHeight, 1.0)
+            // How much the trigger is pulled down below the top edge
+            let visible = max(0, frame.maxY)
+            let pct = min(visible / chapterTriggerHeight, 1.0)
             Color.clear
                 .onChange(of: pct) { _, newPct in
                     onProgressChange(newPct)
                 }
         }
-        .frame(height: triggerHeight)
+        .frame(height: chapterTriggerHeight)
+        .overlay {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeOut(duration: 0.1), value: progress)
+
+                    Image(systemName: progress >= 1.0 ? "checkmark" : "chevron.up")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
+                }
+                .frame(width: 28, height: 28)
+
+                Text(progress >= 1.0 ? "Loading prev..." : "Previous chapter")
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+            }
+            .opacity(progress > 0.02 ? 1 : 0.3)
+        }
+    }
+}
+
+/// Placed at the bottom of webtoon scroll content — scroll down to load next chapter.
+private struct NextChapterTrigger: View {
+    let onProgressChange: (CGFloat) -> Void
+    let progress: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let frame = geo.frame(in: .global)
+            let screenH = UIScreen.main.bounds.height
+            let visible = max(0, screenH - frame.minY)
+            let pct = min(visible / chapterTriggerHeight, 1.0)
+            Color.clear
+                .onChange(of: pct) { _, newPct in
+                    onProgressChange(newPct)
+                }
+        }
+        .frame(height: chapterTriggerHeight)
         .overlay {
             VStack(spacing: 8) {
                 ZStack {
