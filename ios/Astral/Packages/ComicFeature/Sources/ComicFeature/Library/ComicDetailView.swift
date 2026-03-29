@@ -15,6 +15,12 @@ struct ComicDetailView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var isDownloading = false
     @State private var downloadProgress: (Int, Int) = (0, 0)
+    @State private var activeTab: DetailTab = .chapters
+
+    private enum DetailTab: String, CaseIterable {
+        case chapters = "Chapters"
+        case bookmarks = "Bookmarks"
+    }
 
     // Height of the hero image — used to derive title opacity
     private let heroAspect: CGFloat = 3.0 / 4.0
@@ -205,114 +211,149 @@ struct ComicDetailView: View {
                         }
                     }
 
-                    // MARK: Download to device
-                    if !chapters.isEmpty {
-                        let savedCount = chapters.filter { $0.localPagesPath != nil }.count
-                        let allSaved = savedCount == chapters.count
-
-                        if isDownloading {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .tint(AstralColors.gold)
-                                Text("Saving \(downloadProgress.0)/\(downloadProgress.1)...")
-                                    .font(AstralTypography.caption)
-                                    .foregroundStyle(AstralColors.body)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(AstralColors.elevated)
-                            .clipShape(Capsule())
-                            .padding(.horizontal, 16)
-                            .padding(.top, 4)
-                        } else {
+                    // MARK: Tab bar (Chapters / Bookmarks / Download)
+                    HStack(spacing: 0) {
+                        ForEach(DetailTab.allCases, id: \.self) { tab in
                             Button {
-                                if allSaved {
-                                    ChapterDownloadService.shared.deleteAllChapters(
-                                        comic: comic, chapters: chapters, modelContext: modelContext
-                                    )
-                                } else {
-                                    isDownloading = true
-                                    Task {
-                                        await ChapterDownloadService.shared.downloadAllChapters(
-                                            comic: comic, chapters: chapters,
-                                            modelContext: modelContext
-                                        ) { done, total in
-                                            downloadProgress = (done, total)
-                                        }
-                                        isDownloading = false
-                                    }
-                                }
+                                withAnimation(AstralAnimation.quick) { activeTab = tab }
                             } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: allSaved ? "arrow.down.circle.fill" : "arrow.down.to.line")
-                                    Text(allSaved
-                                         ? "Saved to Device (\(savedCount) ch)"
-                                         : savedCount > 0
-                                            ? "Save Remaining (\(chapters.count - savedCount) ch)"
-                                            : "Save to Device")
-                                        .font(AstralTypography.bodyMedium)
-                                }
-                                .foregroundStyle(allSaved ? AstralColors.success : AstralColors.body)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(AstralColors.elevated)
-                                .clipShape(Capsule())
+                                Text(tab.rawValue)
+                                    .font(AstralTypography.captionMedium)
+                                    .foregroundStyle(activeTab == tab ? AstralColors.gold : AstralColors.muted)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
                             }
                             .buttonStyle(.plain)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 4)
                         }
-                    }
 
-                    // MARK: Bookmarks section
-                    if !bookmarks.isEmpty {
-                        BookmarksSection(bookmarks: bookmarks, onDelete: deleteBookmark)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            .padding(.bottom, 8)
-                    }
-
-                    // MARK: Chapter list
-                    if chapters.isEmpty {
-                        EmptyStateView(
-                            icon: "book.closed",
-                            title: "No Chapters Yet",
-                            message: "Scrape this comic from the browser to load its chapters."
-                        )
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 60)
-                    } else {
-                        LazyVStack(spacing: 0) {
-                            ForEach(chapters) { chapter in
-                                Button {
-                                    AstralLogger.info("Chapter tapped: \(chapter.chapterNumber) id=\(chapter.id)", context: "ComicDetail")
-                                    selectedChapter = chapter
-                                } label: {
-                                    ComicChapterRow(
-                                        chapter: chapter,
-                                        isLastRead: chapter.chapterNumber == Double(comic.lastReadChapterNumber),
-                                        isRead: chapter.chapterNumber < Double(comic.lastReadChapterNumber),
-                                        isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
-                                    )
+                        // Download icon button
+                        Button {
+                            handleDownloadTap()
+                        } label: {
+                            Group {
+                                if isDownloading {
+                                    ProgressView()
+                                        .tint(AstralColors.gold)
+                                        .scaleEffect(0.7)
+                                } else {
+                                    let savedCount = chapters.filter { $0.localPagesPath != nil }.count
+                                    Image(systemName: savedCount == chapters.count && !chapters.isEmpty
+                                          ? "arrow.down.circle.fill" : "arrow.down.to.line")
+                                        .foregroundStyle(savedCount == chapters.count && !chapters.isEmpty
+                                                         ? AstralColors.success : AstralColors.muted)
                                 }
-                                .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            }
+                            .frame(width: 44, height: 36)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .background(AstralColors.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                    // MARK: Tab content
+                    switch activeTab {
+                    case .chapters:
+                        if chapters.isEmpty {
+                            EmptyStateView(
+                                icon: "book.closed",
+                                title: "No Chapters Yet",
+                                message: "Scrape this comic from the browser to load its chapters."
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                        } else {
+                            LazyVStack(spacing: 0) {
+                                ForEach(chapters) { chapter in
                                     Button {
-                                        withAnimation(AstralAnimation.bouncy) {
-                                            addBookmark(for: chapter)
+                                        AstralLogger.info("Chapter tapped: \(chapter.chapterNumber) id=\(chapter.id)", context: "ComicDetail")
+                                        selectedChapter = chapter
+                                    } label: {
+                                        ComicChapterRow(
+                                            chapter: chapter,
+                                            isLastRead: chapter.chapterNumber == Double(comic.lastReadChapterNumber),
+                                            isRead: chapter.chapterNumber < Double(comic.lastReadChapterNumber),
+                                            isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button {
+                                            withAnimation(AstralAnimation.bouncy) {
+                                                addBookmark(for: chapter)
+                                            }
+                                        } label: {
+                                            Label("Bookmark", systemImage: "bookmark")
+                                        }
+                                        .tint(AstralColors.gold)
+                                    }
+
+                                    Divider()
+                                        .background(AstralColors.elevated)
+                                        .padding(.leading, 16)
+                                }
+                            }
+                            .padding(.bottom, 100)
+                        }
+
+                    case .bookmarks:
+                        if bookmarks.isEmpty {
+                            EmptyStateView(
+                                icon: "bookmark",
+                                title: "No Bookmarks",
+                                message: "Swipe a chapter or long-press a page to bookmark it."
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                        } else {
+                            LazyVStack(spacing: 0) {
+                                ForEach(bookmarks) { bookmark in
+                                    Button {
+                                        // Jump to bookmarked chapter/page
+                                        if let chapter = chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
+                                            selectedChapter = chapter
                                         }
                                     } label: {
-                                        Label("Bookmark", systemImage: "bookmark")
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "bookmark.fill")
+                                                .font(.caption)
+                                                .foregroundStyle(AstralColors.gold)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(bookmark.displayLabel)
+                                                    .font(AstralTypography.body)
+                                                    .foregroundStyle(AstralColors.white)
+                                                if let note = bookmark.note {
+                                                    Text(note)
+                                                        .font(AstralTypography.caption)
+                                                        .foregroundStyle(AstralColors.muted)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+                                            Spacer()
+                                            Text(bookmark.createdAt.formatted(.dateTime.month(.abbreviated).day()))
+                                                .font(AstralTypography.caption)
+                                                .foregroundStyle(AstralColors.muted)
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 10)
                                     }
-                                    .tint(AstralColors.gold)
-                                }
+                                    .buttonStyle(.plain)
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            deleteBookmark(bookmark)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
 
-                                Divider()
-                                    .background(AstralColors.elevated)
-                                    .padding(.leading, 16)
+                                    Divider()
+                                        .background(AstralColors.elevated)
+                                        .padding(.leading, 16)
+                                }
                             }
+                            .padding(.bottom, 100)
                         }
-                        .padding(.bottom, 100)
                     }
                 }
                 // Track scroll offset via a background GeometryReader in the scroll coordinate space
@@ -416,6 +457,27 @@ struct ComicDetailView: View {
     private func thumbnailURL(_ path: String) -> URL? {
         if path.hasPrefix("http") { return URL(string: path) }
         return URL(string: AppConfig.staticBaseURL + path)
+    }
+
+    private func handleDownloadTap() {
+        let savedCount = chapters.filter { $0.localPagesPath != nil }.count
+        let allSaved = savedCount == chapters.count && !chapters.isEmpty
+        if allSaved {
+            ChapterDownloadService.shared.deleteAllChapters(
+                comic: comic, chapters: chapters, modelContext: modelContext
+            )
+        } else {
+            isDownloading = true
+            Task {
+                await ChapterDownloadService.shared.downloadAllChapters(
+                    comic: comic, chapters: chapters,
+                    modelContext: modelContext
+                ) { done, total in
+                    downloadProgress = (done, total)
+                }
+                isDownloading = false
+            }
+        }
     }
 
     private func addBookmark(for chapter: LocalComicChapter) {

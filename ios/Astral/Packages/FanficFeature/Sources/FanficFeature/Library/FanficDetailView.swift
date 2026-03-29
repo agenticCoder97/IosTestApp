@@ -2,11 +2,14 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
 
 struct FanficDetailView: View {
     let fanfic: LocalFanfic
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.fanficNavigation) private var fanficNavigation
+    @Environment(\.dismiss) private var dismiss
     @Query private var chapters: [LocalFanficChapter]
     @Query private var bookmarks: [LocalBookmark]
 
@@ -22,6 +25,15 @@ struct FanficDetailView: View {
             sort: \LocalBookmark.createdAt,
             order: .reverse
         )
+    }
+
+    @State private var activeTab: FanficDetailTab = .chapters
+    @State private var isDownloading = false
+    @State private var downloadProgress: (Int, Int) = (0, 0)
+
+    private enum FanficDetailTab: String, CaseIterable {
+        case chapters = "Chapters"
+        case bookmarks = "Bookmarks"
     }
 
     var body: some View {
@@ -44,49 +56,149 @@ struct FanficDetailView: View {
                     .padding(.horizontal, 16)
                 }
 
-                // Bookmarks
-                if !bookmarks.isEmpty {
-                    FanficBookmarksSection(bookmarks: bookmarks, onDelete: deleteBookmark)
-                        .padding(.horizontal, 16)
-                }
+                // MARK: Tab bar (Chapters / Bookmarks / Download)
+                HStack(spacing: 0) {
+                    ForEach(FanficDetailTab.allCases, id: \.self) { tab in
+                        Button {
+                            withAnimation(AstralAnimation.quick) { activeTab = tab }
+                        } label: {
+                            Text(tab.rawValue)
+                                .font(AstralTypography.captionMedium)
+                                .foregroundStyle(activeTab == tab ? AstralColors.gold : AstralColors.muted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
-                // Chapter list
-                if chapters.isEmpty {
-                    EmptyStateView(
-                        icon: "scroll",
-                        title: "No Chapters Yet",
-                        message: "Scrape this story from the browser to load its chapters."
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 40)
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(chapters) { chapter in
-                            NavigationLink {
-                                FanficReaderView(fanfic: fanfic, chapter: chapter)
-                            } label: {
-                                FanficChapterRow(
-                                    chapter: chapter,
-                                    isLastRead: chapter.chapterNumber == Double(fanfic.lastReadChapterNumber),
-                                    isRead: chapter.chapterNumber < Double(fanfic.lastReadChapterNumber),
-                                    isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
-                                )
+                    // Download to device icon
+                    Button {
+                        handleDownloadTap()
+                    } label: {
+                        Group {
+                            if isDownloading {
+                                ProgressView()
+                                    .tint(AstralColors.gold)
+                                    .scaleEffect(0.7)
+                            } else {
+                                let savedCount = chapters.filter { $0.localTextPath != nil }.count
+                                Image(systemName: savedCount == chapters.count && !chapters.isEmpty
+                                      ? "arrow.down.circle.fill" : "arrow.down.to.line")
+                                    .foregroundStyle(savedCount == chapters.count && !chapters.isEmpty
+                                                     ? AstralColors.success : AstralColors.muted)
                             }
-                            .buttonStyle(.plain)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button {
-                                    withAnimation(AstralAnimation.bouncy) {
-                                        addBookmark(for: chapter)
+                        }
+                        .frame(width: 44, height: 36)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .background(AstralColors.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 16)
+
+                // MARK: Tab content
+                switch activeTab {
+                case .chapters:
+                    if chapters.isEmpty {
+                        EmptyStateView(
+                            icon: "scroll",
+                            title: "No Chapters Yet",
+                            message: "Scrape this story from the browser to load its chapters."
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(chapters) { chapter in
+                                NavigationLink {
+                                    FanficReaderView(fanfic: fanfic, chapter: chapter)
+                                } label: {
+                                    FanficChapterRow(
+                                        chapter: chapter,
+                                        isLastRead: chapter.chapterNumber == Double(fanfic.lastReadChapterNumber),
+                                        isRead: chapter.chapterNumber < Double(fanfic.lastReadChapterNumber),
+                                        isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button {
+                                        withAnimation(AstralAnimation.bouncy) {
+                                            addBookmark(for: chapter)
+                                        }
+                                    } label: {
+                                        Label("Bookmark", systemImage: "bookmark")
+                                    }
+                                    .tint(AstralColors.gold)
+                                }
+
+                                Divider()
+                                    .background(AstralColors.elevated)
+                                    .padding(.leading, 16)
+                            }
+                        }
+                    }
+
+                case .bookmarks:
+                    if bookmarks.isEmpty {
+                        EmptyStateView(
+                            icon: "bookmark",
+                            title: "No Bookmarks",
+                            message: "Swipe a chapter or long-press a paragraph to bookmark it."
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                    } else {
+                        LazyVStack(spacing: 0) {
+                            ForEach(bookmarks) { bookmark in
+                                NavigationLink {
+                                    if let chapter = chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
+                                        FanficReaderView(fanfic: fanfic, chapter: chapter)
                                     }
                                 } label: {
-                                    Label("Bookmark", systemImage: "bookmark")
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "bookmark.fill")
+                                            .font(.caption)
+                                            .foregroundStyle(AstralColors.gold)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(bookmark.displayLabel)
+                                                .font(AstralTypography.body)
+                                                .foregroundStyle(AstralColors.white)
+                                            if let heading = bookmark.heading {
+                                                Text(heading)
+                                                    .font(AstralTypography.caption)
+                                                    .foregroundStyle(AstralColors.muted)
+                                                    .lineLimit(1)
+                                            }
+                                            if let text = bookmark.selectedText, !text.isEmpty {
+                                                Text(text)
+                                                    .font(AstralTypography.caption)
+                                                    .foregroundStyle(AstralColors.body)
+                                                    .lineLimit(2)
+                                                    .italic()
+                                            }
+                                        }
+                                        Spacer()
+                                        Text(bookmark.createdAt.formatted(.dateTime.month(.abbreviated).day()))
+                                            .font(AstralTypography.caption)
+                                            .foregroundStyle(AstralColors.muted)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
                                 }
-                                .tint(AstralColors.gold)
-                            }
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        deleteBookmark(bookmark)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
 
-                            Divider()
-                                .background(AstralColors.elevated)
-                                .padding(.leading, 16)
+                                Divider()
+                                    .background(AstralColors.elevated)
+                                    .padding(.leading, 16)
+                            }
                         }
                     }
                 }
@@ -104,23 +216,22 @@ struct FanficDetailView: View {
     }
 
     private var metadataHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            // Summary
             if let summary = fanfic.summary {
                 Text(summary)
                     .font(AstralTypography.body)
                     .foregroundStyle(AstralColors.body)
-                    .lineLimit(4)
+                    .lineLimit(6)
             }
 
+            // Status row
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    if let fandom = fanfic.fandom {
-                        StatusBadge(fandom)
-                    }
+                HStack(spacing: 6) {
                     if let rating = fanfic.rating {
-                        StatusBadge(rating)
+                        StatusBadge(rating, color: ratingColor(rating))
                     }
-                    StatusBadge(fanfic.completionStatus)
+                    StatusBadge(fanfic.completionStatus, color: statusColor(fanfic.completionStatus))
                     if let wc = fanfic.wordCount {
                         StatusBadge("\(wc / 1000)K words", color: AstralColors.muted)
                     }
@@ -129,9 +240,147 @@ struct FanficDetailView: View {
                     }
                 }
             }
+
+            // Fandom tags
+            if let fandom = fanfic.fandom, !fandom.isEmpty {
+                tagRow("Fandom") {
+                    ForEach(fandom.components(separatedBy: ", ").filter { !$0.isEmpty }, id: \.self) { f in
+                        tappableTag(f, color: AstralColors.gold)
+                    }
+                }
+            }
+
+            // Relationship tags
+            if let pairing = fanfic.pairing, !pairing.isEmpty {
+                tagRow("Relationships") {
+                    ForEach(pairing.components(separatedBy: ", ").filter { !$0.isEmpty }, id: \.self) { r in
+                        tappableTag(r, color: Color(hex: 0x5C9DFF))
+                    }
+                }
+            }
+
+            // Character tags
+            if let characters = fanfic.characters, !characters.isEmpty {
+                tagRow("Characters") {
+                    ForEach(characters.components(separatedBy: ", ").filter { !$0.isEmpty }, id: \.self) { c in
+                        tappableTag(c, color: AstralColors.body)
+                    }
+                }
+            }
+
+            // Warnings
+            if let warnings = fanfic.warnings, !warnings.isEmpty {
+                tagRow("Warnings") {
+                    ForEach(warnings.components(separatedBy: ", ").filter { !$0.isEmpty }, id: \.self) { w in
+                        StatusBadge(w, color: AstralColors.error)
+                    }
+                }
+            }
+
+            // Dates
+            HStack(spacing: 16) {
+                if let published = fanfic.publishedAt {
+                    Label(published.formatted(.dateTime.month(.abbreviated).year()), systemImage: "calendar")
+                        .font(AstralTypography.caption)
+                        .foregroundStyle(AstralColors.muted)
+                }
+                if let updated = fanfic.updatedAtSource {
+                    Label(updated.formatted(.dateTime.month(.abbreviated).day()), systemImage: "arrow.clockwise")
+                        .font(AstralTypography.caption)
+                        .foregroundStyle(AstralColors.muted)
+                }
+            }
         }
         .padding(12)
         .astralCard()
+    }
+
+    @ViewBuilder
+    private func tagRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AstralColors.muted)
+                .tracking(0.8)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) { content() }
+            }
+        }
+    }
+
+    private func tappableTag(_ text: String, color: Color) -> some View {
+        Button {
+            fanficNavigation?.searchFor(text)
+            dismiss()
+        } label: {
+            StatusBadge(text, color: color)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func ratingColor(_ rating: String) -> Color {
+        let r = rating.lowercased()
+        if r.contains("general") || r == "g" { return AstralColors.success }
+        if r.contains("teen") || r == "t" { return Color(hex: 0x5C9DFF) }
+        if r.contains("mature") || r == "m" { return AstralColors.warning }
+        if r.contains("explicit") || r == "e" { return AstralColors.error }
+        return AstralColors.muted
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "complete": AstralColors.success
+        case "ongoing": AstralColors.gold
+        case "abandoned": AstralColors.error
+        default: AstralColors.muted
+        }
+    }
+
+    private func handleDownloadTap() {
+        // Download all chapter text to device for offline reading
+        guard !isDownloading else { return }
+        let pendingChapters = chapters.filter { $0.localTextPath == nil && $0.scrapeStatus == "scraped" }
+        if pendingChapters.isEmpty {
+            // All downloaded — delete local files
+            for chapter in chapters {
+                if let path = chapter.localTextPath {
+                    let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        .appendingPathComponent(path)
+                    try? FileManager.default.removeItem(at: url)
+                    chapter.localTextPath = nil
+                    chapter.isDownloaded = false
+                }
+            }
+            fanfic.isDownloaded = false
+            try? modelContext.save()
+            return
+        }
+
+        isDownloading = true
+        Task {
+            for (idx, chapter) in pendingChapters.enumerated() {
+                do {
+                    let response: FanficChapterResponse = try await APIClient.shared.request(
+                        .fanficChapter(fanficId: fanfic.id, chapterId: chapter.id)
+                    )
+                    if let content = response.content {
+                        let relPath = "fanfics/\(fanfic.id)/ch\(Int(chapter.chapterNumber)).txt"
+                        let fullURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                            .appendingPathComponent(relPath)
+                        try FileManager.default.createDirectory(at: fullURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try content.write(to: fullURL, atomically: true, encoding: .utf8)
+                        chapter.localTextPath = relPath
+                        chapter.isDownloaded = true
+                    }
+                } catch {
+                    AstralLogger.error("Download ch \(chapter.chapterNumber) failed: \(error)", context: "FanficDownload")
+                }
+                downloadProgress = (idx + 1, pendingChapters.count)
+            }
+            fanfic.isDownloaded = chapters.allSatisfy { $0.localTextPath != nil }
+            try? modelContext.save()
+            isDownloading = false
+        }
     }
 
     private func addBookmark(for chapter: LocalFanficChapter) {
