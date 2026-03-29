@@ -11,7 +11,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - BLOCK_VOLUME_PATH=/mnt/astral-media
       - STATIC_BASE_URL=http://localhost:8000/static
-      - ARQ_MAX_JOBS=3
+      - ARQ_MAX_JOBS=7
       - SOFT_DELETE_DAYS=5
       - COOKIE_CACHE_TTL_SECS=86400
       - LOG_LEVEL=DEBUG
@@ -73,7 +73,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - BLOCK_VOLUME_PATH=/mnt/astral-media
       - STATIC_BASE_URL=http://localhost:8000/static
-      - ARQ_MAX_JOBS=3
+      - ARQ_MAX_JOBS=7
       - SOFT_DELETE_DAYS=5
       - COOKIE_CACHE_TTL_SECS=86400
       - LOG_LEVEL=DEBUG
