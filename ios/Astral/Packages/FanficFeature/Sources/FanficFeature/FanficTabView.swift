@@ -3,7 +3,6 @@ import DesignSystem
 
 public struct FanficTabView: View {
     @State private var navigation = FanficNavigation()
-    @State private var searchText = ""
     var onSwitchTab: () -> Void
 
     public init(onSwitchTab: @escaping () -> Void = {}) {
@@ -16,20 +15,28 @@ public struct FanficTabView: View {
                 .ignoresSafeArea()
 
             NavigationStack {
-                Group {
-                    switch navigation.activeSection {
-                    case .library:
-                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
-                    case .favourites:
-                        FanficLibraryView(searchText: .constant(""), filterFavourites: true)
-                    case .browse:
-                        FanficBrowserView()
-                    case .scrapes:
-                        FanficScrapesView()
-                    case .downloads:
-                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
-                    case .stats:
-                        FanficStatsView()
+                VStack(spacing: 0) {
+                    // Search bar — slides in when active
+                    AstralSearchBar(
+                        text: $navigation.searchText,
+                        isActive: $navigation.isSearchActive,
+                        placeholder: "Title, fandom, character, relationship..."
+                    )
+
+                    // Main content
+                    Group {
+                        switch navigation.activeSection {
+                        case .library:
+                            FanficLibraryView(searchText: $navigation.searchText, filterFavourites: false)
+                        case .favourites:
+                            FanficLibraryView(searchText: .constant(""), filterFavourites: true)
+                        case .browse:
+                            FanficBrowserView()
+                        case .scrapes:
+                            FanficScrapesView()
+                        case .stats:
+                            FanficStatsView()
+                        }
                     }
                 }
                 .toolbar {
@@ -61,13 +68,29 @@ public struct FanficTabView: View {
                         .tint(AstralColors.gold)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 16) {
+                        HStack(spacing: 14) {
+                            // Search toggle
                             Button {
-                                // TODO: Show search
+                                withAnimation(AstralAnimation.quick) {
+                                    navigation.isSearchActive.toggle()
+                                    if !navigation.isSearchActive {
+                                        navigation.searchText = ""
+                                    }
+                                }
                             } label: {
-                                Image(systemName: "magnifyingglass")
+                                Image(systemName: navigation.isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
+                                    .foregroundStyle(navigation.isSearchActive ? AstralColors.gold : AstralColors.body)
+                            }
+
+                            // Filter
+                            Button {
+                                navigation.showFilter = true
+                            } label: {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
                                     .foregroundStyle(AstralColors.body)
                             }
+
+                            // Sidebar
                             Button {
                                 withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
                                     navigation.isSidebarOpen.toggle()
@@ -80,6 +103,7 @@ public struct FanficTabView: View {
                     }
                 }
             }
+            .environment(\.fanficNavigation, navigation)
 
             FanficSidebarView(
                 isOpen: $navigation.isSidebarOpen,
@@ -93,15 +117,33 @@ public struct FanficTabView: View {
 final class FanficNavigation {
     var activeSection: FanficSection = .library
     var isSidebarOpen = false
+    var searchText = ""
+    var isSearchActive = false
+    var showFilter = false
+
+    func searchFor(_ term: String) {
+        searchText = term
+        isSearchActive = true
+        activeSection = .library
+    }
 }
 
-/// Architecture fix #9: Added .scrapes section — missing from original doc's fanfic sidebar.
+private struct FanficNavigationKey: EnvironmentKey {
+    nonisolated(unsafe) static let defaultValue: FanficNavigation? = nil
+}
+
+extension EnvironmentValues {
+    var fanficNavigation: FanficNavigation? {
+        get { self[FanficNavigationKey.self] }
+        set { self[FanficNavigationKey.self] = newValue }
+    }
+}
+
 enum FanficSection: String, CaseIterable {
     case library = "Library"
     case favourites = "Favourites"
     case browse = "Browse"
     case scrapes = "Scrapes"
-    case downloads = "Downloads"
     case stats = "Stats"
 
     var icon: String {
@@ -110,7 +152,6 @@ enum FanficSection: String, CaseIterable {
         case .favourites: "heart.fill"
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
-        case .downloads: "arrow.down.to.line"
         case .stats: "chart.bar"
         }
     }

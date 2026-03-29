@@ -5,6 +5,7 @@ import DesignSystem
 import Networking
 
 struct ComicLibraryView: View {
+    @Binding var searchText: String
     var filterFavourites: Bool
 
     @State private var viewModel = ComicLibraryViewModel()
@@ -23,8 +24,20 @@ struct ComicLibraryView: View {
     ]
 
     private var displayedComics: [LocalComic] {
-        let ready = allComics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
-        return filterFavourites ? ready.filter { $0.isFavorite } : ready
+        var ready = allComics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
+        if filterFavourites {
+            ready = ready.filter { $0.isFavorite }
+        }
+        if !searchText.isEmpty {
+            ready = ready.filter {
+                $0.title.localizedCaseInsensitiveContains(searchText) ||
+                ($0.comicDescription ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.category ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.tagsJSON ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.authorsJSON ?? "").localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        return ready
     }
 
     private var inProgressComics: [LocalComic] {
@@ -165,13 +178,7 @@ private struct ContinueReadingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(AstralColors.elevated)
-                Image(systemName: "book.fill")
-                    .foregroundStyle(AstralColors.muted)
-            }
-            .frame(width: 100, height: 70)
+            StoryThumbnail(path: comic.thumbnailPath, title: comic.title, icon: "book.fill", width: 100, height: 70, baseURL: AppConfig.staticBaseURL)
 
             Text(comic.title)
                 .font(AstralTypography.caption)
@@ -192,7 +199,7 @@ private struct ContinueReadingCard: View {
 
 #Preview("Library") {
     NavigationStack {
-        ComicLibraryView(filterFavourites: false)
+        ComicLibraryView(searchText: .constant(""), filterFavourites: false)
             .modelContainer(.previewContainer(
                 comics: PreviewMocks.sampleComics,
                 comicChapters: PreviewMocks.comic1Chapters
@@ -202,12 +209,12 @@ private struct ContinueReadingCard: View {
 
 #Preview("Favourites") {
     NavigationStack {
-        ComicLibraryView(filterFavourites: true)
+        ComicLibraryView(searchText: .constant(""), filterFavourites: true)
             .modelContainer(.previewContainer(comics: PreviewMocks.sampleComics))
     }
 }
 
 #Preview("Empty State") {
-    ComicLibraryView(filterFavourites: false)
+    ComicLibraryView(searchText: .constant(""), filterFavourites: false)
         .modelContainer(for: LocalComic.self, inMemory: true)
 }

@@ -29,8 +29,8 @@
 	</dict>
 	<key>UIAppFonts</key>
 	<array>
-		<string>Fonts/OpenSans-Regular.ttf</string>
-		<string>Fonts/OpenSans-Bold.ttf</string>
+		<string>OpenSans-Regular.ttf</string>
+		<string>OpenSans-Bold.ttf</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict>

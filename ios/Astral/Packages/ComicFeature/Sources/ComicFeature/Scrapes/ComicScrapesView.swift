@@ -106,18 +106,45 @@ struct ComicScrapesView: View {
     }
 
     private func syncActiveJobs() async {
-        let active = jobs.filter { $0.status == "queued" || $0.status == "running" }
-        for job in active {
-            guard let response = try? await APIClient.shared.request(.scrapeStatus(jobId: job.id)) as ScrapeJobResponse else { continue }
-            job.status = response.status
-            job.chaptersScraped = response.chaptersScraped
-            job.chaptersFailed = response.chaptersFailed
-            job.totalChapters = response.totalChapters
-            job.completedAt = response.completedAt
-            job.errorMessage = response.errorMessage
-            job.currentStep = response.currentStep
-            job.lastErrorType = response.lastErrorType
-            job.startedAt = response.startedAt
+        // Fetch all comic scrape jobs from backend and upsert into SwiftData
+        do {
+            let response: PaginatedResponse<ScrapeJobResponse> = try await APIClient.shared.request(
+                .allScrapeJobs(page: 1, pageSize: 100)
+            )
+            let comicJobs = response.items.filter { $0.contentType == "comic" }
+            for dto in comicJobs {
+                if let existing = jobs.first(where: { $0.id == dto.id }) {
+                    existing.status = dto.status
+                    existing.chaptersScraped = dto.chaptersScraped
+                    existing.chaptersFailed = dto.chaptersFailed
+                    existing.totalChapters = dto.totalChapters
+                    existing.completedAt = dto.completedAt
+                    existing.errorMessage = dto.errorMessage
+                    existing.currentStep = dto.currentStep
+                    existing.lastErrorType = dto.lastErrorType
+                    existing.startedAt = dto.startedAt
+                } else {
+                    let job = LocalScrapeJob(
+                        id: dto.id,
+                        contentType: dto.contentType,
+                        storyId: dto.storyId,
+                        status: dto.status,
+                        chaptersScraped: dto.chaptersScraped,
+                        chaptersFailed: dto.chaptersFailed,
+                        totalChapters: dto.totalChapters,
+                        createdAt: dto.createdAt,
+                        completedAt: dto.completedAt
+                    )
+                    job.errorMessage = dto.errorMessage
+                    job.currentStep = dto.currentStep
+                    job.lastErrorType = dto.lastErrorType
+                    job.startedAt = dto.startedAt
+                    modelContext.insert(job)
+                }
+            }
+            try? modelContext.save()
+        } catch {
+            AstralLogger.error("syncActiveJobs failed: \(error)", context: "ComicScrapes")
         }
 
         // Resolve story titles for jobs without a matching LocalComic
@@ -139,6 +166,7 @@ struct ComicScrapesView: View {
             )
             modelContext.insert(comic)
         }
+        try? modelContext.save()
     }
 
     private var groupedFilteredJobs: [String: [LocalScrapeJob]] {

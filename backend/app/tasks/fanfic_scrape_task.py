@@ -186,6 +186,14 @@ async def fanfic_scrape_task(ctx, job_id: str):
                          error_type=type(e).__name__, duration_ms=dur)
                 raise
 
+            # Update total_chapters from discovered chapter count
+            # (metadata.total_chapters is often 0 for ongoing stories)
+            result = await db.execute(select(Fanfic).where(Fanfic.id == job.story_id))
+            fanfic = result.scalar_one_or_none()
+            if fanfic and len(chapter_list) > 0:
+                fanfic.total_chapters = len(chapter_list)
+                job.total_chapters = len(chapter_list)
+
             for ch_info in chapter_list:
                 existing = await db.execute(
                     select(FanficChapter).where(

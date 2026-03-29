@@ -11,15 +11,18 @@
 		0872CC5F985B0B63D745E28C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3B70F80A9958DB60E0CC1ADD /* Assets.xcassets */; };
 		1C53583CAD489ECD10851901 /* FanficFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 13B6F97E08792FF3BDE19FDD /* FanficFeature */; };
 		1D3BD5534AFDE8062DA22BF3 /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F1FB3B022D3DF01BA116DF /* TabBarView.swift */; };
+		20FC55E6BDBDE7264D62E402 /* OpenSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 360FB630357D9A69C8036FEB /* OpenSans-Regular.ttf */; };
 		2452D9A496582966C7DE09DA /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E1BFB0DBB90882EAF9AF59 /* RootView.swift */; };
 		26FF3C55A6880040D67FAD76 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 868B8DE2AAD42BE1F729820E /* AppState.swift */; };
 		33315E18654B8FF56D4E3A6E /* ComicFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 6D9749317CC8233110F45F47 /* ComicFeature */; };
+		45FED79846E5A5DF276F19B6 /* OpenSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F66676BDF50527DA5AF921EE /* OpenSans-Bold.ttf */; };
 		74BF227C092A8D97EDB25439 /* AstralApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4925D1B665DC328FF0C616FB /* AstralApp.swift */; };
 		A1CFECAF33631BA95950D7F6 /* Networking in Frameworks */ = {isa = PBXBuildFile; productRef = 44A7F09682C4C82F50384774 /* Networking */; };
 		F29A2C3FBD45843DE4934DA4 /* DesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = FB412116496700BFAB654B8B /* DesignSystem */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		360FB630357D9A69C8036FEB /* OpenSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OpenSans-Regular.ttf"; sourceTree = "<group>"; };
 		3B70F80A9958DB60E0CC1ADD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4925D1B665DC328FF0C616FB /* AstralApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstralApp.swift; sourceTree = "<group>"; };
 		49F1FB3B022D3DF01BA116DF /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
@@ -30,6 +33,7 @@
 		A57BD5599808F2BDABDAC55B /* DesignSystem */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignSystem; path = Packages/DesignSystem; sourceTree = SOURCE_ROOT; };
 		B302B201A103DA8D4B1475D9 /* Astral.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Astral.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D20E1B3D30BEF623E81D0CDF /* Core */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Core; path = Packages/Core; sourceTree = SOURCE_ROOT; };
+		F66676BDF50527DA5AF921EE /* OpenSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OpenSans-Bold.ttf"; sourceTree = "<group>"; };
 		F9BCC98FD654510C722BD4D0 /* Networking */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Networking; path = Packages/Networking; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -62,6 +66,8 @@
 		4DACC33FF854E7D61179D38C /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
+				F66676BDF50527DA5AF921EE /* OpenSans-Bold.ttf */,
+				360FB630357D9A69C8036FEB /* OpenSans-Regular.ttf */,
 			);
 			path = Fonts;
 			sourceTree = "<group>";
@@ -179,6 +185,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0872CC5F985B0B63D745E28C /* Assets.xcassets in Resources */,
+				45FED79846E5A5DF276F19B6 /* OpenSans-Bold.ttf in Resources */,
+				20FC55E6BDBDE7264D62E402 /* OpenSans-Regular.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

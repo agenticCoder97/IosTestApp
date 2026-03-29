@@ -325,14 +325,14 @@ struct ComicReaderView: View {
                     ForEach(Array(localURLs.enumerated()), id: \.offset) { index, url in
                         LocalPageView(fileURL: url)
                             .id(index)
-                            .onAppear { currentPage = index }
+                            .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
                     }
                 } else {
                     // Network pages
                     ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
                         ComicPageView(page: page)
                             .id(index)
-                            .onAppear { currentPage = index }
+                            .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
                     }
                 }
 
@@ -761,8 +761,14 @@ struct ComicReaderView: View {
     private func loadPages() async {
         isLoading = true
         pages = []
-        currentPage = 0
-        scrolledPageID = 0
+
+        // Restore page position if resuming same chapter, otherwise start at 0
+        let resumeChapterNumber = Int(currentChapter?.chapterNumber ?? 0)
+        let savedPage = (comic.lastReadChapterNumber == resumeChapterNumber && comic.lastReadPageNumber > 0)
+            ? comic.lastReadPageNumber - 1  // convert 1-based to 0-based
+            : 0
+        currentPage = savedPage
+        scrolledPageID = savedPage
 
         guard let chapter = currentChapter else {
             AstralLogger.warning("loadPages: no currentChapter at index \(currentChapterIndex)", context: "ComicReader")
@@ -783,6 +789,17 @@ struct ComicReaderView: View {
         }
         readingSession?.chaptersRead += 1
         try? modelContext.save()
+
+        // Sync progress to backend (fire-and-forget)
+        Task {
+            let body = ComicProgressRequest(
+                lastChapterNumber: Int(chapter.chapterNumber),
+                lastPageNumber: currentPage + 1
+            )
+            let _: ProgressResponse? = try? await APIClient.shared.request(
+                .updateComicProgress(storyId: comic.id, body: body)
+            )
+        }
 
         if let previewPages {
             pages = previewPages
