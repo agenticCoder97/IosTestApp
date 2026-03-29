@@ -94,10 +94,19 @@ struct ComicReaderView: View {
                     .allowsHitTesting(false)
             }
 
-            // Tap zones + long press (always present so user can toggle HUD to get back button)
-            if !isLoading {
-                tapZoneOverlay
-            }
+            // Tap to toggle HUD — uses simultaneousGesture so scrolling still works
+            Color.clear
+                .contentShape(Rectangle())
+                .simultaneousGesture(
+                    TapGesture().onEnded { toggleHUD() }
+                )
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                        longPressedPage = pages[safe: currentPage]
+                        showPageActions = true
+                    }
+                )
+                .allowsHitTesting(!isLoading)
 
             // Floating back button — always visible as escape hatch
             VStack {
@@ -323,28 +332,30 @@ struct ComicReaderView: View {
     private var tapZoneOverlay: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
-                Color.clear
+                Rectangle()
+                    .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
                     .onTapGesture { handleLeftTap() }
 
-                Color.clear
+                Rectangle()
+                    .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
                     .onTapGesture { toggleHUD() }
 
-                Color.clear
+                Rectangle()
+                    .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
                     .onTapGesture { handleRightTap() }
             }
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                    longPressedPage = pages[safe: currentPage]
+                    showPageActions = true
+                }
+            )
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                longPressedPage = pages[safe: currentPage]
-                showPageActions = true
-            }
-        )
+        .allowsHitTesting(true)
     }
 
     private func handleLeftTap() {
