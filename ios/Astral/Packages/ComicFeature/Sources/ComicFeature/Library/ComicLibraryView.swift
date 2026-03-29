@@ -38,6 +38,13 @@ struct ComicLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                // Backend error banner
+                if let error = viewModel.errorMessage {
+                    BackendStatusBanner(error) {
+                        Task { await viewModel.fetchComics(modelContext: modelContext) }
+                    }
+                }
+
                 if !filterFavourites && !inProgressComics.isEmpty {
                     ContinueReadingStrip(comics: inProgressComics)
                         .padding(.top, 8)

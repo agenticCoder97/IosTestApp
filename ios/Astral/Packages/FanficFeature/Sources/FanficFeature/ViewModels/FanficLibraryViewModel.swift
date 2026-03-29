@@ -16,6 +16,7 @@ final class FanficLibraryViewModel {
         sort: String? = nil
     ) async {
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         AstralLogger.info("fetchFanfics started (fandom=\(fandom ?? "nil") rating=\(rating ?? "nil"))", context: "FanficLibraryVM")
 
@@ -101,8 +102,11 @@ final class FanficLibraryViewModel {
                 }
             }
             try modelContext.save()
+        } catch is URLError {
+            errorMessage = "Backend unreachable — check Docker is running"
+            AstralLogger.error("fetchFanfics: backend unreachable", context: "FanficLibraryVM")
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Sync failed: \(error.localizedDescription)"
             AstralLogger.error("fetchFanfics failed: \(error)", context: "FanficLibraryVM")
         }
     }

@@ -10,6 +10,7 @@ final class ComicLibraryViewModel {
 
     func fetchComics(modelContext: ModelContext) async {
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         AstralLogger.info("fetchComics started", context: "ComicLibraryVM")
 
@@ -79,8 +80,11 @@ final class ComicLibraryViewModel {
         } catch let error as APIError where error == .cookieRefreshNeeded {
             errorMessage = "Browser refresh needed"
             AstralLogger.warning("fetchComics: cookie refresh needed", context: "ComicLibraryVM")
+        } catch is URLError {
+            errorMessage = "Backend unreachable — check Docker is running"
+            AstralLogger.error("fetchComics: backend unreachable", context: "ComicLibraryVM")
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Sync failed: \(error.localizedDescription)"
             AstralLogger.error("fetchComics failed: \(error)", context: "ComicLibraryVM")
         }
     }

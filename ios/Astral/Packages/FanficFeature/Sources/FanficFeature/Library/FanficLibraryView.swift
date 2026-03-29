@@ -51,6 +51,13 @@ struct FanficLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                // Backend error banner
+                if let error = viewModel.errorMessage {
+                    BackendStatusBanner(error) {
+                        Task { await viewModel.fetchFanfics(modelContext: modelContext) }
+                    }
+                }
+
                 if !filterFavourites && !inProgressFanfics.isEmpty && searchText.isEmpty {
                     FanficContinueReadingStrip(fanfics: inProgressFanfics)
                         .padding(.top, 8)
