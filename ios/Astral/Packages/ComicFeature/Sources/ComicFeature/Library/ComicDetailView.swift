@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
 
 struct ComicDetailView: View {
     let comic: LocalComic
@@ -10,6 +11,7 @@ struct ComicDetailView: View {
     @Environment(\.comicNavigation) private var comicNavigation
     @Query private var chapters: [LocalComicChapter]
     @Query private var bookmarks: [LocalBookmark]
+    @State private var selectedChapter: LocalComicChapter?
 
     init(comic: LocalComic) {
         self.comic = comic
@@ -156,16 +158,29 @@ struct ComicDetailView: View {
 
                 // MARK: Continue Reading button
                 if !chapters.isEmpty {
-                    ContinueReadingButton(
-                        chapters: Array(chapters),
-                        lastReadChapterNumber: comic.lastReadChapterNumber,
-                        destination: { chapter in
-                            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
+                    if let nextChapter = nextUnreadChapter {
+                        Button {
+                            AstralLogger.info("Continue button tapped: ch \(nextChapter.chapterNumber)", context: "ComicDetail")
+                            selectedChapter = nextChapter
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: comic.lastReadChapterNumber == 0 ? "book.fill" : "arrow.right.circle.fill")
+                                Text(comic.lastReadChapterNumber == 0
+                                     ? "Start Reading"
+                                     : "Continue — Ch. \(Int(nextChapter.chapterNumber))")
+                                    .font(AstralTypography.bodyMedium)
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(AstralColors.gold)
+                            .clipShape(Capsule())
                         }
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                    }
                 }
 
                 // MARK: Bookmarks section
@@ -188,8 +203,9 @@ struct ComicDetailView: View {
                 } else {
                     LazyVStack(spacing: 0) {
                         ForEach(chapters) { chapter in
-                            NavigationLink {
-                                ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
+                            Button {
+                                AstralLogger.info("Chapter tapped: \(chapter.chapterNumber) id=\(chapter.id)", context: "ComicDetail")
+                                selectedChapter = chapter
                             } label: {
                                 ComicChapterRow(
                                     chapter: chapter,
@@ -222,11 +238,19 @@ struct ComicDetailView: View {
         .background(AstralColors.background)
         .navigationTitle(comic.title)
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(item: $selectedChapter) { chapter in
+            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
+        }
         .onAppear {
             comic.seenTotalChapters = comic.totalChapters
             comic.lastReadAt = .now
             try? modelContext.save()
         }
+    }
+
+    private var nextUnreadChapter: LocalComicChapter? {
+        if comic.lastReadChapterNumber == 0 { return chapters.first }
+        return chapters.first(where: { $0.chapterNumber > Double(comic.lastReadChapterNumber) }) ?? chapters.first
     }
 
     private func thumbnailURL(_ path: String) -> URL? {
