@@ -69,6 +69,7 @@ public enum ReaderBackground: String, CaseIterable, Codable, Sendable {
 
 public enum ReaderFont: String, CaseIterable, Codable, Sendable {
     case system = "System"
+    case openSans = "Open Sans"
     case georgia = "Georgia"
     case palatino = "Palatino"
     case courier = "Courier"
@@ -77,6 +78,7 @@ public enum ReaderFont: String, CaseIterable, Codable, Sendable {
     public func font(size: CGFloat) -> Font {
         switch self {
         case .system: .system(size: size)
+        case .openSans: .custom("OpenSans-Regular", size: size)
         case .georgia: .custom("Georgia", size: size)
         case .palatino: .custom("Palatino", size: size)
         case .courier: .custom("Courier", size: size)
