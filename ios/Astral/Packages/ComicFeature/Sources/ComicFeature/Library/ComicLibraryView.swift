@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
 
 struct ComicLibraryView: View {
     var filterFavourites: Bool
@@ -22,7 +23,8 @@ struct ComicLibraryView: View {
     ]
 
     private var displayedComics: [LocalComic] {
-        filterFavourites ? allComics.filter { $0.isFavorite } : allComics
+        let ready = allComics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
+        return filterFavourites ? ready.filter { $0.isFavorite } : ready
     }
 
     private var inProgressComics: [LocalComic] {
@@ -36,6 +38,13 @@ struct ComicLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                // Backend error banner
+                if let error = viewModel.errorMessage {
+                    BackendStatusBanner(error) {
+                        Task { await viewModel.fetchComics(modelContext: modelContext) }
+                    }
+                }
+
                 if !filterFavourites && !inProgressComics.isEmpty {
                     ContinueReadingStrip(comics: inProgressComics)
                         .padding(.top, 8)
@@ -43,11 +52,13 @@ struct ComicLibraryView: View {
 
                 if displayedComics.isEmpty {
                     EmptyStateView(
-                        icon: filterFavourites ? "heart" : "book.closed",
-                        title: filterFavourites ? "No Favourites Yet" : "No Comics Yet",
+                        icon: filterFavourites ? "heart" : (viewModel.errorMessage != nil ? "wifi.slash" : "book.closed"),
+                        title: filterFavourites ? "No Favourites Yet" : (viewModel.errorMessage != nil ? "Offline" : "No Comics Yet"),
                         message: filterFavourites
                             ? "Tap the heart on any comic to add it here."
-                            : "Browse a source and scrape your first comic to get started."
+                            : (viewModel.errorMessage != nil
+                                ? "Backend unreachable. Previously synced comics will appear here."
+                                : "Browse a source and scrape your first comic to get started.")
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.top, 80)
@@ -61,6 +72,13 @@ struct ComicLibraryView: View {
                             }
                             .buttonStyle(PressButtonStyle())
                             .staggeredAppear(index: index)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    deleteComic(comic)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -71,6 +89,12 @@ struct ComicLibraryView: View {
         }
         .background(AstralColors.background)
         .task { await viewModel.fetchComics(modelContext: modelContext) }
+    }
+
+    private func deleteComic(_ comic: LocalComic) {
+        Task { try? await APIClient.shared.requestVoid(.deleteComic(id: comic.id)) }
+        modelContext.delete(comic)
+        try? modelContext.save()
     }
 }
 

@@ -11,18 +11,46 @@ struct ComicBrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Source picker
-            Picker("Source", selection: $viewModel.selectedSource) {
-                ForEach(ComicSource.allCases, id: \.self) { source in
-                    Text(source.rawValue).tag(source)
+            // Source dropdown
+            HStack {
+                Menu {
+                    ForEach(ComicSource.allCases, id: \.self) { source in
+                        Button {
+                            viewModel.selectedSource = source
+                        } label: {
+                            Label(source.rawValue, systemImage: viewModel.selectedSource == source ? "checkmark" : "")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 14))
+                        Text(viewModel.selectedSource.rawValue)
+                            .font(AstralTypography.bodyMedium)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(AstralColors.muted)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(AstralColors.elevated, in: Capsule())
                 }
+                .tint(AstralColors.gold)
+                Spacer()
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
-            // Unified Browser Action Bar
-            HStack(spacing: 12) {
+            // Loading progress bar
+            if viewModel.isLoading {
+                ProgressView(value: viewModel.loadProgress)
+                    .tint(AstralColors.gold)
+                    .scaleEffect(x: 1, y: 0.5)
+                    .padding(.horizontal, 16)
+            }
+
+            // Browser action bar
+            HStack(spacing: 10) {
                 Button(action: viewModel.goBack) {
                     Image(systemName: "chevron.backward")
                 }
@@ -40,18 +68,25 @@ struct ComicBrowserView: View {
                 }
                 .foregroundColor(.primary)
 
-                TextField("Enter URL", text: $viewModel.addressBarText)
-                    .textFieldStyle(.plain)
-                    .font(.caption)
-                    .foregroundColor(.primary)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    .onSubmit { viewModel.navigateToAddress() }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 6))
-                    .lineLimit(1)
+                // Address bar with cookie indicator
+                HStack(spacing: 4) {
+                    if viewModel.cookieCount > 0 {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(AstralColors.success)
+                    }
+                    TextField("Enter URL", text: $viewModel.addressBarText)
+                        .textFieldStyle(.plain)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .onSubmit { viewModel.navigateToAddress() }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 6))
 
                 Button(action: {
                     Task {
@@ -73,17 +108,18 @@ struct ComicBrowserView: View {
                 .disabled(!viewModel.canScrape || viewModel.isScraping)
                 .buttonStyle(PressButtonStyle(scale: 0.85))
 
-                Button(action: viewModel.openInSafari) {
-                    Image(systemName: "safari")
+                Button {
+                    viewModel.resetToSourceHome()
+                } label: {
+                    Image(systemName: "house")
+                        .foregroundColor(.primary)
                 }
-                .foregroundColor(viewModel.currentURL != nil ? .primary : .secondary)
-                .disabled(viewModel.currentURL == nil)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
 
             // WebView
-            WebViewRepresentable(viewModel: viewModel)
+            ComicWebViewRepresentable(viewModel: viewModel)
                 .ignoresSafeArea(edges: .bottom)
         }
         .background(AstralColors.background)
@@ -100,9 +136,12 @@ struct ComicBrowserView: View {
 
 @MainActor @Observable
 final class ComicBrowserViewModel {
-    var selectedSource: ComicSource = .nhentai
+    var selectedSource: ComicSource = .hentai20
     var canScrape = false
     var isScraping = false
+    var isLoading = false
+    var loadProgress: Double = 0
+    var cookieCount: Int = 0
     var scrapeToast: ScrapeToast? = nil
     var currentURL: URL?
     var addressBarText: String = ""
@@ -187,12 +226,12 @@ final class ComicBrowserViewModel {
                 startedAt: response.startedAt
             )
         } catch {
-            showToast(ScrapeToast(message: "Scrape failed", isSuccess: false))
+            showToast(ScrapeToast(message: "Scrape failed: \(error.localizedDescription)", isSuccess: false))
             return nil
         }
     }
 
-    private func showToast(_ toast: ScrapeToast) {
+    func showToast(_ toast: ScrapeToast) {
         scrapeToast = toast
         Task {
             try? await Task.sleep(for: .seconds(2.5))
@@ -219,32 +258,60 @@ final class ComicBrowserViewModel {
     func goBack() { webView?.goBack() }
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
-    func openInSafari() {
-        if let url = currentURL ?? URL(string: sourceURL.absoluteString) {
-            #if os(iOS)
-            UIApplication.shared.open(url)
-            #endif
+
+    func resetToSourceHome() {
+        savedURLs.removeValue(forKey: selectedSource)
+        let homeURL: URL
+        switch selectedSource {
+        case .nhentai: homeURL = URL(string: "https://nhentai.net")!
+        case .toongod: homeURL = URL(string: "https://www.toongod.org")!
+        case .hentai20: homeURL = URL(string: "https://hentai20.io")!
         }
+        webView?.load(URLRequest(url: homeURL))
+        addressBarText = homeURL.absoluteString
     }
 }
 
-struct WebViewRepresentable: UIViewRepresentable {
+// MARK: - WebView
+
+struct ComicWebViewRepresentable: UIViewRepresentable {
     let viewModel: ComicBrowserViewModel
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        config.allowsInlineMediaPlayback = true
+        // Block popups — prevent ad windows from opening
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator  // Handle JS alerts/confirms
+        webView.allowsBackForwardNavigationGestures = true
         viewModel.webView = webView
         ContentBlocker.shared.apply(to: webView)
+        webView.load(URLRequest(url: viewModel.sourceURL))
+        context.coordinator.loadedSource = viewModel.selectedSource
+
+        // Observe loading progress
+        context.coordinator.progressObservation = webView.observe(\.estimatedProgress) { webView, _ in
+            Task { @MainActor in
+                viewModel.loadProgress = webView.estimatedProgress
+            }
+        }
+        context.coordinator.loadingObservation = webView.observe(\.isLoading) { webView, _ in
+            Task { @MainActor in
+                viewModel.isLoading = webView.isLoading
+            }
+        }
+
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        let request = URLRequest(url: viewModel.sourceURL)
-        if webView.url != viewModel.sourceURL {
-            webView.load(request)
+        if context.coordinator.loadedSource != viewModel.selectedSource {
+            context.coordinator.loadedSource = viewModel.selectedSource
+            webView.load(URLRequest(url: viewModel.sourceURL))
         }
     }
 
@@ -252,25 +319,42 @@ struct WebViewRepresentable: UIViewRepresentable {
         Coordinator(viewModel: viewModel)
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let viewModel: ComicBrowserViewModel
+        var loadedSource: ComicSource
+        var progressObservation: NSKeyValueObservation?
+        var loadingObservation: NSKeyValueObservation?
 
         init(viewModel: ComicBrowserViewModel) {
             self.viewModel = viewModel
+            self.loadedSource = viewModel.selectedSource
         }
+
+        // MARK: - Navigation Policy
 
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
+            // Block popup-style navigations (target=_blank ads)
+            if navigationAction.navigationType == .other && navigationAction.targetFrame == nil {
+                decisionHandler(.cancel)
+                return
+            }
+
             guard let host = navigationAction.request.url?.host?.lowercased() else {
                 decisionHandler(.allow)
                 return
             }
-            let allowed = viewModel.allowedDomains.contains { host.hasSuffix($0) }
+            // Secure domain check — require exact match or subdomain (dot prefix)
+            let allowed = viewModel.allowedDomains.contains { domain in
+                host == domain || host.hasSuffix("." + domain)
+            }
             decisionHandler(allowed ? .allow : .cancel)
         }
+
+        // MARK: - Navigation Events
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             viewModel.currentURL = webView.url
@@ -282,7 +366,7 @@ struct WebViewRepresentable: UIViewRepresentable {
             viewModel.canGoBack = webView.canGoBack
             viewModel.canGoForward = webView.canGoForward
 
-            // Auto-harvest cookies on every page load (architecture convention 9.2)
+            // Auto-harvest cookies
             Task {
                 let store = webView.configuration.websiteDataStore.httpCookieStore
                 let allCookies = await store.allCookies()
@@ -290,6 +374,7 @@ struct WebViewRepresentable: UIViewRepresentable {
                     allCookies,
                     forSource: viewModel.selectedSource.rawValue
                 )
+                viewModel.cookieCount = sourceCookies.count
                 if !sourceCookies.isEmpty {
                     let ua = try? await webView.evaluateJavaScript("navigator.userAgent") as? String
                     CookieStore.shared.storeCookies(
@@ -299,6 +384,61 @@ struct WebViewRepresentable: UIViewRepresentable {
                     )
                 }
             }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            let nsError = error as NSError
+            // Ignore cancelled navigations (user tapped link while loading)
+            guard nsError.code != NSURLErrorCancelled else { return }
+            viewModel.showToast(ScrapeToast(message: "Page failed: \(nsError.localizedDescription)", isSuccess: false))
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            let nsError = error as NSError
+            guard nsError.code != NSURLErrorCancelled else { return }
+            viewModel.showToast(ScrapeToast(message: "Cannot load page", isSuccess: false))
+        }
+
+        // MARK: - WKUIDelegate — JS Alerts/Confirms/Prompts
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptAlertPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping () -> Void
+        ) {
+            // Silently dismiss — these are almost always ad-related on these sites
+            completionHandler()
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptConfirmPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping (Bool) -> Void
+        ) {
+            completionHandler(false)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptTextInputPanelWithPrompt prompt: String,
+            defaultText: String?,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping (String?) -> Void
+        ) {
+            completionHandler(nil)
+        }
+
+        // Block popup windows (ads opening new windows)
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            // Deny all popup windows — return nil to block
+            return nil
         }
     }
 }

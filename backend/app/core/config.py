@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     cookie_cache_ttl_secs: int = 86400
     log_level: str = "INFO"
 
+    # Scrape concurrency — chapters and pages downloaded in parallel
+    scrape_chapter_concurrency: int = 4   # how many chapters scraped at once
+    scrape_page_concurrency: int = 8      # how many page images downloaded at once per chapter
+
     @property
     def oracle_wallet_dir(self) -> Optional[Path]:
         if self.oracle_wallet_path:

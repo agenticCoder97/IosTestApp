@@ -10,6 +10,8 @@ public final class LocalComicChapter {
     public var totalPages: Int
     public var isDownloaded: Bool
     public var scrapeStatus: String
+    /// Local directory path for downloaded page images (Documents directory)
+    public var localPagesPath: String?
 
     public var comic: LocalComic?
 

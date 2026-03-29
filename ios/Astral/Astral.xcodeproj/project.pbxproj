@@ -28,7 +28,7 @@
 		8A161ECF4EB1460F88D172C3 /* ComicFeature */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ComicFeature; path = Packages/ComicFeature; sourceTree = SOURCE_ROOT; };
 		A1E1BFB0DBB90882EAF9AF59 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		A57BD5599808F2BDABDAC55B /* DesignSystem */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignSystem; path = Packages/DesignSystem; sourceTree = SOURCE_ROOT; };
-		B302B201A103DA8D4B1475D9 /* Astral.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Astral.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B302B201A103DA8D4B1475D9 /* Astral.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Astral.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D20E1B3D30BEF623E81D0CDF /* Core */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Core; path = Packages/Core; sourceTree = SOURCE_ROOT; };
 		F9BCC98FD654510C722BD4D0 /* Networking */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Networking; path = Packages/Networking; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -143,7 +143,6 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					9194C73EF0A1946FB57A8273 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -271,6 +270,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9H4RA8RRJ8;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -291,6 +291,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9H4RA8RRJ8;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.2;
 				LD_RUNPATH_SEARCH_PATHS = (

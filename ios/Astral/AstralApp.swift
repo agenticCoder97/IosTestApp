@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Core
+import DesignSystem
 
 @main
 struct AstralApp: App {
@@ -14,6 +15,7 @@ struct AstralApp: App {
             UserPreferences.self,
             LocalScrapeJob.self,
             LocalBookmark.self,
+            LocalReadingSession.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -47,6 +49,7 @@ struct AstralApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .task { ContentBlocker.shared.precompile() }
         }
         .modelContainer(sharedModelContainer)
     }

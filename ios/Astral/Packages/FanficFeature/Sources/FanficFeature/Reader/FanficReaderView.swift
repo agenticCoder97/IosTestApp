@@ -28,6 +28,7 @@ struct FanficReaderView: View {
     @State private var horizontalMargin: CGFloat = 20
     @State private var showBookmarkSheet = false
     @State private var bookmarkParagraphIndex: Int?
+    @State private var readingSession: LocalReadingSession?
 
     var body: some View {
         ZStack {
@@ -97,6 +98,28 @@ struct FanficReaderView: View {
             }
         }
         .task { await loadChapter() }
+        .onAppear {
+            // Track reading session
+            let session = LocalReadingSession(contentType: "fanfic", storyId: fanfic.id)
+            modelContext.insert(session)
+            // Persist reading progress
+            fanfic.lastReadChapterNumber = Int(chapter.chapterNumber)
+            fanfic.lastReadAt = .now
+            if fanfic.totalChapters > 0 {
+                fanfic.progressPercent = Double(fanfic.lastReadChapterNumber) / Double(fanfic.totalChapters)
+                if fanfic.progressPercent >= 1.0 && fanfic.completedAt == nil {
+                    fanfic.completedAt = .now
+                }
+            }
+            try? modelContext.save()
+            readingSession = session
+        }
+        .onDisappear {
+            if let readingSession {
+                readingSession.endedAt = .now
+                try? modelContext.save()
+            }
+        }
         .sheet(isPresented: $showBookmarkSheet) {
             FanficBookmarkSheet(
                 paragraphText: bookmarkParagraphIndex.flatMap { paragraphs.indices.contains($0) ? paragraphs[$0] : nil } ?? "",
@@ -191,7 +214,7 @@ struct FanficReaderView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(AstralColors.muted)
                     .frame(width: 24)
-                Slider(value: $fontSize, in: 14...22, step: 1)
+                Slider(value: $fontSize, in: 12...28)
                     .tint(AstralColors.gold)
                 Text("Aa")
                     .font(.system(size: 22))
@@ -204,7 +227,7 @@ struct FanficReaderView: View {
                 Image(systemName: "text.line.first.and.arrowtriangle.forward")
                     .foregroundStyle(AstralColors.muted)
                     .frame(width: 24)
-                Slider(value: $lineHeight, in: 1.4...1.8, step: 0.1)
+                Slider(value: $lineHeight, in: 1.2...2.2)
                     .tint(AstralColors.gold)
             }
 
@@ -233,7 +256,7 @@ struct FanficReaderView: View {
                 Image(systemName: "text.alignleft")
                     .foregroundStyle(AstralColors.muted)
                     .frame(width: 24)
-                Slider(value: $paragraphSpacing, in: 4...28, step: 2)
+                Slider(value: $paragraphSpacing, in: 0...36)
                     .tint(AstralColors.gold)
                 Text("\(Int(paragraphSpacing))pt")
                     .font(AstralTypography.caption)
@@ -246,7 +269,7 @@ struct FanficReaderView: View {
                 Image(systemName: "arrow.left.and.right")
                     .foregroundStyle(AstralColors.muted)
                     .frame(width: 24)
-                Slider(value: $horizontalMargin, in: 12...40, step: 4)
+                Slider(value: $horizontalMargin, in: 8...48)
                     .tint(AstralColors.gold)
                 Text("\(Int(horizontalMargin))pt")
                     .font(AstralTypography.caption)

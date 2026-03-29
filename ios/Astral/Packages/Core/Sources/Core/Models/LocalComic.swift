@@ -33,6 +33,8 @@ public final class LocalComic {
     public var authorsJSON: String?
     /// Number of initial pages to skip per chapter (e.g. credit pages in webtoons)
     public var skipFirstNPages: Int
+    /// Date when the user first completed this comic (progressPercent reached 1.0)
+    public var completedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalComicChapter.comic)
     public var chapters: [LocalComicChapter]?

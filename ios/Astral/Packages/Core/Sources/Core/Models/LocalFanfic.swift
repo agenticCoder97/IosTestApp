@@ -42,6 +42,8 @@ public final class LocalFanfic {
     public var updatedAtSource: Date?
     /// JSON-encoded array of tag dicts from API
     public var tagsJSON: String?
+    /// Date when the user first completed this fanfic (progressPercent reached 1.0)
+    public var completedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalFanficChapter.fanfic)
     public var chapters: [LocalFanficChapter]?

@@ -215,18 +215,41 @@ async def fanfic_scrape_task(ctx, job_id: str):
             total_chapters = len(chapters_to_scrape)
             logger.info("fanfic_scrape_task chapters queued | job_id=%s count=%d", job_id, total_chapters)
 
-            # ── Per-chapter scrape ──────────────────────────────────────────
+            # ── Bulk fetch (AO3 optimization) ─────────────────────────────────
+            # Try to get all chapters in one request if scraper supports it
+            bulk_texts: dict[float, str] = {}
+            if hasattr(scraper, "get_all_chapters_bulk"):
+                bulk_start = time.perf_counter()
+                job.current_step = "bulk_download"
+                await db.commit()
+                bulk_texts = await scraper.get_all_chapters_bulk(job.source_url)
+                if bulk_texts:
+                    bulk_dur = int((time.perf_counter() - bulk_start) * 1000)
+                    logger.info(
+                        "fanfic_scrape_task bulk download ok | job_id=%s chapters=%d elapsed_ms=%d",
+                        job_id, len(bulk_texts), bulk_dur,
+                    )
+                    _add_log(db, job_uuid, "info", "bulk_download",
+                             f"Downloaded {len(bulk_texts)} chapters in single request",
+                             duration_ms=bulk_dur)
+
+            # ── Per-chapter scrape (or apply bulk results) ─────────────────
             for ch_idx, chapter in enumerate(chapters_to_scrape, start=1):
                 ch_label = f"chapter_{int(chapter.chapter_number)}"
                 job.current_step = ch_label
                 ch_start = time.perf_counter()
-                logger.info(
-                    "fanfic_scrape_task chapter start | job_id=%s chapter=%.1f [%d/%d] url=%s",
-                    job_id, chapter.chapter_number, ch_idx, total_chapters, chapter.source_url,
-                )
 
                 try:
-                    text = await scraper.get_chapter_text(chapter.source_url)
+                    # Use bulk text if available, otherwise fetch individually
+                    if chapter.chapter_number in bulk_texts:
+                        text = bulk_texts[chapter.chapter_number]
+                    else:
+                        logger.info(
+                            "fanfic_scrape_task chapter start | job_id=%s chapter=%.1f [%d/%d] url=%s",
+                            job_id, chapter.chapter_number, ch_idx, total_chapters, chapter.source_url,
+                        )
+                        text = await scraper.get_chapter_text(chapter.source_url)
+
                     chapter.content = text
                     chapter.word_count = len(text.split())
                     chapter.scrape_status = ScrapeStatus.SCRAPED

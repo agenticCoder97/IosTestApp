@@ -31,7 +31,7 @@ class Hentai20Scraper(BaseScraper):
     content_type = "comic"
     # Images and chapter list are in the raw HTML — no JS engine needed
     requires_browser = False
-    request_delay_seconds = 2.0
+    request_delay_seconds = 0.3
     max_retries = 3
 
     async def get_story_metadata(self, url: str) -> StoryMetadata:
@@ -44,18 +44,32 @@ class Hentai20Scraper(BaseScraper):
         desc_tag = soup.select_one(".summary__content, .entry-content > p, .description")
         description = desc_tag.get_text(strip=True) if desc_tag else None
 
-        thumb_tag = soup.select_one(".summary_image img, .tab-thumb img, .post-title img")
+        # Thumbnail — og:image meta is most reliable on WordPress/Madara
         thumbnail_url = None
-        if thumb_tag:
-            thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
+        og_img = soup.select_one('meta[property="og:image"]')
+        if og_img:
+            thumbnail_url = (og_img.get("content") or "").strip() or None
+        if not thumbnail_url:
+            thumb_tag = soup.select_one("article img, .summary_image img")
+            if thumb_tag:
+                thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
 
-        # Author (Madara theme — same selector as toongod)
-        author_tag = soup.select_one(".author-content a")
-        authors = [author_tag.get_text(strip=True)] if author_tag else []
+        # Madara theme metadata selectors (same as toongod)
+        author_tags = soup.select(".author-content a")
+        if not author_tags:
+            # Fallback: some Madara variants use .post-content_item
+            for item in soup.select(".post-content_item"):
+                heading = item.select_one(".summary-heading")
+                if heading and "author" in heading.get_text(strip=True).lower():
+                    author_tags = item.select(".summary-content a")
+                    break
+        authors = [a.get_text(strip=True) for a in author_tags if a.get_text(strip=True)]
 
-        # Genre tags (Madara theme)
         genre_tags = soup.select(".genres-content a")
-        tags = [{"name": a.get_text(strip=True), "tag_type": "genre"} for a in genre_tags]
+        if not genre_tags:
+            # Fallback: tag-content or wp-manga-tags
+            genre_tags = soup.select(".tags-content a, .wp-manga-tags-list a")
+        tags = [{"name": a.get_text(strip=True), "tag_type": "genre"} for a in genre_tags if a.get_text(strip=True)]
 
         slug = _slug(url)
         chapter_links = soup.find_all(

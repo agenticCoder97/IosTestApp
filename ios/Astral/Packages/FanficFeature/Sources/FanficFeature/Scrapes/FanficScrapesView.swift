@@ -19,27 +19,64 @@ struct FanficScrapesView: View {
 
     @Environment(\.modelContext) private var modelContext
     @State private var selectedJob: LocalScrapeJob?
+    @State private var timeFilter: TimeFilter = .all
+
+    private var filteredJobs: [LocalScrapeJob] {
+        let cutoff = timeFilter.cutoffDate
+        return jobs.filter { $0.createdAt >= cutoff }
+    }
 
     var body: some View {
         ScrollView {
-            if jobs.isEmpty {
+            // Time filter chips
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(TimeFilter.allCases, id: \.self) { filter in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) { timeFilter = filter }
+                        } label: {
+                            Text(filter.label)
+                                .font(AstralTypography.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(timeFilter == filter ? AstralColors.gold.opacity(0.25) : AstralColors.elevated)
+                                .foregroundStyle(timeFilter == filter ? AstralColors.gold : AstralColors.muted)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            }
+
+            if filteredJobs.isEmpty {
                 EmptyStateView(
                     icon: "arrow.down.circle",
                     title: "No Scrape Jobs",
-                    message: "Start a scrape from the browser to see progress here."
+                    message: timeFilter == .all
+                        ? "Start a scrape from the browser to see progress here."
+                        : "No jobs in this time range."
                 )
                 .frame(maxWidth: .infinity)
                 .padding(.top, 80)
             } else {
                 LazyVStack(spacing: 12) {
-                    ForEach(groupedJobs.keys.sorted(), id: \.self) { status in
+                    ForEach(groupedFilteredJobs.keys.sorted(), id: \.self) { status in
                         Section {
-                            ForEach(groupedJobs[status] ?? []) { job in
+                            ForEach(groupedFilteredJobs[status] ?? []) { job in
                                 FanficScrapeJobRow(
                                     job: job,
                                     storyTitle: fanfics.first { $0.id == job.storyId }?.title
                                 ) {
                                     selectedJob = job
+                                }
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        deleteScrapeJob(job)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                             }
                         } header: {
@@ -108,8 +145,13 @@ struct FanficScrapesView: View {
         }
     }
 
-    private var groupedJobs: [String: [LocalScrapeJob]] {
-        Dictionary(grouping: jobs, by: \.status)
+    private var groupedFilteredJobs: [String: [LocalScrapeJob]] {
+        Dictionary(grouping: filteredJobs, by: \.status)
+    }
+
+    private func deleteScrapeJob(_ job: LocalScrapeJob) {
+        modelContext.delete(job)
+        try? modelContext.save()
     }
 }
 
@@ -167,6 +209,7 @@ struct FanficScrapeJobRow: View {
     var storyTitle: String? = nil
     let onSelect: () -> Void
 
+    @Environment(\.modelContext) private var modelContext
     @State private var retryRotation: Double = 0
 
     var body: some View {
@@ -253,9 +296,12 @@ struct FanficScrapeJobRow: View {
     @ViewBuilder
     private var statusIcon: some View {
         switch job.status {
-        case "running", "queued":
+        case "running":
             ProgressView()
                 .tint(AstralColors.gold)
+        case "queued":
+            Image(systemName: "clock.badge.questionmark")
+                .foregroundStyle(AstralColors.muted)
         case "complete":
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(AstralColors.success)
@@ -273,9 +319,33 @@ struct FanficScrapeJobRow: View {
     }
 
     private func retryJob() async {
+        AstralLogger.info("retryJob tapped | job_id=\(job.id) status=\(job.status)", context: "FanficScrapes")
         do {
-            try await APIClient.shared.requestVoid(.retryScrape(jobId: job.id))
-        } catch {}
+            let response: ScrapeJobResponse = try await APIClient.shared.request(.retryScrape(jobId: job.id))
+            AstralLogger.info("retryJob success | new_job_id=\(response.id) status=\(response.status)", context: "FanficScrapes")
+            let newJob = LocalScrapeJob(
+                id: response.id,
+                contentType: response.contentType,
+                storyId: response.storyId,
+                status: response.status,
+                chaptersScraped: response.chaptersScraped,
+                chaptersFailed: response.chaptersFailed,
+                totalChapters: response.totalChapters,
+                createdAt: response.createdAt,
+                completedAt: response.completedAt,
+                sourceUrl: response.sourceUrl,
+                sourceKey: response.sourceKey,
+                jobType: response.jobType,
+                errorMessage: response.errorMessage,
+                currentStep: response.currentStep,
+                lastErrorType: response.lastErrorType,
+                startedAt: response.startedAt
+            )
+            modelContext.insert(newJob)
+            try? modelContext.save()
+        } catch {
+            AstralLogger.error("retryJob failed: \(error)", context: "FanficScrapes")
+        }
     }
 }
 
@@ -412,7 +482,8 @@ private struct FanficScrapeJobDetailView: View {
 
     private var statusColor: Color {
         switch job.status {
-        case "running", "queued": AstralColors.gold
+        case "running": AstralColors.gold
+        case "queued": AstralColors.muted
         case "complete": AstralColors.success
         case "partial": AstralColors.warning
         case "failed": AstralColors.error

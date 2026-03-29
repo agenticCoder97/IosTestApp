@@ -72,7 +72,7 @@ struct FanficDetailView: View {
                                     isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
                                 )
                             }
-                            .buttonStyle(PressButtonStyle(scale: 0.98))
+                            .buttonStyle(.plain)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button {
                                     withAnimation(AstralAnimation.bouncy) {
@@ -372,7 +372,7 @@ private struct FanficContinueReadingButton: View {
                 .background(backgroundColor(for: state))
                 .clipShape(Capsule())
             }
-            .buttonStyle(PressButtonStyle(scale: 0.97))
+            .buttonStyle(.plain)
         }
     }
 

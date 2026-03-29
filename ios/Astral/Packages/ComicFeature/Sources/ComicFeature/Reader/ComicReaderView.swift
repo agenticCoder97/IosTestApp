@@ -39,9 +39,18 @@ struct ComicReaderView: View {
     @State private var brightnessOverlay: Double = 0.0
     @State private var showPageActions = false
     @State private var longPressedPage: PageResponse?
+    @Query private var bookmarks: [LocalBookmark]
+    @State private var nextChapterPull: CGFloat = 0
+    @State private var nextChapterTriggered = false
+    @State private var atBottomOfChapter = false
     @State private var scrolledPageID: Int? = 0  // drives paged scroll position
     @State private var showRotateHint = false
     @AppStorage("hideRotateHint") private var hideRotateHint = false
+    @AppStorage("forceLandscape") private var forceLandscape = true
+    @State private var readingSession: LocalReadingSession?
+    @State private var localPageURLs: [URL]?
+    @State private var prevChapterPull: CGFloat = 0
+    @State private var prevChapterTriggered = false
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -60,6 +69,12 @@ struct ComicReaderView: View {
         let idx = chapters.firstIndex(where: { $0.id == chapter.id }) ?? 0
         _currentChapterIndex = State(initialValue: idx)
         _readingMode = State(initialValue: comic.sourceKey == "nhentai" ? .rightToLeft : .webtoon)
+        let comicId = comic.id
+        _bookmarks = Query(
+            filter: #Predicate<LocalBookmark> { $0.storyId == comicId && $0.contentType == "comic" },
+            sort: \LocalBookmark.createdAt,
+            order: .reverse
+        )
     }
 
     private var currentChapter: LocalComicChapter? { chapters[safe: currentChapterIndex] }
@@ -94,10 +109,26 @@ struct ComicReaderView: View {
                     .allowsHitTesting(false)
             }
 
-            // Tap zones + long press
-            if !isLoading && !pages.isEmpty {
-                tapZoneOverlay
+            // No overlay here — gestures are on the page content directly
+
+            // Floating back button — always visible as escape hatch
+            VStack {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(.leading, 16)
+                    .padding(.top, 54)
+                    .opacity(showHUD ? 0 : 0.6)
+                    Spacer()
+                }
+                Spacer()
             }
+            .allowsHitTesting(!showHUD)
 
             // Top HUD — slides in from above
             VStack(spacing: 0) {
@@ -152,8 +183,14 @@ struct ComicReaderView: View {
         .statusBarHidden(!showHUD)
         .task(id: currentChapterIndex) { await loadPages() }
         .onAppear {
+            let session = LocalReadingSession(contentType: "comic", storyId: comic.id)
+            modelContext.insert(session)
+            try? modelContext.save()
+            readingSession = session
             UIApplication.shared.isIdleTimerDisabled = true
-            if !hideRotateHint, UIDevice.current.orientation.isPortrait || !UIDevice.current.orientation.isValidInterfaceOrientation {
+            if forceLandscape {
+                setLandscape(true)
+            } else if !hideRotateHint, UIDevice.current.orientation.isPortrait || !UIDevice.current.orientation.isValidInterfaceOrientation {
                 withAnimation { showRotateHint = true }
                 Task {
                     try? await Task.sleep(for: .seconds(3))
@@ -161,7 +198,14 @@ struct ComicReaderView: View {
                 }
             }
         }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onDisappear {
+            if let readingSession {
+                readingSession.endedAt = .now
+                try? modelContext.save()
+            }
+            UIApplication.shared.isIdleTimerDisabled = false
+            if forceLandscape { setLandscape(false) }
+        }
         .overlay(alignment: .top) {
             if showRotateHint {
                 HStack(spacing: 8) {
@@ -256,13 +300,68 @@ struct ComicReaderView: View {
     private var webtoonReader: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
-                ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                    ComicPageView(page: page)
-                        .id(index)
-                        .onAppear { currentPage = index }
+                // Previous chapter pull trigger at top of scroll content
+                if !isFirstChapter {
+                    PrevChapterTrigger(
+                        onProgressChange: { progress in
+                            prevChapterPull = progress
+                            if progress >= 1.0 && !prevChapterTriggered {
+                                prevChapterTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    goToPrevChapter()
+                                    prevChapterTriggered = false
+                                    prevChapterPull = 0
+                                }
+                            }
+                        },
+                        progress: prevChapterPull
+                    )
+                }
+
+                if let localURLs = localPageURLs, !localURLs.isEmpty {
+                    // Device-saved pages — load from local files
+                    ForEach(Array(localURLs.enumerated()), id: \.offset) { index, url in
+                        LocalPageView(fileURL: url)
+                            .id(index)
+                            .onAppear { currentPage = index }
+                    }
+                } else {
+                    // Network pages
+                    ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
+                        ComicPageView(page: page)
+                            .id(index)
+                            .onAppear { currentPage = index }
+                    }
+                }
+
+                // Next chapter pull trigger at bottom of scroll content
+                if !isLastChapter {
+                    NextChapterTrigger(
+                        onProgressChange: { progress in
+                            nextChapterPull = progress
+                            if progress >= 1.0 && !nextChapterTriggered {
+                                nextChapterTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    goToNextChapter()
+                                    nextChapterTriggered = false
+                                    nextChapterPull = 0
+                                }
+                            }
+                        },
+                        progress: nextChapterPull
+                    )
                 }
             }
         }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
+                toggleHUD()
+            }
+        )
     }
 
     private func pagedReader(reversed: Bool) -> some View {
@@ -297,6 +396,11 @@ struct ComicReaderView: View {
                 scrolledPageID = new
             }
         }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
+                toggleHUD()
+            }
+        )
     }
 
     // MARK: - Tap Zones
@@ -304,28 +408,30 @@ struct ComicReaderView: View {
     private var tapZoneOverlay: some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
-                Color.clear
+                Rectangle()
+                    .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
                     .onTapGesture { handleLeftTap() }
 
-                Color.clear
+                Rectangle()
+                    .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
                     .onTapGesture { toggleHUD() }
 
-                Color.clear
+                Rectangle()
+                    .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
                     .onTapGesture { handleRightTap() }
             }
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                    longPressedPage = pages[safe: currentPage]
+                    showPageActions = true
+                }
+            )
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                longPressedPage = pages[safe: currentPage]
-                showPageActions = true
-            }
-        )
+        .allowsHitTesting(true)
     }
 
     private func handleLeftTap() {
@@ -347,6 +453,16 @@ struct ComicReaderView: View {
     private func toggleHUD() {
         showHUD.toggle()
         if !showHUD { showSettings = false }
+    }
+
+    private func setLandscape(_ landscape: Bool) {
+        if landscape {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape))
+        } else {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .all))
+        }
     }
 
     // MARK: - Top Bar
@@ -383,6 +499,16 @@ struct ComicReaderView: View {
             }
 
             Spacer()
+
+            Button {
+                bookmarkCurrentChapter()
+            } label: {
+                Image(systemName: isCurrentChapterBookmarked ? "bookmark.fill" : "bookmark")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(isCurrentChapterBookmarked ? AstralColors.gold : AstralColors.white)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
 
             Button {
                 withAnimation(AstralAnimation.snappy) { showSettings.toggle() }
@@ -537,13 +663,29 @@ struct ComicReaderView: View {
                     .foregroundStyle(AstralColors.muted)
 
                 HStack(spacing: 12) {
-                    Image(systemName: "sun.max.fill")
+                    Image(systemName: "sun.min.fill")
                         .foregroundStyle(AstralColors.muted)
                     Slider(value: $brightnessOverlay, in: 0...0.75)
                         .tint(AstralColors.gold)
-                    Image(systemName: "sun.min.fill")
+                    Image(systemName: "sun.max.fill")
                         .foregroundStyle(AstralColors.muted)
                 }
+            }
+
+            // Landscape lock toggle
+            HStack {
+                Image(systemName: "rectangle.landscape.rotate")
+                    .foregroundStyle(AstralColors.muted)
+                Text("Force Landscape")
+                    .font(AstralTypography.body)
+                    .foregroundStyle(AstralColors.white)
+                Spacer()
+                Toggle("", isOn: $forceLandscape)
+                    .tint(AstralColors.gold)
+                    .labelsHidden()
+            }
+            .onChange(of: forceLandscape) { _, newVal in
+                setLandscape(newVal)
             }
         }
         .padding(.horizontal, 16)
@@ -578,6 +720,32 @@ struct ComicReaderView: View {
         }
     }
 
+    // MARK: - Bookmark
+
+    private var isCurrentChapterBookmarked: Bool {
+        guard let chapter = currentChapter else { return false }
+        return bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+    }
+
+    private func bookmarkCurrentChapter() {
+        guard let chapter = currentChapter else { return }
+        if let existing = bookmarks.first(where: { $0.chapterNumber == chapter.chapterNumber }) {
+            modelContext.delete(existing)
+            AstralLogger.info("Bookmark removed: ch \(chapter.chapterNumber)", context: "ComicReader")
+        } else {
+            let bookmark = LocalBookmark(
+                contentType: "comic",
+                storyId: comic.id,
+                chapterNumber: chapter.chapterNumber,
+                pageNumber: currentPage + 1,
+                heading: chapter.title ?? "Chapter \(Int(chapter.chapterNumber))"
+            )
+            modelContext.insert(bookmark)
+            AstralLogger.info("Bookmark added: ch \(chapter.chapterNumber) page \(currentPage + 1)", context: "ComicReader")
+        }
+        try? modelContext.save()
+    }
+
     // MARK: - Long Press Actions
 
     private func saveCurrentPage() {}
@@ -609,15 +777,30 @@ struct ComicReaderView: View {
         comic.lastReadAt = .now
         if comic.totalChapters > 0 {
             comic.progressPercent = Double(comic.lastReadChapterNumber) / Double(comic.totalChapters)
+            if comic.progressPercent >= 1.0 && comic.completedAt == nil {
+                comic.completedAt = .now
+            }
         }
+        readingSession?.chaptersRead += 1
         try? modelContext.save()
 
         if let previewPages {
             pages = previewPages
+            localPageURLs = nil
             isLoading = false
             return
         }
 
+        // Try local files first (device-saved chapter)
+        if let urls = ChapterDownloadService.shared.localPageURLs(for: chapter), !urls.isEmpty {
+            localPageURLs = urls
+            pages = []  // empty — webtoon reader will use localPageURLs directly
+            AstralLogger.info("loadPages: using \(urls.count) local pages", context: "ComicReader")
+            isLoading = false
+            return
+        }
+
+        localPageURLs = nil
         do {
             let response: [PageResponse] = try await APIClient.shared.request(
                 .chapterPages(comicId: comic.id, chapterId: chapter.id)
@@ -684,11 +867,128 @@ struct ComicPageView: View {
     }
 }
 
+/// Renders a page image from a local file URL (device-saved chapters).
+private struct LocalPageView: View {
+    let fileURL: URL
+
+    var body: some View {
+        if let uiImage = UIImage(contentsOfFile: fileURL.path) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+        } else {
+            Rectangle()
+                .fill(AstralColors.elevated)
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .overlay {
+                    VStack(spacing: 8) {
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .font(.title2)
+                        Text("Failed to load")
+                            .font(AstralTypography.caption)
+                    }
+                    .foregroundStyle(AstralColors.muted)
+                }
+        }
+    }
+}
+
 // MARK: - Helpers
 
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+// MARK: - Chapter Triggers
+
+private let chapterTriggerHeight: CGFloat = 260
+
+/// Placed at the top of webtoon scroll content — scroll up to load previous chapter.
+private struct PrevChapterTrigger: View {
+    let onProgressChange: (CGFloat) -> Void
+    let progress: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let frame = geo.frame(in: .global)
+            // How much the trigger is pulled down below the top edge
+            let visible = max(0, frame.maxY)
+            let pct = min(visible / chapterTriggerHeight, 1.0)
+            Color.clear
+                .onChange(of: pct) { _, newPct in
+                    onProgressChange(newPct)
+                }
+        }
+        .frame(height: chapterTriggerHeight)
+        .overlay {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeOut(duration: 0.1), value: progress)
+
+                    Image(systemName: progress >= 1.0 ? "checkmark" : "chevron.up")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
+                }
+                .frame(width: 28, height: 28)
+
+                Text(progress >= 1.0 ? "Loading prev..." : "Previous chapter")
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+            }
+            .opacity(progress > 0.02 ? 1 : 0.3)
+        }
+    }
+}
+
+/// Placed at the bottom of webtoon scroll content — scroll down to load next chapter.
+private struct NextChapterTrigger: View {
+    let onProgressChange: (CGFloat) -> Void
+    let progress: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let frame = geo.frame(in: .global)
+            let screenH = UIScreen.main.bounds.height
+            let visible = max(0, screenH - frame.minY)
+            let pct = min(visible / chapterTriggerHeight, 1.0)
+            Color.clear
+                .onChange(of: pct) { _, newPct in
+                    onProgressChange(newPct)
+                }
+        }
+        .frame(height: chapterTriggerHeight)
+        .overlay {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeOut(duration: 0.1), value: progress)
+
+                    Image(systemName: progress >= 1.0 ? "checkmark" : "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
+                }
+                .frame(width: 28, height: 28)
+
+                Text(progress >= 1.0 ? "Loading next..." : "Next chapter")
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+            }
+            .opacity(progress > 0.02 ? 1 : 0.3)
+        }
     }
 }
 
