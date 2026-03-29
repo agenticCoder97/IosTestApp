@@ -296,9 +296,12 @@ struct FanficScrapeJobRow: View {
     @ViewBuilder
     private var statusIcon: some View {
         switch job.status {
-        case "running", "queued":
+        case "running":
             ProgressView()
                 .tint(AstralColors.gold)
+        case "queued":
+            Image(systemName: "clock.badge.questionmark")
+                .foregroundStyle(AstralColors.muted)
         case "complete":
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(AstralColors.success)
@@ -479,7 +482,8 @@ private struct FanficScrapeJobDetailView: View {
 
     private var statusColor: Color {
         switch job.status {
-        case "running", "queued": AstralColors.gold
+        case "running": AstralColors.gold
+        case "queued": AstralColors.muted
         case "complete": AstralColors.success
         case "partial": AstralColors.warning
         case "failed": AstralColors.error
