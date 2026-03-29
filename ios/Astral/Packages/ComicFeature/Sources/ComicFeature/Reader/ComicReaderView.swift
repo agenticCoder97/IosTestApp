@@ -40,6 +40,9 @@ struct ComicReaderView: View {
     @State private var showPageActions = false
     @State private var longPressedPage: PageResponse?
     @Query private var bookmarks: [LocalBookmark]
+    @State private var nextChapterPull: CGFloat = 0
+    @State private var nextChapterTriggered = false
+    @State private var atBottomOfChapter = false
     @State private var scrolledPageID: Int? = 0  // drives paged scroll position
     @State private var showRotateHint = false
     @AppStorage("hideRotateHint") private var hideRotateHint = false
@@ -283,6 +286,26 @@ struct ComicReaderView: View {
                     ComicPageView(page: page)
                         .id(index)
                         .onAppear { currentPage = index }
+                }
+
+                // Next chapter pull trigger at bottom of scroll content
+                if !isLastChapter {
+                    NextChapterTrigger(
+                        onProgressChange: { progress in
+                            nextChapterPull = progress
+                            if progress >= 1.0 && !nextChapterTriggered {
+                                nextChapterTriggered = true
+                                let generator = UIImpactFeedbackGenerator(style: .medium)
+                                generator.impactOccurred()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    goToNextChapter()
+                                    nextChapterTriggered = false
+                                    nextChapterPull = 0
+                                }
+                            }
+                        },
+                        progress: nextChapterPull
+                    )
                 }
             }
         }
@@ -760,6 +783,56 @@ struct ComicPageView: View {
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+// MARK: - Next Chapter Trigger
+
+/// Placed at the bottom of the webtoon scroll content. Uses GeometryReader
+/// to track how far the user has scrolled this view into the screen.
+/// As the view scrolls up from below, progress fills from 0 → 1.
+private struct NextChapterTrigger: View {
+    let onProgressChange: (CGFloat) -> Void
+    let progress: CGFloat
+
+    private let triggerHeight: CGFloat = 100
+
+    var body: some View {
+        GeometryReader { geo in
+            let frame = geo.frame(in: .global)
+            let screenH = UIScreen.main.bounds.height
+            // How much of the trigger is visible (scrolled into viewport from below)
+            let visible = max(0, screenH - frame.minY)
+            let pct = min(visible / triggerHeight, 1.0)
+            Color.clear
+                .onChange(of: pct) { _, newPct in
+                    onProgressChange(newPct)
+                }
+        }
+        .frame(height: triggerHeight)
+        .overlay {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeOut(duration: 0.1), value: progress)
+
+                    Image(systemName: progress >= 1.0 ? "checkmark" : "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
+                }
+                .frame(width: 28, height: 28)
+
+                Text(progress >= 1.0 ? "Loading next..." : "Next chapter")
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+            }
+            .opacity(progress > 0.02 ? 1 : 0.3)
+        }
     }
 }
 
