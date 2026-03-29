@@ -49,13 +49,13 @@ public struct ComicTabView: View {
                                 Label("Fan Fiction", systemImage: "scroll.fill")
                             }
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 8) {
                                 Image(systemName: "book.fill")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 16, weight: .semibold))
                                 Text("Comics")
-                                    .font(AstralTypography.titleSmall)
+                                    .font(AstralTypography.title)
                                 Image(systemName: "chevron.down")
-                                    .font(.caption2.weight(.semibold))
+                                    .font(.caption.weight(.bold))
                                     .foregroundStyle(AstralColors.muted)
                             }
                         }

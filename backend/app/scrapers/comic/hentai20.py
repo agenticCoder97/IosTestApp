@@ -44,18 +44,19 @@ class Hentai20Scraper(BaseScraper):
         desc_tag = soup.select_one(".summary__content, .entry-content > p, .description")
         description = desc_tag.get_text(strip=True) if desc_tag else None
 
-        thumb_tag = soup.select_one(".summary_image img, .tab-thumb img, .post-title img")
+        # Thumbnail — og:image meta is most reliable on WordPress/Madara
         thumbnail_url = None
-        if thumb_tag:
-            thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
+        og_img = soup.select_one('meta[property="og:image"]')
+        if og_img:
+            thumbnail_url = (og_img.get("content") or "").strip() or None
+        if not thumbnail_url:
+            thumb_tag = soup.select_one("article img, .summary_image img")
+            if thumb_tag:
+                thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
 
-        # Author (Madara theme — same selector as toongod)
-        author_tag = soup.select_one(".author-content a")
-        authors = [author_tag.get_text(strip=True)] if author_tag else []
-
-        # Genre tags (Madara theme)
-        genre_tags = soup.select(".genres-content a")
-        tags = [{"name": a.get_text(strip=True), "tag_type": "genre"} for a in genre_tags]
+        # hentai20 doesn't expose per-manga authors or genres on detail pages
+        authors = []
+        tags = []
 
         slug = _slug(url)
         chapter_links = soup.find_all(
