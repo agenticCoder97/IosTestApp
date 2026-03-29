@@ -21,7 +21,7 @@ public final class ContentBlocker {
         guard !isCompiling else { return }
         isCompiling = true
         WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: "AstralAdBlock_v3",
+            forIdentifier: "AstralAdBlock_v4",
             encodedContentRuleList: Self.rulesJSON
         ) { [weak self] list, error in
             guard let self else { return }
@@ -107,8 +107,27 @@ public final class ContentBlocker {
       {"trigger":{"url-filter":"\\\\.ssp\\\\.yahoo\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":"\\\\.vdo\\\\.ai","load-type":["third-party"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":"\\\\.vidoomy\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.betterads\\\\.org","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.buysellads\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.carbonads\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.cookiebot\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.evolytics\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.hotjar\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.matomo\\\\.cloud","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.mouseflow\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.newrelic\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.onesignal\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.pushwoosh\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.segment\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.sentry\\\\.io","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.webpushr\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.wpadmngr\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.ntvsrv\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.bzclk\\\\.baidu\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.cdn77\\\\.org.*ad","load-type":["third-party"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"\\\\.cloudfront\\\\.net.*ad","load-type":["third-party"],"resource-type":["script"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":".*[/=?&](?:ad|ads|advert|advertisement|banner|popup|popunder|interstitial)[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
-      {"trigger":{"url-filter":".*"},"action":{"type":"css-display-none","selector":"[id*='google_ads'],[id*='doubleclick'],[class*='ad-unit'],[class*='ad-slot'],[class*='adsbygoogle'],[id*='aswift'],[class*='popup-ad'],[class*='popunder'],[class*='overlay-ad'],[class*='sticky-ad'],[class*='floating-ad'],[class*='popup-overlay'],[id*='ad-container'],[class*='ad-container'],[class*='ad-banner'],[class*='advert-wrapper'],[id*='advert'],[class*='interstitial']"}}
+      {"trigger":{"url-filter":".*"},"action":{"type":"css-display-none","selector":"[id*='google_ads'],[id*='doubleclick'],[class*='ad-unit'],[class*='ad-slot'],[class*='adsbygoogle'],[id*='aswift'],[class*='popup-ad'],[class*='popunder'],[class*='overlay-ad'],[class*='sticky-ad'],[class*='floating-ad'],[class*='popup-overlay'],[id*='ad-container'],[class*='ad-container'],[class*='ad-banner'],[class*='advert-wrapper'],[id*='advert'],[class*='interstitial'],[class*='wp-manga-alert-popup'],[id*='wps-popup'],[class*='notif-permission'],[class*='push-notification']"}}
     ]
     """
 }
