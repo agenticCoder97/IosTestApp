@@ -94,19 +94,7 @@ struct ComicReaderView: View {
                     .allowsHitTesting(false)
             }
 
-            // Tap to toggle HUD — uses simultaneousGesture so scrolling still works
-            Color.clear
-                .contentShape(Rectangle())
-                .simultaneousGesture(
-                    TapGesture().onEnded { toggleHUD() }
-                )
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                        longPressedPage = pages[safe: currentPage]
-                        showPageActions = true
-                    }
-                )
-                .allowsHitTesting(!isLoading)
+            // No overlay here — gestures are on the page content directly
 
             // Floating back button — always visible as escape hatch
             VStack {
@@ -291,6 +279,11 @@ struct ComicReaderView: View {
                 }
             }
         }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                toggleHUD()
+            }
+        )
     }
 
     private func pagedReader(reversed: Bool) -> some View {
@@ -325,6 +318,11 @@ struct ComicReaderView: View {
                 scrolledPageID = new
             }
         }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                toggleHUD()
+            }
+        )
     }
 
     // MARK: - Tap Zones
