@@ -48,10 +48,7 @@ struct ComicDetailView: View {
     }
 
     private var formattedAddedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter.string(from: comic.addedAt)
+        comic.addedAt.formatted(date: .abbreviated, time: .omitted)
     }
 
     // MARK: - Title overlay opacity
@@ -116,7 +113,7 @@ struct ComicDetailView: View {
                                 ForEach(decodedAuthors, id: \.self) { author in
                                     if let name = author["name"] {
                                         Button {
-                                            AstralLogger.info("Author tapped: \(name)", context: "ComicDetail")
+                                            comicNavigation?.searchFor(name)
                                         } label: {
                                             StatusBadge(name, color: AstralColors.gold)
                                         }
@@ -130,7 +127,7 @@ struct ComicDetailView: View {
                         if let category = comic.category, !category.isEmpty {
                             metadataRow(label: "Category") {
                                 Button {
-                                    AstralLogger.info("Category tapped: \(category)", context: "ComicDetail")
+                                    comicNavigation?.searchFor(category)
                                 } label: {
                                     StatusBadge(category, color: AstralColors.body)
                                 }
@@ -152,7 +149,7 @@ struct ComicDetailView: View {
                                         ForEach(decodedTags, id: \.self) { tag in
                                             if let name = tag["name"] {
                                                 Button {
-                                                    AstralLogger.info("Tag tapped: \(name)", context: "ComicDetail")
+                                                    comicNavigation?.searchFor(name)
                                                 } label: {
                                                     StatusBadge(name, color: AstralColors.body)
                                                 }

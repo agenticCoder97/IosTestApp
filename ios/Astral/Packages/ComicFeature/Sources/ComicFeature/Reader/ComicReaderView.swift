@@ -420,7 +420,6 @@ struct ComicReaderView: View {
         } else {
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
             windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .all))
-            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
         }
     }
 
