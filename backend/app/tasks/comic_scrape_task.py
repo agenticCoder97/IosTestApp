@@ -91,9 +91,14 @@ async def comic_scrape_task(ctx, job_id: str):
             try:
                 metadata = await scraper.get_story_metadata(job.source_url)
                 dur = int((time.perf_counter() - step_start) * 1000)
-                logger.info("comic_scrape_task metadata ok | job_id=%s title=%r", job_id, metadata.title)
+                logger.info(
+                    "comic_scrape_task metadata ok | job_id=%s title=%r authors=%d tags=%d thumbnail=%s category=%s",
+                    job_id, metadata.title, len(metadata.authors), len(metadata.tags),
+                    metadata.thumbnail_url[:60] if metadata.thumbnail_url else "none",
+                    metadata.category,
+                )
                 _add_log(db, job_uuid, "info", "metadata",
-                         f"Fetched metadata: {metadata.title!r} — total_chapters={metadata.total_chapters}",
+                         f"Fetched metadata: {metadata.title!r} — total_chapters={metadata.total_chapters} authors={len(metadata.authors)} tags={len(metadata.tags)}",
                          duration_ms=dur)
             except Exception as e:
                 dur = int((time.perf_counter() - step_start) * 1000)

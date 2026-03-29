@@ -33,10 +33,15 @@ class ToongodScraper(BaseScraper):
         desc_tag = soup.select_one(".summary__content p, .summary__content")
         description = desc_tag.get_text(strip=True) if desc_tag else None
 
-        thumb_tag = soup.select_one(".summary_image img")
+        # Thumbnail — og:image first, then Madara selectors
         thumbnail_url = None
-        if thumb_tag:
-            thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
+        og_img = soup.select_one('meta[property="og:image"]')
+        if og_img:
+            thumbnail_url = (og_img.get("content") or "").strip() or None
+        if not thumbnail_url:
+            thumb_tag = soup.select_one(".summary_image img")
+            if thumb_tag:
+                thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
 
         genre_tags = soup.select(".genres-content a")
         tags = [{"name": a.get_text(strip=True), "tag_type": "genre"} for a in genre_tags]
