@@ -51,6 +51,14 @@ final class FanficLibraryViewModel {
                     existing.warnings = dto.warnings
                     existing.publishedAt = dto.publishedAt
                     existing.updatedAtSource = dto.updatedAtSource
+                    existing.freeformTags = dto.freeformTags
+                    existing.hits = dto.hits
+                    existing.kudos = dto.kudos
+                    existing.commentsCount = dto.commentsCount
+                    existing.bookmarksCount = dto.bookmarksCount
+                    if let authors = dto.authors, !authors.isEmpty {
+                        existing.authorsText = authors.map(\.name).joined(separator: ", ")
+                    }
                     localFanfic = existing
                 } else {
                     let fanfic = LocalFanfic(
@@ -71,6 +79,14 @@ final class FanficLibraryViewModel {
                     fanfic.warnings = dto.warnings
                     fanfic.publishedAt = dto.publishedAt
                     fanfic.updatedAtSource = dto.updatedAtSource
+                    fanfic.freeformTags = dto.freeformTags
+                    fanfic.hits = dto.hits
+                    fanfic.kudos = dto.kudos
+                    fanfic.commentsCount = dto.commentsCount
+                    fanfic.bookmarksCount = dto.bookmarksCount
+                    if let authors = dto.authors, !authors.isEmpty {
+                        fanfic.authorsText = authors.map(\.name).joined(separator: ", ")
+                    }
                     modelContext.insert(fanfic)
                     localFanfic = fanfic
                 }

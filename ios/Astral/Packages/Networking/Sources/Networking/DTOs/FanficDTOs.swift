@@ -18,6 +18,11 @@ public struct FanficResponse: Codable, Sendable, Identifiable {
     public let publishedAt: Date?
     public let updatedAtSource: Date?
     public let language: String?
+    public let freeformTags: String?
+    public let hits: Int?
+    public let kudos: Int?
+    public let commentsCount: Int?
+    public let bookmarksCount: Int?
     public let thumbnailPath: String?
     public let authors: [AuthorResponse]?
     public let chapters: [FanficChapterResponse]?

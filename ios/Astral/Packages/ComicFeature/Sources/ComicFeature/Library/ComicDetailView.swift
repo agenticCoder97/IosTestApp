@@ -451,6 +451,10 @@ struct ComicDetailView: View {
 
     private var nextUnreadChapter: LocalComicChapter? {
         if comic.lastReadChapterNumber == 0 { return chapters.first }
+        // Resume the current chapter at saved page position (reader restores via lastReadPageNumber)
+        if let current = chapters.first(where: { Int($0.chapterNumber) == comic.lastReadChapterNumber }) {
+            return current
+        }
         return chapters.first(where: { $0.chapterNumber > Double(comic.lastReadChapterNumber) }) ?? chapters.first
     }
 

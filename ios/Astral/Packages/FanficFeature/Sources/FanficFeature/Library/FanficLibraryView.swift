@@ -394,6 +394,14 @@ struct FanficRowView: View {
                         .buttonStyle(.plain)
                     }
 
+                    // Author
+                    if let authors = fanfic.authorsText, !authors.isEmpty {
+                        Text("by \(authors)")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
+                            .lineLimit(1)
+                    }
+
                     // Summary
                     if let summary = fanfic.summary, !summary.isEmpty {
                         Text(summary)
