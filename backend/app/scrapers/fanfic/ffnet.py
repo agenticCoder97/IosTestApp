@@ -213,20 +213,36 @@ class FanfictionNetScraper(BaseScraper):
                 except ValueError:
                     pass
 
-        # Dates from <span data-xutime> elements
+        # Dates from <span data-xutime> (Unix epoch — reliable, no format ambiguity)
+        from datetime import datetime as _dt, timezone as _tz
         meta_span_el = meta_spans[-1] if meta_spans else None
         if meta_span_el:
             date_spans = meta_span_el.select("span[data-xutime]")
             # FFNet puts Updated first, Published second
             if len(date_spans) >= 2:
-                updated_at_source = date_spans[0].get_text(strip=True)
-                published_at = date_spans[1].get_text(strip=True)
+                try:
+                    ts = int(date_spans[0]["data-xutime"])
+                    updated_at_source = _dt.fromtimestamp(ts, tz=_tz.utc).strftime("%Y-%m-%d")
+                except (ValueError, KeyError):
+                    pass
+                try:
+                    ts = int(date_spans[1]["data-xutime"])
+                    published_at = _dt.fromtimestamp(ts, tz=_tz.utc).strftime("%Y-%m-%d")
+                except (ValueError, KeyError):
+                    pass
             elif len(date_spans) == 1:
-                published_at = date_spans[0].get_text(strip=True)
+                try:
+                    ts = int(date_spans[0]["data-xutime"])
+                    published_at = _dt.fromtimestamp(ts, tz=_tz.utc).strftime("%Y-%m-%d")
+                except (ValueError, KeyError):
+                    pass
 
         # Completion
         if "Status: Complete" in meta_text:
             completion_status = "complete"
+
+        # Build freeform_tags from extracted genres so they display on iOS
+        freeform_tags = ", ".join(t["name"] for t in tags) if tags else None
 
         return StoryMetadata(
             title=title,
@@ -245,6 +261,7 @@ class FanfictionNetScraper(BaseScraper):
             published_at=published_at,
             updated_at_source=updated_at_source,
             tags=tags,
+            freeform_tags=freeform_tags,
             kudos=kudos,
             comments_count=comments_count,
             bookmarks_count=bookmarks_count,

@@ -266,24 +266,22 @@ struct FanficDetailView: View {
                 }
             }
 
-            // Stats row (hits, kudos, comments, bookmarks)
+            // Stats row — unified labels across AO3 and FFNet
             if fanfic.hits != nil || fanfic.kudos != nil || fanfic.commentsCount != nil || fanfic.bookmarksCount != nil {
-                HStack(spacing: 16) {
+                HStack(spacing: 14) {
                     if let hits = fanfic.hits {
-                        Label(formatStat(hits), systemImage: "eye")
+                        statPill(icon: "eye", value: formatStat(hits), label: "Views")
                     }
                     if let kudos = fanfic.kudos {
-                        Label(formatStat(kudos), systemImage: "heart")
+                        statPill(icon: "heart", value: formatStat(kudos), label: "Likes")
                     }
                     if let comments = fanfic.commentsCount {
-                        Label(formatStat(comments), systemImage: "bubble.left")
+                        statPill(icon: "bubble.left", value: formatStat(comments), label: "Comments")
                     }
                     if let bookmarks = fanfic.bookmarksCount {
-                        Label(formatStat(bookmarks), systemImage: "bookmark")
+                        statPill(icon: "bookmark", value: formatStat(bookmarks), label: "Saves")
                     }
                 }
-                .font(AstralTypography.caption)
-                .foregroundStyle(AstralColors.muted)
             }
 
             // Fandom tags
@@ -379,6 +377,21 @@ struct FanficDetailView: View {
         if r.contains("mature") || r == "m" { return AstralColors.warning }
         if r.contains("explicit") || r == "e" { return AstralColors.error }
         return AstralColors.muted
+    }
+
+    private func statPill(icon: String, value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                Text(value)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+            }
+            .foregroundStyle(AstralColors.body)
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(AstralColors.muted)
+        }
     }
 
     private func formatStat(_ value: Int) -> String {

@@ -318,6 +318,12 @@ struct FanficRowView: View {
         }
     }
 
+    private func formatRowStat(_ value: Int) -> String {
+        if value >= 1_000_000 { return "\(value / 1_000_000)M" }
+        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1000.0) }
+        return "\(value)"
+    }
+
     private var fanficPlaceholder: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(AstralColors.elevated)
@@ -426,24 +432,23 @@ struct FanficRowView: View {
                         }
                     }
 
-                    // Metadata row — chapters, dates
-                    HStack(spacing: 12) {
+                    // Metadata row — chapters, dates, stats
+                    HStack(spacing: 10) {
                         Label("\(fanfic.totalChapters) ch", systemImage: "book.pages")
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.muted)
+
+                        if let kudos = fanfic.kudos {
+                            Label(formatRowStat(kudos), systemImage: "heart")
+                        }
+                        if let comments = fanfic.commentsCount {
+                            Label(formatRowStat(comments), systemImage: "bubble.left")
+                        }
 
                         if let published = fanfic.publishedAt {
                             Label(published.formatted(.dateTime.month(.abbreviated).year()), systemImage: "calendar")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
-                        }
-
-                        if let updated = fanfic.updatedAtSource {
-                            Label(updated.formatted(.dateTime.month(.abbreviated).day()), systemImage: "arrow.clockwise")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
                         }
                     }
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
                 }
             }
 
