@@ -106,8 +106,11 @@ class FanfictionNetScraper(BaseScraper):
         else:
             total_chapters = 1
 
-        # Parse the metadata line:
-        # "Rated: Fiction T - English - Adventure/Romance - Harry P., ... - Words: 184,603 ..."
+        # Parse the metadata line (pipe-separated by " - "):
+        # "Rated: Fiction M - English - Adventure/Romance - Harry P., Fleur D.
+        #   - Chapters: 24 - Words: 234,571 - Reviews: 5,157 - Favs: 15,287
+        #   - Follows: 7,375 - Updated: May 28, 2009 - Published: Feb 9, 2007
+        #   - Status: Complete - id: 3384712"
         rating = None
         language = None
         word_count = None
@@ -117,17 +120,20 @@ class FanfictionNetScraper(BaseScraper):
         completion_status = "ongoing"
         published_at = None
         updated_at_source = None
+        hits = None       # FFNet doesn't expose views/hits
+        kudos = None      # mapped from Favs
+        comments_count = None  # mapped from Reviews
+        bookmarks_count = None  # mapped from Follows
 
-        # Fandom from breadcrumb (e.g. "Harry Potter")
+        # Fandom from breadcrumb — last link for normal, first for crossovers
         breadcrumb_links = soup.select("#pre_story_links a")
-        if len(breadcrumb_links) >= 2:
+        if breadcrumb_links:
             fandom = breadcrumb_links[-1].get_text(strip=True)
 
-        # Metadata span — last span in #profile_top
+        # Metadata span — last xgray span in #profile_top
         meta_spans = soup.select("#profile_top span.xgray")
         meta_text = meta_spans[-1].get_text() if meta_spans else ""
         if not meta_text:
-            # Fallback: grab the full text of the container
             profile = soup.select_one("#profile_top")
             meta_text = profile.get_text() if profile else ""
 
@@ -136,46 +142,90 @@ class FanfictionNetScraper(BaseScraper):
         if m:
             rating = m.group(1)
 
-        # Language
-        m = re.search(r"Fiction\s+\S+\s+-\s+(\w+)\s+-", meta_text)
-        if m:
-            language = m.group(1)
+        # Split the metadata line on " - " to parse structured fields
+        # Format: Rated - Language - Genre - [Characters] - Chapters: N - Words: N - ...
+        segments = [s.strip() for s in meta_text.split(" - ")]
 
-        # Genre (between language and characters/chapters marker)
-        m = re.search(r"Fiction\s+\S+\s+-\s+\w+\s+-\s+([^-]+?)\s+-", meta_text)
-        if m:
-            genre_text = m.group(1).strip()
-            # Genres like "Adventure/Romance" or "Drama"
-            for g in genre_text.split("/"):
-                g = g.strip()
-                if g and not re.match(r"^(Chapters|Words|Reviews)", g):
+        # Language is the first plain-word segment after "Rated:"
+        for seg in segments:
+            if re.match(r"^[A-Z][a-z]+$", seg) and seg not in ("Complete",):
+                language = seg
+                break
+
+        # Genre: segment containing "/" or known genre words, after language
+        genre_words = {"Adventure", "Romance", "Drama", "Humor", "Angst", "Hurt",
+                       "Comfort", "Tragedy", "Mystery", "Horror", "Fantasy", "Sci-Fi",
+                       "Supernatural", "Suspense", "Crime", "Family", "Friendship",
+                       "Poetry", "Spiritual", "Parody", "Western", "General"}
+        compound_genres = {"Hurt/Comfort"}  # single genre name containing "/"
+        for seg in segments:
+            if seg in compound_genres:
+                tags.append({"name": seg, "tag_type": "genre"})
+                break
+            parts = [p.strip() for p in seg.split("/")]
+            if all(p in genre_words for p in parts) and parts:
+                for g in parts:
                     tags.append({"name": g, "tag_type": "genre"})
+                break
 
-        # Characters — text segment that contains character names before " - Chapters:"
-        m = re.search(r"-\s+([A-Z][\w. ]+(?:,\s*[A-Z][\w. ]+)*)\s+-\s*Chapters:", meta_text)
-        if m:
-            characters = m.group(1).strip()
+        # Characters: between genre and "Chapters:" — may have [brackets] or not
+        # Extract from the segment(s) that contain names but not key:value pairs
+        char_parts = []
+        for seg in segments:
+            # Skip key:value segments and known non-character segments
+            if re.match(r"^(Rated|Words|Chapters|Reviews|Favs|Follows|Updated|Published|Status|id):", seg):
+                continue
+            if seg == language or seg in genre_words or "/" in seg and all(p.strip() in genre_words for p in seg.split("/")):
+                continue
+            # Character segments contain names like "Harry P." or "[Harry P., Ginny W.]"
+            cleaned = re.sub(r"[\[\]]", "", seg).strip()
+            if cleaned and re.search(r"[A-Z][a-z]", cleaned) and not re.match(r"^(Rated|Fiction)", cleaned):
+                # Avoid picking up the description or title
+                if len(cleaned) < 200 and "," in cleaned or "." in cleaned:
+                    char_parts.append(cleaned)
+        if char_parts:
+            characters = ", ".join(char_parts)
 
-        # Words
-        m = re.search(r"Words:\s*([\d,]+)", meta_text)
-        if m:
-            try:
-                word_count = int(m.group(1).replace(",", ""))
-            except ValueError:
-                pass
+        # Structured key:value fields
+        for seg in segments:
+            km = re.match(r"^(\w+):\s*(.+)$", seg)
+            if not km:
+                continue
+            key, val = km.group(1), km.group(2).strip()
+            if key == "Words":
+                try:
+                    word_count = int(val.replace(",", ""))
+                except ValueError:
+                    pass
+            elif key == "Reviews":
+                try:
+                    comments_count = int(val.replace(",", ""))
+                except ValueError:
+                    pass
+            elif key == "Favs":
+                try:
+                    kudos = int(val.replace(",", ""))
+                except ValueError:
+                    pass
+            elif key == "Follows":
+                try:
+                    bookmarks_count = int(val.replace(",", ""))
+                except ValueError:
+                    pass
 
-        # Published
-        m = re.search(r"Published:\s*([A-Za-z]+ \d+,? \d{4})", meta_text)
-        if m:
-            published_at = m.group(1)
+        # Dates from <span data-xutime> elements
+        meta_span_el = meta_spans[-1] if meta_spans else None
+        if meta_span_el:
+            date_spans = meta_span_el.select("span[data-xutime]")
+            # FFNet puts Updated first, Published second
+            if len(date_spans) >= 2:
+                updated_at_source = date_spans[0].get_text(strip=True)
+                published_at = date_spans[1].get_text(strip=True)
+            elif len(date_spans) == 1:
+                published_at = date_spans[0].get_text(strip=True)
 
-        # Updated
-        m = re.search(r"Updated:\s*([A-Za-z]+ \d+,? \d{4})", meta_text)
-        if m:
-            updated_at_source = m.group(1)
-
-        # Completion — FFNet shows "Status: Complete" in metadata
-        if "Status: Complete" in meta_text or "Complete" in meta_text:
+        # Completion
+        if "Status: Complete" in meta_text:
             completion_status = "complete"
 
         return StoryMetadata(
@@ -195,6 +245,9 @@ class FanfictionNetScraper(BaseScraper):
             published_at=published_at,
             updated_at_source=updated_at_source,
             tags=tags,
+            kudos=kudos,
+            comments_count=comments_count,
+            bookmarks_count=bookmarks_count,
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:
