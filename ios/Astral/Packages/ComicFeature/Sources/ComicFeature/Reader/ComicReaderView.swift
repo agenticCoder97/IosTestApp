@@ -358,7 +358,7 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
+            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                 toggleHUD()
             }
         )
@@ -397,7 +397,7 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
+            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                 toggleHUD()
             }
         )
@@ -835,6 +835,7 @@ struct ComicReaderView: View {
 
 struct ComicPageView: View {
     let page: PageResponse
+    @State private var retryID = UUID()
 
     var body: some View {
         AsyncImage(url: pageURL) { phase in
@@ -857,18 +858,20 @@ struct ComicPageView: View {
                     .aspectRatio(aspectRatio, contentMode: .fit)
                     .overlay {
                         VStack(spacing: 8) {
-                            Image(systemName: "photo.badge.exclamationmark")
+                            Image(systemName: "arrow.clockwise.circle")
                                 .font(.title2)
-                            Text("Failed to load")
+                            Text("Tap to retry")
                                 .font(AstralTypography.caption)
                         }
                         .foregroundStyle(AstralColors.muted)
                     }
+                    .onTapGesture { retryID = UUID() }
 
             @unknown default:
                 EmptyView()
             }
         }
+        .id(retryID)
         .frame(maxWidth: .infinity)
     }
 
