@@ -64,6 +64,40 @@ class AO3Scraper(BaseScraper):
         # Freeform tags
         free_tags = soup.select("dd.freeform.tags a")
         tag_list = [{"name": a.get_text(strip=True), "tag_type": "freeform"} for a in free_tags]
+        freeform_tags = ", ".join(a.get_text(strip=True) for a in free_tags) or None
+
+        # Stats (hits, kudos, comments, bookmarks)
+        hits_dd = soup.select_one("dd.hits")
+        hits = None
+        if hits_dd:
+            try:
+                hits = int(hits_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        kudos_dd = soup.select_one("dd.kudos")
+        kudos = None
+        if kudos_dd:
+            try:
+                kudos = int(kudos_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        comments_dd = soup.select_one("dd.comments")
+        comments_count = None
+        if comments_dd:
+            try:
+                comments_count = int(comments_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        bookmarks_dd = soup.select_one("dd.bookmarks")
+        bookmarks_count = None
+        if bookmarks_dd:
+            try:
+                bookmarks_count = int(bookmarks_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
 
         # Word count
         words_dd = soup.select_one("dd.words")
@@ -117,6 +151,11 @@ class AO3Scraper(BaseScraper):
             completion_status=completion_status,
             published_at=published_at,
             updated_at_source=updated_at_source,
+            freeform_tags=freeform_tags,
+            hits=hits,
+            kudos=kudos,
+            comments_count=comments_count,
+            bookmarks_count=bookmarks_count,
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:

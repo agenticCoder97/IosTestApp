@@ -36,6 +36,11 @@ class FanficResponse(BaseModel):
     published_at: Optional[datetime] = None
     updated_at_source: Optional[datetime] = None
     language: Optional[str] = None
+    freeform_tags: Optional[str] = None
+    hits: Optional[int] = None
+    kudos: Optional[int] = None
+    comments_count: Optional[int] = None
+    bookmarks_count: Optional[int] = None
     thumbnail_path: Optional[str] = None
     authors: Optional[list[AuthorResponse]] = None
     chapters: Optional[list[FanficChapterResponse]] = None
