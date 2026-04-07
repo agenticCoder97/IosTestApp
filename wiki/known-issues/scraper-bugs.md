@@ -18,13 +18,12 @@
 - **Impact:** iOS `evaluateCanScrape` allows both `/manga/` and `/webtoon/` but backend can't parse `/manga/` URLs
 - **Fix:** Update regex to handle both patterns
 
-## FFNet Missing Metadata
+## FFNet Missing Metadata — RESOLVED
 
-- **Bug:** FFNetScraper only extracts: title, author, description, total_chapters
-- **Missing:** Rating, language, genre (→ tags), characters, word count, published date, updated date, completion status
-- **Impact:** FFNet fanfics appear in library with no fandom, rating, word count, dates
-- **Note:** All this metadata IS present in the page's metadata line — scraper just doesn't parse it
-- **Fix:** Parse the metadata line using the existing format (pipe-separated values)
+- **Status:** Fixed (2026-04-07)
+- **Was:** FFNetScraper only extracted title, author, description, total_chapters
+- **Fix:** Rewrote metadata parsing to split `#profile_top span.xgray` on ` - ` into segments. Now extracts: rating, language, genre (as tags), characters, word count, Reviews (→ comments_count), Favs (→ kudos), Follows (→ bookmarks_count), dates from `span[data-xutime]`, completion status, fandom from breadcrumb (including crossovers).
+- **Verified:** Playwright-tested against 3 FFNet stories with different structures (complete/ongoing, crossover, single-genre)
 
 ## Hentai20 Missing Authors/Tags
 

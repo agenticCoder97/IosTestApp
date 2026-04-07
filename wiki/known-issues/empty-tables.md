@@ -41,22 +41,17 @@ soup.select_one('span[itemprop="author"] i[itemprop="name"]')
 
 After fix, re-scrape existing comics to populate metadata.
 
-### 2. reading_progress: iOS Never Calls PUT Endpoint
+### 2. reading_progress: Partially Fixed
 
 Backend endpoints work:
 - `PUT /progress/comic/{story_id}` → progress_service.upsert
 - `PUT /progress/fanfic/{story_id}` → progress_service.upsert
 
-iOS endpoint definitions exist:
-- `Endpoint.updateComicProgress(storyId:body:)`
-- `Endpoint.updateFanficProgress(storyId:body:)`
+**Comic progress:** ComicReaderView.loadPages() now calls `updateComicProgress` on chapter open (fire-and-forget). Page-level progress synced on chapter open.
 
-**But neither is called from any view or viewmodel.**
+**Fanfic progress:** FanficReaderView calls `updateFanficProgress` on both `onAppear` and `onDisappear`, syncing chapter number + scroll offset percent.
 
-- ComicReaderView.loadPages() writes to SwiftData only (lines 782-791)
-- FanficReaderView writes to SwiftData only
-
-**Fix needed:** Add API calls in reader views after local save, with 5s debounce.
+**Remaining gap:** Neither reader debounces mid-chapter page turns (comic) or scroll position changes (fanfic) to the backend. Only chapter-open and chapter-close events trigger syncs. The 5s debounce rule from CLAUDE.md is not yet implemented for continuous reading.
 
 ## Impact
 

@@ -44,9 +44,21 @@ graph LR
 | Chapters | relationship → [FanficChapter] | chapters | @Relationship → [LocalFanficChapter] |
 | Favorite | — | — | isFavorite (local-only) |
 
+## Engagement Stats
+
+| Stat | AO3 Source | FFNet Source | Backend Column | iOS Field |
+|------|-----------|-------------|---------------|-----------|
+| Views | dd.hits | (not exposed) | hits | hits |
+| Likes | dd.kudos | Favs | kudos | kudos |
+| Comments | dd.comments | Reviews | comments_count | commentsCount |
+| Saves | dd.bookmarks | Follows | bookmarks_count | bookmarksCount |
+| Tags | dd.freeform.tags a | genre from metadata | freeform_tags | freeformTags |
+
 ## Key Observations
 
-- Fanfics have richer metadata than comics (fandom, rating, characters, pairing, warnings, word count).
+- Fanfics have richer metadata than comics (fandom, rating, characters, pairing, warnings, word count, engagement stats).
 - **Server-side filtering** supported: fandom, rating, completion_status, sort — passed as query params from FanficFilterView.
 - Chapter content (full text) stored in `FanficChapter.content` column in the database, not as files.
-- Sources: AO3Scraper, FFNetScraper. FFNet currently missing most metadata fields.
+- **Authors** stored as `authorsText` (comma-separated string) on LocalFanfic, displayed in both library row and detail view.
+- **Rescrape:** FanficDetailView has a toolbar button that calls `deltaUpdate(storyId:)` to refresh metadata + pick up new chapters.
+- Sources: AO3Scraper (full stats), FFNetScraper (Reviews/Favs/Follows mapped to comments/kudos/bookmarks).

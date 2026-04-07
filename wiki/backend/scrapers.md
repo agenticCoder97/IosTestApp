@@ -73,12 +73,20 @@ graph TB
 - **Source:** archiveofourown.org
 - **Rate limit:** 2s between requests (AO3 enforces strict limits)
 - **Quirks:** `get_all_chapters_bulk()` for full-work fetch (downloads entire work in one request). No Cloudflare.
-- **Selectors:** All verified working ✅ — h2.title, h3.byline a[rel='author'], dd.rating.tags, dd.fandom.tags, dd.relationship.tags, etc.
+- **Stats extracted:** hits (`dd.hits`), kudos (`dd.kudos`), comments (`dd.comments`), bookmarks (`dd.bookmarks`)
+- **Freeform tags:** Extracted from `dd.freeform.tags a`, stored as comma-separated string
+- **Selectors:** All verified working ✅ via Playwright testing against multiple works (single-chapter, multi-chapter, 19M+ hits)
 
 ### FFNetScraper (`fanfic/ffnet.py`)
 - **Source:** fanfiction.net
 - **Cloudflare:** Yes — CF protected, requires cookies.
-- **Known issues:** Only extracts title, author, description, total_chapters. Missing: rating, language, genre, characters, word count, dates, completion status. See [known-issues/scraper-bugs.md](../known-issues/scraper-bugs.md).
+- **Metadata parsing:** Splits the `#profile_top span.xgray` text on ` - ` into segments, extracts structured key:value fields (Words, Reviews, Favs, Follows, Status)
+- **Stats mapped:** Reviews → comments_count, Favs → kudos, Follows → bookmarks_count (FFNet has no hits/views)
+- **Genre:** Detected by matching segments against known genre word set (Adventure, Romance, Drama, etc.), including compound "Hurt/Comfort"
+- **Characters:** Extracted from segments between genre and "Chapters:" that contain name patterns
+- **Dates:** From `span[data-xutime]` elements (Updated first, Published second)
+- **Fandom:** From breadcrumb links (`#pre_story_links a`), handles both normal and crossover stories
+- **Verified:** Playwright-tested against multi-chapter complete, crossover ongoing, and single-genre stories
 
 ## Rate Limiting Configuration
 
