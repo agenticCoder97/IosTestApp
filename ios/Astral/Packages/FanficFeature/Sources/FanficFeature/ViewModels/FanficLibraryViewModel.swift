@@ -7,14 +7,21 @@ import Networking
 final class FanficLibraryViewModel {
     var isLoading = false
     var errorMessage: String?
+    private var lastSyncTime: Date?
+    private static let syncInterval: TimeInterval = 120
 
     func fetchFanfics(
         modelContext: ModelContext,
         fandom: String? = nil,
         rating: String? = nil,
         completionStatus: String? = nil,
-        sort: String? = nil
+        sort: String? = nil,
+        force: Bool = false
     ) async {
+        if !force, let last = lastSyncTime, Date().timeIntervalSince(last) < Self.syncInterval {
+            AstralLogger.info("fetchFanfics skipped — last sync \(Int(Date().timeIntervalSince(last)))s ago", context: "FanficLibraryVM")
+            return
+        }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -120,6 +127,7 @@ final class FanficLibraryViewModel {
                 }
             }
             try modelContext.save()
+            lastSyncTime = .now
         } catch is URLError {
             errorMessage = "Backend unreachable — check Docker is running"
             AstralLogger.error("fetchFanfics: backend unreachable", context: "FanficLibraryVM")

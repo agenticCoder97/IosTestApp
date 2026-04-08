@@ -7,8 +7,14 @@ import Networking
 final class ComicLibraryViewModel {
     var isLoading = false
     var errorMessage: String?
+    private var lastSyncTime: Date?
+    private static let syncInterval: TimeInterval = 120 // 2 minutes
 
-    func fetchComics(modelContext: ModelContext) async {
+    func fetchComics(modelContext: ModelContext, force: Bool = false) async {
+        if !force, let last = lastSyncTime, Date().timeIntervalSince(last) < Self.syncInterval {
+            AstralLogger.info("fetchComics skipped — last sync \(Int(Date().timeIntervalSince(last)))s ago", context: "ComicLibraryVM")
+            return
+        }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -81,6 +87,7 @@ final class ComicLibraryViewModel {
                 }
             }
             try modelContext.save()
+            lastSyncTime = .now
         } catch let error as APIError where error == .cookieRefreshNeeded {
             errorMessage = "Browser refresh needed"
             AstralLogger.warning("fetchComics: cookie refresh needed", context: "ComicLibraryVM")

@@ -119,6 +119,7 @@ struct ComicLibraryView: View {
         }
         .background(AstralColors.background)
         .task { await viewModel.fetchComics(modelContext: modelContext) }
+        .refreshable { await viewModel.fetchComics(modelContext: modelContext, force: true) }
     }
 
     private func deleteComic(_ comic: LocalComic) {

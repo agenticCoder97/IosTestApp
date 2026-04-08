@@ -166,6 +166,7 @@ struct FanficLibraryView: View {
         }
         .background(AstralColors.background)
         .task { await viewModel.fetchFanfics(modelContext: modelContext) }
+        .refreshable { await viewModel.fetchFanfics(modelContext: modelContext, force: true) }
         .sheet(isPresented: Binding(
             get: { fanficNavigation?.showFilter ?? false },
             set: { fanficNavigation?.showFilter = $0 }
