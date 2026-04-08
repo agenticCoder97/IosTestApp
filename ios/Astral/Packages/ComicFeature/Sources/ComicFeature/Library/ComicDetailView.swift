@@ -428,6 +428,46 @@ struct ComicDetailView: View {
             comic.lastReadAt = .now
             try? modelContext.save()
         }
+        .task { await syncChapters() }
+    }
+
+    private func syncChapters() async {
+        do {
+            let response: ComicResponse = try await APIClient.shared.request(
+                .comicDetail(id: comic.id)
+            )
+            guard let dtoChapters = response.chapters else { return }
+            let comicID = comic.id
+            let chapterIDs = Set(dtoChapters.map(\.id))
+            let descriptor = FetchDescriptor<LocalComicChapter>(
+                predicate: #Predicate<LocalComicChapter> { $0.comicId == comicID }
+            )
+            let existing = (try? modelContext.fetch(descriptor)) ?? []
+            let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+
+            for old in existing where !chapterIDs.contains(old.id) {
+                modelContext.delete(old)
+            }
+            for dto in dtoChapters {
+                if let ch = existingByID[dto.id] {
+                    ch.chapterNumber = dto.chapterNumber
+                    ch.title = dto.title
+                    ch.totalPages = dto.totalPages
+                    ch.scrapeStatus = dto.scrapeStatus
+                } else {
+                    let ch = LocalComicChapter(
+                        id: dto.id, comicId: comicID,
+                        chapterNumber: dto.chapterNumber, title: dto.title,
+                        totalPages: dto.totalPages, scrapeStatus: dto.scrapeStatus
+                    )
+                    ch.comic = comic
+                    modelContext.insert(ch)
+                }
+            }
+            try? modelContext.save()
+        } catch {
+            AstralLogger.error("syncChapters failed: \(error)", context: "ComicDetail")
+        }
     }
 
     // MARK: - Hero thumbnail

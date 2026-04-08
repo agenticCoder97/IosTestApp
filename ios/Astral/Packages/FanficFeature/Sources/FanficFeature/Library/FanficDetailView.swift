@@ -231,6 +231,46 @@ struct FanficDetailView: View {
             fanfic.lastReadAt = .now
             try? modelContext.save()
         }
+        .task { await syncChapters() }
+    }
+
+    private func syncChapters() async {
+        do {
+            let response: FanficResponse = try await APIClient.shared.request(
+                .fanficDetail(id: fanfic.id)
+            )
+            guard let dtoChapters = response.chapters else { return }
+            let fid = fanfic.id
+            let chapterIDs = Set(dtoChapters.map(\.id))
+            let descriptor = FetchDescriptor<LocalFanficChapter>(
+                predicate: #Predicate<LocalFanficChapter> { $0.fanficId == fid }
+            )
+            let existing = (try? modelContext.fetch(descriptor)) ?? []
+            let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+
+            for old in existing where !chapterIDs.contains(old.id) {
+                modelContext.delete(old)
+            }
+            for dto in dtoChapters {
+                if let ch = existingByID[dto.id] {
+                    ch.chapterNumber = dto.chapterNumber
+                    ch.title = dto.title
+                    ch.wordCount = dto.wordCount
+                    ch.scrapeStatus = dto.scrapeStatus
+                } else {
+                    let ch = LocalFanficChapter(
+                        id: dto.id, fanficId: fid,
+                        chapterNumber: dto.chapterNumber, title: dto.title,
+                        wordCount: dto.wordCount, scrapeStatus: dto.scrapeStatus
+                    )
+                    ch.fanfic = fanfic
+                    modelContext.insert(ch)
+                }
+            }
+            try? modelContext.save()
+        } catch {
+            AstralLogger.error("syncChapters failed: \(error)", context: "FanficDetail")
+        }
     }
 
     private var metadataHeader: some View {

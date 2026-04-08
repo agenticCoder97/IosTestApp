@@ -110,16 +110,14 @@ async def list_fanfics(
 
     query = query.options(
         selectinload(Fanfic.fanfic_authors).selectinload(FanficAuthor.author),
-        selectinload(Fanfic.chapters).defer(FanficChapter.content),
     ).offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
     fanfics = result.scalars().all()
 
-    logger.info("list_fanfics returning %d items for page %d", len(fanfics), page)
     total_pages = ceil(total / page_size) if total > 0 else 1
     response = PaginatedResponse(
-        items=[_fanfic_to_schema(f, include_chapters=True) for f in fanfics],
+        items=[_fanfic_to_schema(f, include_chapters=False) for f in fanfics],
         total=total,
         page=page,
         page_size=page_size,
