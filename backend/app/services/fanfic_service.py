@@ -13,12 +13,12 @@ from app.schemas.shared import PaginatedResponse, AuthorResponse
 logger = logging.getLogger(__name__)
 
 
-def _chapter_to_schema(ch: FanficChapter) -> FanficChapterResponse:
+def _chapter_to_schema(ch: FanficChapter, include_content: bool = False) -> FanficChapterResponse:
     return FanficChapterResponse(
         id=ch.id,
         chapter_number=ch.chapter_number,
         title=ch.title,
-        content=ch.content,
+        content=ch.content if include_content else None,
         word_count=ch.word_count,
         source_url=ch.source_url,
         scrape_status=ch.scrape_status,
@@ -168,7 +168,7 @@ async def get_chapter(
         logger.warning("get_chapter not found | fanfic_id=%s chapter_id=%s", fanfic_id, chapter_id)
         return None
     logger.info("get_chapter found | fanfic_id=%s chapter_id=%s title=%s", fanfic_id, chapter_id, chapter.title)
-    return _chapter_to_schema(chapter)
+    return _chapter_to_schema(chapter, include_content=True)
 
 
 async def soft_delete_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> bool:
