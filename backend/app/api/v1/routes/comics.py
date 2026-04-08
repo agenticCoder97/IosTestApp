@@ -13,7 +13,7 @@ router = APIRouter(prefix="/comics", tags=["comics"])
 @router.get("", response_model=PaginatedResponse[ComicResponse])
 async def list_comics(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=200),
     sort: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/fanfic", tags=["fanfic"])
 @router.get("", response_model=PaginatedResponse[FanficResponse])
 async def list_fanfics(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=200),
     fandom: Optional[str] = Query(None),
     rating: Optional[str] = Query(None),
     completion_status: Optional[str] = Query(None),

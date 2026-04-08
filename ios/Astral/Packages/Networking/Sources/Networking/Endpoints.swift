@@ -56,7 +56,7 @@ public enum HTTPMethod: String, Sendable {
 // MARK: - Comic Endpoints
 
 public extension Endpoint {
-    static func comics(page: Int = 1, pageSize: Int = 20, sort: String? = nil) -> Endpoint {
+    static func comics(page: Int = 1, pageSize: Int = 200, sort: String? = nil) -> Endpoint {
         var items = [
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "page_size", value: "\(pageSize)"),
@@ -95,7 +95,7 @@ public extension Endpoint {
 public extension Endpoint {
     static func fanfics(
         page: Int = 1,
-        pageSize: Int = 20,
+        pageSize: Int = 200,
         fandom: String? = nil,
         rating: String? = nil,
         completionStatus: String? = nil,

@@ -5,7 +5,7 @@ from typing import Optional
 from math import ceil
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, defer
 from app.models.fanfic import Fanfic, FanficChapter, FanficAuthor
 from app.schemas.fanfic import FanficResponse, FanficChapterResponse
 from app.schemas.shared import PaginatedResponse, AuthorResponse
@@ -114,7 +114,7 @@ async def list_fanfics(
 
     query = query.options(
         selectinload(Fanfic.fanfic_authors).selectinload(FanficAuthor.author),
-        selectinload(Fanfic.chapters),
+        selectinload(Fanfic.chapters).defer(FanficChapter.content),
     ).offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
@@ -139,7 +139,7 @@ async def get_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> Optional[FanficR
         .where(Fanfic.id == fanfic_id, Fanfic.deleted_at.is_(None))
         .options(
             selectinload(Fanfic.fanfic_authors).selectinload(FanficAuthor.author),
-            selectinload(Fanfic.chapters),
+            selectinload(Fanfic.chapters).defer(FanficChapter.content),
         )
     )
     fanfic = result.scalar_one_or_none()
