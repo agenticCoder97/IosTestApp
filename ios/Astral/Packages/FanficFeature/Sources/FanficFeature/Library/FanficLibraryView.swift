@@ -229,18 +229,10 @@ private struct FanficContinueCardLink: View {
     }
 
     var body: some View {
-        if let chapter = nextChapter, !chapters.isEmpty {
-            NavigationLink {
-                FanficReaderView(fanfic: fanfic, chapter: chapter)
-            } label: {
-                FanficContinueCard(fanfic: fanfic)
-            }
-        } else {
-            NavigationLink {
-                FanficDetailView(fanfic: fanfic)
-            } label: {
-                FanficContinueCard(fanfic: fanfic)
-            }
+        NavigationLink {
+            FanficDetailView(fanfic: fanfic)
+        } label: {
+            FanficContinueCard(fanfic: fanfic)
         }
     }
 }

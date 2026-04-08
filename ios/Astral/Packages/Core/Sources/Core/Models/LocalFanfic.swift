@@ -6,6 +6,7 @@ public final class LocalFanfic {
     @Attribute(.unique) public var id: UUID
     public var title: String
     public var sourceKey: String
+    public var sourceUrl: String?
     public var summary: String?
     public var fandom: String?
     public var rating: String?

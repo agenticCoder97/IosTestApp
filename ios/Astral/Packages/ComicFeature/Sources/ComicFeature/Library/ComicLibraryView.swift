@@ -37,12 +37,16 @@ struct ComicLibraryView: View {
                 ($0.authorsJSON ?? "").localizedCaseInsensitiveContains(searchText)
             }
         }
-        return ready
+        // Sort archived comics to the bottom
+        return ready.sorted { lhs, rhs in
+            if lhs.isArchived != rhs.isArchived { return !lhs.isArchived }
+            return lhs.addedAt > rhs.addedAt
+        }
     }
 
     private var inProgressComics: [LocalComic] {
         allComics
-            .filter { $0.progressPercent > 0 && $0.progressPercent < 1.0 }
+            .filter { $0.progressPercent > 0 && $0.progressPercent < 1.0 && !$0.isArchived }
             .sorted { ($0.lastReadAt ?? $0.addedAt) > ($1.lastReadAt ?? $1.addedAt) }
             .prefix(5)
             .map { $0 }
@@ -86,6 +90,19 @@ struct ComicLibraryView: View {
                             .buttonStyle(PressButtonStyle())
                             .staggeredAppear(index: index)
                             .contextMenu {
+                                if comic.isArchived {
+                                    Button {
+                                        unarchiveComic(comic)
+                                    } label: {
+                                        Label("Unarchive", systemImage: "arrow.uturn.left.circle")
+                                    }
+                                } else if !comic.isArchiving && !comic.isUnarchiving {
+                                    Button {
+                                        archiveComic(comic)
+                                    } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
+                                }
                                 Button(role: .destructive) {
                                     deleteComic(comic)
                                 } label: {
@@ -108,6 +125,22 @@ struct ComicLibraryView: View {
         Task { try? await APIClient.shared.requestVoid(.deleteComic(id: comic.id)) }
         modelContext.delete(comic)
         try? modelContext.save()
+    }
+
+    private func archiveComic(_ comic: LocalComic) {
+        comic.archiveStatus = "archiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.archiveComic(id: comic.id))
+        }
+    }
+
+    private func unarchiveComic(_ comic: LocalComic) {
+        comic.archiveStatus = "unarchiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.unarchiveComic(id: comic.id))
+        }
     }
 }
 

@@ -39,6 +39,7 @@ final class FanficLibraryViewModel {
                 if let existing = try? modelContext.fetch(descriptor).first {
                     // Update server-owned fields; preserve user fields
                     existing.title = dto.title
+                    existing.sourceUrl = dto.sourceUrl
                     existing.summary = dto.summary
                     existing.fandom = dto.fandom
                     existing.rating = dto.rating
@@ -73,6 +74,7 @@ final class FanficLibraryViewModel {
                         totalChapters: dto.totalChapters,
                         seenTotalChapters: dto.totalChapters
                     )
+                    fanfic.sourceUrl = dto.sourceUrl
                     fanfic.thumbnailPath = dto.thumbnailPath
                     fanfic.characters = dto.characters
                     fanfic.pairing = dto.relationship

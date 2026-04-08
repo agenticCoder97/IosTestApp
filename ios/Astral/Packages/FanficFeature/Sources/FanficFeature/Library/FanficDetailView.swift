@@ -235,11 +235,30 @@ struct FanficDetailView: View {
 
     private var metadataHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Author
-            if let authors = fanfic.authorsText, !authors.isEmpty {
-                Label(authors, systemImage: "person.fill")
-                    .font(AstralTypography.bodyMedium)
-                    .foregroundStyle(AstralColors.body)
+            // Author + source link
+            HStack {
+                if let authors = fanfic.authorsText, !authors.isEmpty {
+                    Label(authors, systemImage: "person.fill")
+                        .font(AstralTypography.bodyMedium)
+                        .foregroundStyle(AstralColors.body)
+                }
+                Spacer()
+                if let urlString = fanfic.sourceUrl, let url = URL(string: urlString) {
+                    Link(destination: url) {
+                        HStack(spacing: 4) {
+                            Text(fanfic.sourceKey.uppercased())
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.5)
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundStyle(AstralColors.gold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(AstralColors.gold.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                }
             }
 
             // Summary

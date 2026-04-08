@@ -34,6 +34,13 @@ class JobType(str, Enum):
     RETRY = "retry"
 
 
+class ArchiveStatus(str, Enum):
+    NONE = "none"
+    ARCHIVING = "archiving"
+    ARCHIVED = "archived"
+    UNARCHIVING = "unarchiving"
+
+
 SOURCE_RATE_CONFIG: dict[str, dict] = {
     SourceKey.NHENTAI:  {"delay": 1.5, "max_retries": 3, "requires_browser": False},
     SourceKey.TOONGOD:  {"delay": 1.0, "max_retries": 3, "requires_browser": False},

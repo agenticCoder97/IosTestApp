@@ -12,6 +12,8 @@ public struct ComicResponse: Codable, Sendable, Identifiable {
     public let totalPages: Int
     public let language: String?
     public let status: String
+    public let archiveStatus: String?
+    public let archivedAt: Date?
     public let authors: [AuthorResponse]?
     public let tags: [TagResponse]?
     public let category: String?

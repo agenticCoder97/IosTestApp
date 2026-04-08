@@ -3,6 +3,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from math import ceil
+import redis.asyncio as aioredis
+from arq.connections import ArqRedis
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,6 +13,8 @@ from app.models.author import Author
 from app.models.scrape import ScrapeJob
 from app.schemas.comic import ComicResponse, ComicChapterResponse, PageResponse, ComicUpdateRequest
 from app.schemas.shared import PaginatedResponse, AuthorResponse, TagResponse
+from app.core.constants import ArchiveStatus
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +59,8 @@ def _comic_to_schema(comic: Comic, include_chapters: bool = False) -> ComicRespo
         language=comic.language,
         status=comic.status,
         category=comic.category,
+        archive_status=comic.archive_status,
+        archived_at=comic.archived_at,
         authors=authors if authors else None,
         tags=tags if tags else None,
         chapters=chapters,
@@ -180,6 +186,71 @@ async def update_comic(
     await db.commit()
     await db.refresh(comic)
     logger.info("update_comic committed | comic_id=%s", comic_id)
+    return _comic_to_schema(comic)
+
+
+async def _load_comic_with_relations(db: AsyncSession, comic_id: uuid.UUID) -> Optional[Comic]:
+    result = await db.execute(
+        select(Comic)
+        .where(Comic.id == comic_id, Comic.deleted_at.is_(None))
+        .options(
+            selectinload(Comic.comic_authors).selectinload(ComicAuthor.author),
+            selectinload(Comic.comic_tags).selectinload(ComicTag.tag),
+            selectinload(Comic.chapters),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def archive_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResponse]:
+    """Set archive_status=archiving and enqueue the archive ARQ task."""
+    logger.info("archive_comic called | comic_id=%s", comic_id)
+    comic = await _load_comic_with_relations(db, comic_id)
+    if not comic:
+        return None
+
+    if comic.archive_status not in (ArchiveStatus.NONE, "none"):
+        logger.warning("archive_comic invalid state | comic_id=%s archive_status=%s", comic_id, comic.archive_status)
+        return _comic_to_schema(comic)
+
+    comic.archive_status = ArchiveStatus.ARCHIVING
+    await db.commit()
+
+    try:
+        r = await aioredis.from_url(settings.redis_url)
+        arq_redis = ArqRedis(r.connection_pool)
+        await arq_redis.enqueue_job("comic_archive_task", str(comic_id))
+        await arq_redis.aclose()
+        logger.info("archive_comic ARQ enqueue success | comic_id=%s", comic_id)
+    except Exception as e:
+        logger.warning("archive_comic ARQ enqueue failed | comic_id=%s error=%s", comic_id, e)
+
+    return _comic_to_schema(comic)
+
+
+async def unarchive_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResponse]:
+    """Set archive_status=unarchiving and enqueue the unarchive ARQ task."""
+    logger.info("unarchive_comic called | comic_id=%s", comic_id)
+    comic = await _load_comic_with_relations(db, comic_id)
+    if not comic:
+        return None
+
+    if comic.archive_status != ArchiveStatus.ARCHIVED:
+        logger.warning("unarchive_comic invalid state | comic_id=%s archive_status=%s", comic_id, comic.archive_status)
+        return _comic_to_schema(comic)
+
+    comic.archive_status = ArchiveStatus.UNARCHIVING
+    await db.commit()
+
+    try:
+        r = await aioredis.from_url(settings.redis_url)
+        arq_redis = ArqRedis(r.connection_pool)
+        await arq_redis.enqueue_job("comic_unarchive_task", str(comic_id))
+        await arq_redis.aclose()
+        logger.info("unarchive_comic ARQ enqueue success | comic_id=%s", comic_id)
+    except Exception as e:
+        logger.warning("unarchive_comic ARQ enqueue failed | comic_id=%s error=%s", comic_id, e)
+
     return _comic_to_schema(comic)
 
 

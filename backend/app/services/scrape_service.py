@@ -99,7 +99,9 @@ async def initiate_scrape(db: AsyncSession, body: ScrapeRequest) -> ScrapeJobRes
             db.add(fanfic)
             logger.info("initiate_scrape new fanfic placeholder created | story_id=%s", story_id)
 
-    # If the story already exists, check for a complete/partial job — don't re-scrape
+    # If the story already exists and was previously scraped, create a DELTA job
+    # to refresh metadata and pick up new chapters instead of suppressing.
+    job_type = JobType.INITIAL
     if existing:
         result = await db.execute(
             select(ScrapeJob)
@@ -113,19 +115,19 @@ async def initiate_scrape(db: AsyncSession, body: ScrapeRequest) -> ScrapeJobRes
         )
         completed_job = result.scalar_one_or_none()
         if completed_job:
+            job_type = JobType.DELTA
             logger.info(
-                "initiate_scrape duplicate suppressed — story already scraped | "
+                "initiate_scrape existing story — creating delta job | "
                 "story_id=%s existing_job_id=%s status=%s",
                 story_id, completed_job.id, completed_job.status,
             )
-            return _job_to_schema(completed_job)
 
     job = ScrapeJob(
         content_type=body.content_type,
         story_id=story_id,
         source_url=body.url,
         source_key=body.source_key,
-        job_type=JobType.INITIAL,
+        job_type=job_type,
         status=JobStatus.QUEUED,
     )
     db.add(job)

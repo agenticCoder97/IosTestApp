@@ -184,8 +184,37 @@ struct ComicDetailView: View {
                     }
                     .padding(16)
 
-                    // MARK: Continue Reading button
-                    if !chapters.isEmpty {
+                    // MARK: Continue Reading / Archive actions
+                    if comic.isArchived {
+                        Button {
+                            unarchiveComic()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.uturn.left.circle.fill")
+                                Text("Unarchive — Restore Full Quality")
+                                    .font(AstralTypography.bodyMedium)
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(AstralColors.gold)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                    } else if comic.isArchiving || comic.isUnarchiving {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(AstralColors.gold).scaleEffect(0.8)
+                            Text(comic.isArchiving ? "Archiving..." : "Restoring...")
+                                .font(AstralTypography.bodyMedium)
+                                .foregroundStyle(AstralColors.muted)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                    } else if !chapters.isEmpty {
                         if let nextChapter = nextUnreadChapter {
                             Button {
                                 AstralLogger.info("Continue button tapped: ch \(nextChapter.chapterNumber)", context: "ComicDetail")
@@ -246,6 +275,22 @@ struct ComicDetailView: View {
                             .frame(width: 44, height: 36)
                         }
                         .buttonStyle(.plain)
+
+                        // Archive icon button
+                        if !comic.isArchiving && !comic.isUnarchiving {
+                            Button {
+                                if comic.isArchived {
+                                    unarchiveComic()
+                                } else {
+                                    archiveComic()
+                                }
+                            } label: {
+                                Image(systemName: comic.isArchived ? "archivebox.fill" : "archivebox")
+                                    .foregroundStyle(comic.isArchived ? AstralColors.gold : AstralColors.muted)
+                                    .frame(width: 44, height: 36)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .background(AstralColors.elevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -494,6 +539,22 @@ struct ComicDetailView: View {
         try? modelContext.save()
     }
 
+    private func archiveComic() {
+        comic.archiveStatus = "archiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.archiveComic(id: comic.id))
+        }
+    }
+
+    private func unarchiveComic() {
+        comic.archiveStatus = "unarchiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.unarchiveComic(id: comic.id))
+        }
+    }
+
     private func deleteBookmark(_ bookmark: LocalBookmark) {
         modelContext.delete(bookmark)
         try? modelContext.save()
@@ -693,6 +754,10 @@ private struct ContinueReadingButton<Destination: View>: View {
         guard let firstChapter = chapters.first else { return nil }
         if lastReadChapterNumber == 0 {
             return .start(firstChapter)
+        }
+        // Resume the current chapter (reader restores page position)
+        if let current = chapters.first(where: { Int($0.chapterNumber) == lastReadChapterNumber }) {
+            return .continueReading(current)
         }
         if let next = chapters.first(where: { $0.chapterNumber > Double(lastReadChapterNumber) }) {
             return .continueReading(next)

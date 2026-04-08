@@ -37,6 +37,10 @@ public final class LocalComic {
     public var lastReadPageNumber: Int
     /// Date when the user first completed this comic (progressPercent reached 1.0)
     public var completedAt: Date?
+    /// Archive status: none, archiving, archived, unarchiving
+    public var archiveStatus: String?
+    /// When the comic was archived
+    public var archivedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalComicChapter.comic)
     public var chapters: [LocalComicChapter]?
@@ -80,4 +84,8 @@ public final class LocalComic {
     public var newChapterCount: Int {
         max(0, totalChapters - seenTotalChapters)
     }
+
+    public var isArchived: Bool { archiveStatus == "archived" }
+    public var isArchiving: Bool { archiveStatus == "archiving" }
+    public var isUnarchiving: Bool { archiveStatus == "unarchiving" }
 }

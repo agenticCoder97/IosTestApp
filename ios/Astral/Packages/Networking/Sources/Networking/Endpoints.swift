@@ -80,6 +80,14 @@ public extension Endpoint {
     static func deleteComic(id: UUID) -> Endpoint {
         Endpoint(method: .delete, path: "/comics/\(id)")
     }
+
+    static func archiveComic(id: UUID) -> Endpoint {
+        Endpoint(method: .post, path: "/comics/\(id)/archive")
+    }
+
+    static func unarchiveComic(id: UUID) -> Endpoint {
+        Endpoint(method: .post, path: "/comics/\(id)/unarchive")
+    }
 }
 
 // MARK: - Fanfic Endpoints

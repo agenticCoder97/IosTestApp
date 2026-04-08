@@ -35,8 +35,8 @@ struct ComicReaderView: View {
     @State private var isLoading = true
     @State private var showHUD = false
     @State private var showSettings = false
-    @State private var readingMode: ReadingMode = .webtoon
-    @State private var brightnessOverlay: Double = 0.0
+    @AppStorage("comicReaderMode") private var readingMode: ReadingMode = .webtoon
+    @AppStorage("comicReaderBrightness") private var brightnessOverlay: Double = 0.0
     @State private var showPageActions = false
     @State private var longPressedPage: PageResponse?
     @Query private var bookmarks: [LocalBookmark]
@@ -68,7 +68,6 @@ struct ComicReaderView: View {
         self.previewPages = previewPages
         let idx = chapters.firstIndex(where: { $0.id == chapter.id }) ?? 0
         _currentChapterIndex = State(initialValue: idx)
-        _readingMode = State(initialValue: comic.sourceKey == "nhentai" ? .rightToLeft : .webtoon)
         let comicId = comic.id
         _bookmarks = Query(
             filter: #Predicate<LocalBookmark> { $0.storyId == comicId && $0.contentType == "comic" },
