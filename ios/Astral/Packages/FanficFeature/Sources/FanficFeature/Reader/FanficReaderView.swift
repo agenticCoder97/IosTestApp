@@ -6,20 +6,16 @@ import Networking
 
 struct FanficReaderView: View {
     let fanfic: LocalFanfic
+    let allChapters: [LocalFanficChapter]
     private let previewContent: String?
 
-    @Query private var allChapters: [LocalFanficChapter]
     @State private var currentChapter: LocalFanficChapter
 
-    init(fanfic: LocalFanfic, chapter: LocalFanficChapter, previewContent: String? = nil) {
+    init(fanfic: LocalFanfic, chapters: [LocalFanficChapter], chapter: LocalFanficChapter, previewContent: String? = nil) {
         self.fanfic = fanfic
+        self.allChapters = chapters
         self.previewContent = previewContent
         _currentChapter = State(initialValue: chapter)
-        let fid = fanfic.id
-        _allChapters = Query(
-            filter: #Predicate<LocalFanficChapter> { $0.fanficId == fid },
-            sort: \LocalFanficChapter.chapterNumber
-        )
     }
 
     @Environment(\.modelContext) private var modelContext
@@ -643,6 +639,7 @@ private struct FanficBookmarkSheet: View {
 #Preview("Reader - Dark") {
     FanficReaderView(
         fanfic: PreviewMocks.fanfic1,
+        chapters: PreviewMocks.fanfic1Chapters,
         chapter: PreviewMocks.fanfic1Chapters[1],
         previewContent: PreviewMocks.sampleFanficChapterContent
     )
@@ -651,6 +648,7 @@ private struct FanficBookmarkSheet: View {
 #Preview("Reader - Sepia") {
     FanficReaderView(
         fanfic: PreviewMocks.fanfic2,
+        chapters: PreviewMocks.fanfic1Chapters,
         chapter: PreviewMocks.fanfic1Chapters[2],
         previewContent: PreviewMocks.sampleFanficChapterContent
     )
@@ -659,6 +657,7 @@ private struct FanficBookmarkSheet: View {
 #Preview("Reader - No Content") {
     FanficReaderView(
         fanfic: PreviewMocks.fanfic3,
+        chapters: PreviewMocks.fanfic1Chapters,
         chapter: PreviewMocks.fanfic1Chapters[4],
         previewContent: ""
     )

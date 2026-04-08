@@ -112,7 +112,7 @@ struct FanficDetailView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(chapters) { chapter in
                                 NavigationLink {
-                                    FanficReaderView(fanfic: fanfic, chapter: chapter)
+                                    FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter)
                                 } label: {
                                     FanficChapterRow(
                                         chapter: chapter,
@@ -154,7 +154,7 @@ struct FanficDetailView: View {
                             ForEach(bookmarks) { bookmark in
                                 NavigationLink {
                                     if let chapter = chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
-                                        FanficReaderView(fanfic: fanfic, chapter: chapter)
+                                        FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter)
                                     }
                                 } label: {
                                     HStack(spacing: 12) {
@@ -754,7 +754,7 @@ private struct FanficContinueReadingButton: View {
     var body: some View {
         if let state = readingState {
             NavigationLink {
-                FanficReaderView(fanfic: fanfic, chapter: targetChapter(for: state))
+                FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: targetChapter(for: state))
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: iconName(for: state))
