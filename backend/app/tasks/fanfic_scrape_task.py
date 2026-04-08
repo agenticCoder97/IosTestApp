@@ -131,6 +131,16 @@ async def fanfic_scrape_task(ctx, job_id: str):
                     fanfic.word_count = metadata.word_count
                 if metadata.completion_status:
                     fanfic.completion_status = metadata.completion_status
+                if metadata.freeform_tags:
+                    fanfic.freeform_tags = metadata.freeform_tags
+                if metadata.hits is not None:
+                    fanfic.hits = metadata.hits
+                if metadata.kudos is not None:
+                    fanfic.kudos = metadata.kudos
+                if metadata.comments_count is not None:
+                    fanfic.comments_count = metadata.comments_count
+                if metadata.bookmarks_count is not None:
+                    fanfic.bookmarks_count = metadata.bookmarks_count
                 if metadata.published_at:
                     try:
                         fanfic.published_at = datetime.strptime(metadata.published_at, "%Y-%m-%d").replace(tzinfo=timezone.utc)

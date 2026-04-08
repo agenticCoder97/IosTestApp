@@ -39,6 +39,7 @@ final class FanficLibraryViewModel {
                 if let existing = try? modelContext.fetch(descriptor).first {
                     // Update server-owned fields; preserve user fields
                     existing.title = dto.title
+                    existing.sourceUrl = dto.sourceUrl
                     existing.summary = dto.summary
                     existing.fandom = dto.fandom
                     existing.rating = dto.rating
@@ -51,6 +52,14 @@ final class FanficLibraryViewModel {
                     existing.warnings = dto.warnings
                     existing.publishedAt = dto.publishedAt
                     existing.updatedAtSource = dto.updatedAtSource
+                    existing.freeformTags = dto.freeformTags
+                    existing.hits = dto.hits
+                    existing.kudos = dto.kudos
+                    existing.commentsCount = dto.commentsCount
+                    existing.bookmarksCount = dto.bookmarksCount
+                    if let authors = dto.authors, !authors.isEmpty {
+                        existing.authorsText = authors.map(\.name).joined(separator: ", ")
+                    }
                     localFanfic = existing
                 } else {
                     let fanfic = LocalFanfic(
@@ -65,12 +74,21 @@ final class FanficLibraryViewModel {
                         totalChapters: dto.totalChapters,
                         seenTotalChapters: dto.totalChapters
                     )
+                    fanfic.sourceUrl = dto.sourceUrl
                     fanfic.thumbnailPath = dto.thumbnailPath
                     fanfic.characters = dto.characters
                     fanfic.pairing = dto.relationship
                     fanfic.warnings = dto.warnings
                     fanfic.publishedAt = dto.publishedAt
                     fanfic.updatedAtSource = dto.updatedAtSource
+                    fanfic.freeformTags = dto.freeformTags
+                    fanfic.hits = dto.hits
+                    fanfic.kudos = dto.kudos
+                    fanfic.commentsCount = dto.commentsCount
+                    fanfic.bookmarksCount = dto.bookmarksCount
+                    if let authors = dto.authors, !authors.isEmpty {
+                        fanfic.authorsText = authors.map(\.name).joined(separator: ", ")
+                    }
                     modelContext.insert(fanfic)
                     localFanfic = fanfic
                 }

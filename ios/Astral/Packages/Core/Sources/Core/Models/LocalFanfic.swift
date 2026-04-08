@@ -6,6 +6,7 @@ public final class LocalFanfic {
     @Attribute(.unique) public var id: UUID
     public var title: String
     public var sourceKey: String
+    public var sourceUrl: String?
     public var summary: String?
     public var fandom: String?
     public var rating: String?
@@ -42,6 +43,15 @@ public final class LocalFanfic {
     public var updatedAtSource: Date?
     /// JSON-encoded array of tag dicts from API
     public var tagsJSON: String?
+    /// Comma-separated freeform tags from AO3
+    public var freeformTags: String?
+    /// Comma-separated author names
+    public var authorsText: String?
+    /// AO3 engagement stats
+    public var hits: Int?
+    public var kudos: Int?
+    public var commentsCount: Int?
+    public var bookmarksCount: Int?
     /// Date when the user first completed this fanfic (progressPercent reached 1.0)
     public var completedAt: Date?
 

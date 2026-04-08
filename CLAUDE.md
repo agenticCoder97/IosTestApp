@@ -95,6 +95,15 @@ Update docs when these change:
 - major routes or surface behavior
 - scratchpad process
 
+## Knowledge Graph Wiki
+
+The `wiki/` directory contains a structured knowledge graph of the entire codebase, inspired by [Karpathy's LLM Knowledge Bases](https://x.com/karpathy/status/2039805659525644595).
+
+- Start with `wiki/INDEX.md` for a complete entity map.
+- Read `wiki/SCHEMA.md` for rules on maintaining the wiki.
+- When adding new features, models, endpoints, or scrapers, update the relevant wiki pages.
+- Entity pages in `wiki/entities/` trace a single entity across all layers (ORM → Schema → DTO → @Model → View).
+
 ## Branch and Git Rules
 
 ```

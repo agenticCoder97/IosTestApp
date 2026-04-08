@@ -30,6 +30,7 @@ struct FanficDetailView: View {
     @State private var activeTab: FanficDetailTab = .chapters
     @State private var isDownloading = false
     @State private var downloadProgress: (Int, Int) = (0, 0)
+    @State private var isRescraping = false
 
     private enum FanficDetailTab: String, CaseIterable {
         case chapters = "Chapters"
@@ -208,6 +209,23 @@ struct FanficDetailView: View {
         .background(AstralColors.background)
         .navigationTitle(fanfic.title)
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    rescrape()
+                } label: {
+                    if isRescraping {
+                        ProgressView()
+                            .tint(AstralColors.gold)
+                            .scaleEffect(0.7)
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(AstralColors.gold)
+                    }
+                }
+                .disabled(isRescraping)
+            }
+        }
         .onAppear {
             fanfic.seenTotalChapters = fanfic.totalChapters
             fanfic.lastReadAt = .now
@@ -217,6 +235,32 @@ struct FanficDetailView: View {
 
     private var metadataHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Author + source link
+            HStack {
+                if let authors = fanfic.authorsText, !authors.isEmpty {
+                    Label(authors, systemImage: "person.fill")
+                        .font(AstralTypography.bodyMedium)
+                        .foregroundStyle(AstralColors.body)
+                }
+                Spacer()
+                if let urlString = fanfic.sourceUrl, let url = URL(string: urlString) {
+                    Link(destination: url) {
+                        HStack(spacing: 4) {
+                            Text(fanfic.sourceKey.uppercased())
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.5)
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundStyle(AstralColors.gold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(AstralColors.gold.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+
             // Summary
             if let summary = fanfic.summary {
                 Text(summary)
@@ -237,6 +281,24 @@ struct FanficDetailView: View {
                     }
                     if fanfic.totalChapters > 0 {
                         StatusBadge("\(fanfic.totalChapters) ch", color: AstralColors.muted)
+                    }
+                }
+            }
+
+            // Stats row — unified labels across AO3 and FFNet
+            if fanfic.hits != nil || fanfic.kudos != nil || fanfic.commentsCount != nil || fanfic.bookmarksCount != nil {
+                HStack(spacing: 14) {
+                    if let hits = fanfic.hits {
+                        statPill(icon: "eye", value: formatStat(hits), label: "Views")
+                    }
+                    if let kudos = fanfic.kudos {
+                        statPill(icon: "heart", value: formatStat(kudos), label: "Likes")
+                    }
+                    if let comments = fanfic.commentsCount {
+                        statPill(icon: "bubble.left", value: formatStat(comments), label: "Comments")
+                    }
+                    if let bookmarks = fanfic.bookmarksCount {
+                        statPill(icon: "bookmark", value: formatStat(bookmarks), label: "Saves")
                     }
                 }
             }
@@ -273,6 +335,15 @@ struct FanficDetailView: View {
                 tagRow("Warnings") {
                     ForEach(warnings.components(separatedBy: ", ").filter { !$0.isEmpty }, id: \.self) { w in
                         StatusBadge(w, color: AstralColors.error)
+                    }
+                }
+            }
+
+            // Freeform tags
+            if let freeform = fanfic.freeformTags, !freeform.isEmpty {
+                tagRow("Tags") {
+                    ForEach(freeform.components(separatedBy: ", ").filter { !$0.isEmpty }, id: \.self) { tag in
+                        tappableTag(tag, color: AstralColors.muted)
                     }
                 }
             }
@@ -325,6 +396,27 @@ struct FanficDetailView: View {
         if r.contains("mature") || r == "m" { return AstralColors.warning }
         if r.contains("explicit") || r == "e" { return AstralColors.error }
         return AstralColors.muted
+    }
+
+    private func statPill(icon: String, value: String, label: String) -> some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                Text(value)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+            }
+            .foregroundStyle(AstralColors.body)
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(AstralColors.muted)
+        }
+    }
+
+    private func formatStat(_ value: Int) -> String {
+        if value >= 1_000_000 { return "\(value / 1_000_000)M" }
+        if value >= 1_000 { return "\(value / 1_000)K" }
+        return "\(value)"
     }
 
     private func statusColor(_ status: String) -> Color {
@@ -392,6 +484,16 @@ struct FanficDetailView: View {
         )
         modelContext.insert(bookmark)
         try? modelContext.save()
+    }
+
+    private func rescrape() {
+        isRescraping = true
+        Task {
+            let _: ScrapeJobResponse? = try? await APIClient.shared.request(
+                .deltaUpdate(storyId: fanfic.id)
+            )
+            isRescraping = false
+        }
     }
 
     private func deleteBookmark(_ bookmark: LocalBookmark) {
@@ -598,6 +700,10 @@ private struct FanficContinueReadingButton: View {
         guard let firstChapter = chapters.first else { return nil }
         if lastReadChapterNumber == 0 {
             return .start(firstChapter)
+        }
+        // Resume the current chapter at saved scroll position (reader restores via scrollOffsetPercent)
+        if let current = chapters.first(where: { Int($0.chapterNumber) == lastReadChapterNumber }) {
+            return .continueReading(current)
         }
         if let next = chapters.first(where: { $0.chapterNumber > Double(lastReadChapterNumber) }) {
             return .continueReading(next)

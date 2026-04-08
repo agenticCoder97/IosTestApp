@@ -25,6 +25,8 @@ class Comic(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    archive_status: Mapped[str] = mapped_column(String(20), nullable=False, default="none", server_default="none")
 
     chapters: Mapped[list["ComicChapter"]] = relationship("ComicChapter", back_populates="comic", lazy="select")
     comic_authors: Mapped[list["ComicAuthor"]] = relationship("ComicAuthor", back_populates="comic", lazy="select")

@@ -56,6 +56,44 @@ struct ComicCardView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .aspectRatio(0.7, contentMode: .fit)
+            .saturation(comic.isArchived ? 0 : 1)
+            .overlay(alignment: .top) {
+                if comic.isArchived {
+                    Text("ARCHIVED")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(AstralColors.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(AstralColors.muted.opacity(0.8))
+                        .clipShape(Capsule())
+                        .padding(.top, 6)
+                } else if comic.isArchiving {
+                    HStack(spacing: 4) {
+                        ProgressView().tint(.white).scaleEffect(0.6)
+                        Text("Archiving")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(AstralColors.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(AstralColors.warning.opacity(0.8))
+                    .clipShape(Capsule())
+                    .padding(.top, 6)
+                } else if comic.isUnarchiving {
+                    HStack(spacing: 4) {
+                        ProgressView().tint(.white).scaleEffect(0.6)
+                        Text("Restoring")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(AstralColors.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(AstralColors.gold.opacity(0.8))
+                    .clipShape(Capsule())
+                    .padding(.top, 6)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 4) {
                     if comic.isDownloaded {

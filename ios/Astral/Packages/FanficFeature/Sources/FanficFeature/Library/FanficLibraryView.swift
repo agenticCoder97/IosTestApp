@@ -229,18 +229,10 @@ private struct FanficContinueCardLink: View {
     }
 
     var body: some View {
-        if let chapter = nextChapter, !chapters.isEmpty {
-            NavigationLink {
-                FanficReaderView(fanfic: fanfic, chapter: chapter)
-            } label: {
-                FanficContinueCard(fanfic: fanfic)
-            }
-        } else {
-            NavigationLink {
-                FanficDetailView(fanfic: fanfic)
-            } label: {
-                FanficContinueCard(fanfic: fanfic)
-            }
+        NavigationLink {
+            FanficDetailView(fanfic: fanfic)
+        } label: {
+            FanficContinueCard(fanfic: fanfic)
         }
     }
 }
@@ -316,6 +308,12 @@ struct FanficRowView: View {
         case "ffnet": "f.square.fill"
         default: "questionmark.square.fill"
         }
+    }
+
+    private func formatRowStat(_ value: Int) -> String {
+        if value >= 1_000_000 { return "\(value / 1_000_000)M" }
+        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1000.0) }
+        return "\(value)"
     }
 
     private var fanficPlaceholder: some View {
@@ -394,6 +392,14 @@ struct FanficRowView: View {
                         .buttonStyle(.plain)
                     }
 
+                    // Author
+                    if let authors = fanfic.authorsText, !authors.isEmpty {
+                        Text("by \(authors)")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
+                            .lineLimit(1)
+                    }
+
                     // Summary
                     if let summary = fanfic.summary, !summary.isEmpty {
                         Text(summary)
@@ -418,24 +424,23 @@ struct FanficRowView: View {
                         }
                     }
 
-                    // Metadata row — chapters, dates
-                    HStack(spacing: 12) {
+                    // Metadata row — chapters, dates, stats
+                    HStack(spacing: 10) {
                         Label("\(fanfic.totalChapters) ch", systemImage: "book.pages")
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.muted)
+
+                        if let kudos = fanfic.kudos {
+                            Label(formatRowStat(kudos), systemImage: "heart")
+                        }
+                        if let comments = fanfic.commentsCount {
+                            Label(formatRowStat(comments), systemImage: "bubble.left")
+                        }
 
                         if let published = fanfic.publishedAt {
                             Label(published.formatted(.dateTime.month(.abbreviated).year()), systemImage: "calendar")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
-                        }
-
-                        if let updated = fanfic.updatedAtSource {
-                            Label(updated.formatted(.dateTime.month(.abbreviated).day()), systemImage: "arrow.clockwise")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
                         }
                     }
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
                 }
             }
 

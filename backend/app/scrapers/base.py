@@ -50,6 +50,11 @@ class StoryMetadata:
     completion_status: Optional[str] = None
     published_at: Optional[str] = None   # ISO 8601 string
     updated_at_source: Optional[str] = None  # ISO 8601 string
+    freeform_tags: Optional[str] = None  # comma-separated freeform tag names
+    hits: Optional[int] = None
+    kudos: Optional[int] = None
+    comments_count: Optional[int] = None
+    bookmarks_count: Optional[int] = None
 
 
 @dataclass

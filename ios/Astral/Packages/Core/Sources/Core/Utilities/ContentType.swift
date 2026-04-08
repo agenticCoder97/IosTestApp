@@ -85,4 +85,26 @@ public enum ReaderFont: String, CaseIterable, Codable, Sendable {
         case .avenir: .custom("Avenir", size: size)
         }
     }
+
+    public func boldFont(size: CGFloat) -> Font {
+        switch self {
+        case .system: .system(size: size, weight: .bold)
+        case .openSans: .custom("OpenSans-Bold", size: size)
+        case .georgia: .custom("Georgia-Bold", size: size)
+        case .palatino: .custom("Palatino-Bold", size: size)
+        case .courier: .custom("Courier-Bold", size: size)
+        case .avenir: .custom("Avenir-Heavy", size: size)
+        }
+    }
+
+    public func italicFont(size: CGFloat) -> Font {
+        switch self {
+        case .system: .system(size: size).italic()
+        case .openSans: .custom("OpenSans-Regular", size: size).italic()
+        case .georgia: .custom("Georgia-Italic", size: size)
+        case .palatino: .custom("Palatino-Italic", size: size)
+        case .courier: .custom("Courier-Oblique", size: size)
+        case .avenir: .custom("Avenir-Oblique", size: size)
+        }
+    }
 }

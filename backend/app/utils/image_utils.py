@@ -62,6 +62,19 @@ def get_image_dimensions(file_path: str | Path) -> Optional[tuple[int, int]]:
         return None
 
 
+def convert_to_webp(src_path: str | Path, dest_path: str | Path, quality: int = 30) -> bool:
+    """Convert an image to lossy WebP. Returns True on success."""
+    try:
+        dest_path = Path(dest_path)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(src_path) as img:
+            img.save(dest_path, "WEBP", quality=quality, method=4)
+        return True
+    except Exception as e:
+        logger.error("convert_to_webp failed | src=%s error=%s", src_path, e)
+        return False
+
+
 def generate_thumbnail(src_path: str | Path, dest_path: str | Path, size: tuple[int, int] = (300, 400)) -> bool:
     """Generate a thumbnail. Returns True on success."""
     logger.info("generate_thumbnail starting | src=%s dest=%s size=%s", src_path, dest_path, size)

@@ -35,8 +35,8 @@ struct ComicReaderView: View {
     @State private var isLoading = true
     @State private var showHUD = false
     @State private var showSettings = false
-    @State private var readingMode: ReadingMode = .webtoon
-    @State private var brightnessOverlay: Double = 0.0
+    @AppStorage("comicReaderMode") private var readingMode: ReadingMode = .webtoon
+    @AppStorage("comicReaderBrightness") private var brightnessOverlay: Double = 0.0
     @State private var showPageActions = false
     @State private var longPressedPage: PageResponse?
     @Query private var bookmarks: [LocalBookmark]
@@ -68,7 +68,6 @@ struct ComicReaderView: View {
         self.previewPages = previewPages
         let idx = chapters.firstIndex(where: { $0.id == chapter.id }) ?? 0
         _currentChapterIndex = State(initialValue: idx)
-        _readingMode = State(initialValue: comic.sourceKey == "nhentai" ? .rightToLeft : .webtoon)
         let comicId = comic.id
         _bookmarks = Query(
             filter: #Predicate<LocalBookmark> { $0.storyId == comicId && $0.contentType == "comic" },
@@ -358,7 +357,7 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
+            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                 toggleHUD()
             }
         )
@@ -397,7 +396,7 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.2).onEnded { _ in
+            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
                 toggleHUD()
             }
         )
@@ -835,6 +834,7 @@ struct ComicReaderView: View {
 
 struct ComicPageView: View {
     let page: PageResponse
+    @State private var retryID = UUID()
 
     var body: some View {
         AsyncImage(url: pageURL) { phase in
@@ -857,18 +857,20 @@ struct ComicPageView: View {
                     .aspectRatio(aspectRatio, contentMode: .fit)
                     .overlay {
                         VStack(spacing: 8) {
-                            Image(systemName: "photo.badge.exclamationmark")
+                            Image(systemName: "arrow.clockwise.circle")
                                 .font(.title2)
-                            Text("Failed to load")
+                            Text("Tap to retry")
                                 .font(AstralTypography.caption)
                         }
                         .foregroundStyle(AstralColors.muted)
                     }
+                    .onTapGesture { retryID = UUID() }
 
             @unknown default:
                 EmptyView()
             }
         }
+        .id(retryID)
         .frame(maxWidth: .infinity)
     }
 

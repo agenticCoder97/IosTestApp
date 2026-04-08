@@ -33,6 +33,8 @@ final class ComicLibraryViewModel {
                     existing.totalChapters = dto.totalChapters
                     existing.status = dto.status
                     existing.category = dto.category
+                    existing.archiveStatus = dto.archiveStatus
+                    existing.archivedAt = dto.archivedAt
                     existing.tagsJSON = Self.encodeTagsJSON(dto.tags)
                     existing.authorsJSON = Self.encodeAuthorsJSON(dto.authors)
                     localComic = existing
@@ -49,6 +51,8 @@ final class ComicLibraryViewModel {
                         seenTotalChapters: dto.totalChapters
                     )
                     comic.category = dto.category
+                    comic.archiveStatus = dto.archiveStatus
+                    comic.archivedAt = dto.archivedAt
                     comic.tagsJSON = Self.encodeTagsJSON(dto.tags)
                     comic.authorsJSON = Self.encodeAuthorsJSON(dto.authors)
                     modelContext.insert(comic)
