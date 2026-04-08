@@ -12,6 +12,7 @@ from app.models.scrape import ScrapeJob, ScrapeLog
 from app.core.constants import ScrapeStatus, JobStatus
 from app.core.config import settings
 from app.scrapers.base import CookieExpiredError, ScraperError
+from app.cache import redis_cache
 from app.scrapers.comic.nhentai import NhentaiScraper
 from app.scrapers.comic.toongod import ToongodScraper
 from app.scrapers.comic.hentai20 import Hentai20Scraper
@@ -473,6 +474,10 @@ async def comic_scrape_task(ctx, job_id: str):
                  f"Finished — status={job.status} scraped={chapters_scraped} failed={chapters_failed}",
                  duration_ms=total_ms)
         await db.commit()
+
+        # Invalidate caches so iOS sees updated data
+        await redis_cache.invalidate_comics(str(story_id))
+        await redis_cache.invalidate_scrape_jobs()
 
         logger.info(
             "comic_scrape_task finished | job_id=%s status=%s scraped=%d failed=%d elapsed_ms=%d",

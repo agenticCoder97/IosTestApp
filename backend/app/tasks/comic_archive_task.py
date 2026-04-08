@@ -11,6 +11,7 @@ from app.core.constants import ArchiveStatus
 from app.core.config import settings
 from app.utils.image_utils import convert_to_webp
 from app.utils.file_storage import full_path
+from app.cache import redis_cache
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ async def comic_archive_task(ctx: dict, comic_id: str) -> str:
         comic.archive_status = ArchiveStatus.ARCHIVED
         comic.archived_at = datetime.now(timezone.utc)
         await db.commit()
+        await redis_cache.invalidate_comics(comic_id)
 
         saved_mb = (bytes_before - bytes_after) / 1024 / 1024
         logger.info(

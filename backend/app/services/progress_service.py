@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -7,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.progress import ReadingProgress
 from app.schemas.progress import ComicProgressRequest, FanficProgressRequest, ProgressResponse
+from app.cache import redis_cache
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ async def upsert_comic_progress(
         logger.info("upsert_comic_progress inserted new | story_id=%s", story_id)
     await db.commit()
     await db.refresh(progress)
+    await redis_cache.invalidate_progress("comic")
     return _to_schema(progress)
 
 
@@ -91,6 +94,7 @@ async def upsert_fanfic_progress(
         logger.info("upsert_fanfic_progress inserted new | story_id=%s", story_id)
     await db.commit()
     await db.refresh(progress)
+    await redis_cache.invalidate_progress("fanfic")
     return _to_schema(progress)
 
 
@@ -99,15 +103,22 @@ async def get_all_progress(
     content_type: str,
 ) -> list[ProgressResponse]:
     """Return all progress records for a content type — lets iOS hydrate the library in one call."""
-    logger.info("get_all_progress called | content_type=%s", content_type)
+    cache_key = f"progress:{content_type}"
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("get_all_progress cache hit | content_type=%s", content_type)
+        return [ProgressResponse(**p) for p in json.loads(cached)]
+
     result = await db.execute(
         select(ReadingProgress).where(
             ReadingProgress.content_type == content_type,
         ).order_by(ReadingProgress.updated_at.desc())
     )
     rows = result.scalars().all()
-    logger.info("get_all_progress returning %d records | content_type=%s", len(rows), content_type)
-    return [_to_schema(p) for p in rows]
+    response = [_to_schema(p) for p in rows]
+    await redis_cache.set(cache_key, json.dumps([r.model_dump(mode="json") for r in response]), ttl=120)
+    logger.info("get_all_progress returning %d records (cached) | content_type=%s", len(rows), content_type)
+    return response
 
 
 async def get_progress(

@@ -11,6 +11,7 @@ from app.models.scrape import ScrapeJob
 from app.core.constants import ArchiveStatus, JobStatus, JobType, ScrapeStatus
 from app.core.config import settings
 from app.utils.file_storage import full_path, comic_page_path
+from app.cache import redis_cache
 from app.scrapers.comic.nhentai import NhentaiScraper
 from app.scrapers.comic.toongod import ToongodScraper
 from app.scrapers.comic.hentai20 import Hentai20Scraper
@@ -113,6 +114,7 @@ async def comic_unarchive_task(ctx: dict, comic_id: str) -> str:
         comic.archive_status = ArchiveStatus.NONE
         comic.archived_at = None
         await db.commit()
+        await redis_cache.invalidate_comics(comic_id)
 
         logger.info(
             "comic_unarchive_task complete | comic_id=%s restored=%d failed=%d",

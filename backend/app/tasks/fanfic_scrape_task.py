@@ -11,6 +11,7 @@ from app.models.scrape import ScrapeJob, ScrapeLog
 from app.utils.image_utils import ensure_fanfic_covers, random_fanfic_cover
 from app.core.constants import ScrapeStatus, JobStatus
 from app.scrapers.base import CookieExpiredError, ScraperError
+from app.cache import redis_cache
 from app.scrapers.fanfic.ao3 import AO3Scraper
 from app.scrapers.fanfic.ffnet import FanfictionNetScraper
 
@@ -371,6 +372,10 @@ async def fanfic_scrape_task(ctx, job_id: str):
                  f"Finished — status={job.status} scraped={job.chapters_scraped} failed={job.chapters_failed}",
                  duration_ms=total_ms)
         await db.commit()
+
+        # Invalidate caches so iOS sees updated data
+        await redis_cache.invalidate_fanfics(str(job.story_id))
+        await redis_cache.invalidate_scrape_jobs()
 
         logger.info("fanfic_scrape_task finished | job_id=%s status=%s scraped=%d failed=%d elapsed_ms=%d",
                     job_id, job.status, job.chapters_scraped, job.chapters_failed, total_ms)

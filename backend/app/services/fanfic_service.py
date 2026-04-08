@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from sqlalchemy.orm import selectinload, defer
 from app.models.fanfic import Fanfic, FanficChapter, FanficAuthor
 from app.schemas.fanfic import FanficResponse, FanficChapterResponse
 from app.schemas.shared import PaginatedResponse, AuthorResponse
+from app.cache import redis_cache
 
 logger = logging.getLogger(__name__)
 
@@ -76,17 +78,11 @@ async def list_fanfics(
     completion_status: Optional[str] = None,
     sort: Optional[str] = None,
 ) -> PaginatedResponse[FanficResponse]:
-    filters_applied = []
-    if fandom:
-        filters_applied.append(f"fandom={fandom}")
-    if rating:
-        filters_applied.append(f"rating={rating}")
-    if completion_status:
-        filters_applied.append(f"completion_status={completion_status}")
-    logger.info(
-        "list_fanfics called | page=%d page_size=%d sort=%s filters=[%s]",
-        page, page_size, sort or "default", ", ".join(filters_applied) or "none",
-    )
+    cache_key = f"fanfics:list:{page}:{page_size}:{sort or 'default'}:{fandom or ''}:{rating or ''}:{completion_status or ''}"
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("list_fanfics cache hit | key=%s", cache_key)
+        return PaginatedResponse[FanficResponse](**json.loads(cached))
 
     conditions = [Fanfic.deleted_at.is_(None)]
     if fandom:
@@ -122,7 +118,7 @@ async def list_fanfics(
 
     logger.info("list_fanfics returning %d items for page %d", len(fanfics), page)
     total_pages = ceil(total / page_size) if total > 0 else 1
-    return PaginatedResponse(
+    response = PaginatedResponse(
         items=[_fanfic_to_schema(f, include_chapters=True) for f in fanfics],
         total=total,
         page=page,
@@ -130,10 +126,17 @@ async def list_fanfics(
         total_pages=total_pages,
         has_next=page < total_pages,
     )
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    return response
 
 
 async def get_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> Optional[FanficResponse]:
-    logger.info("get_fanfic called | fanfic_id=%s", fanfic_id)
+    cache_key = f"fanfic:detail:{fanfic_id}"
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("get_fanfic cache hit | fanfic_id=%s", fanfic_id)
+        return FanficResponse(**json.loads(cached))
+
     result = await db.execute(
         select(Fanfic)
         .where(Fanfic.id == fanfic_id, Fanfic.deleted_at.is_(None))
@@ -144,10 +147,10 @@ async def get_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> Optional[FanficR
     )
     fanfic = result.scalar_one_or_none()
     if not fanfic:
-        logger.warning("get_fanfic not found | fanfic_id=%s", fanfic_id)
         return None
-    logger.info("get_fanfic found | fanfic_id=%s title=%s", fanfic_id, fanfic.title)
-    return _fanfic_to_schema(fanfic, include_chapters=True)
+    response = _fanfic_to_schema(fanfic, include_chapters=True)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    return response
 
 
 async def get_chapter(
@@ -155,7 +158,12 @@ async def get_chapter(
     fanfic_id: uuid.UUID,
     chapter_id: uuid.UUID,
 ) -> Optional[FanficChapterResponse]:
-    logger.info("get_chapter called | fanfic_id=%s chapter_id=%s", fanfic_id, chapter_id)
+    cache_key = f"fanfic_chapter:{fanfic_id}:{chapter_id}"
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("get_chapter cache hit | key=%s", cache_key)
+        return FanficChapterResponse(**json.loads(cached))
+
     result = await db.execute(
         select(FanficChapter).where(
             FanficChapter.id == chapter_id,
@@ -165,10 +173,10 @@ async def get_chapter(
     )
     chapter = result.scalar_one_or_none()
     if not chapter:
-        logger.warning("get_chapter not found | fanfic_id=%s chapter_id=%s", fanfic_id, chapter_id)
         return None
-    logger.info("get_chapter found | fanfic_id=%s chapter_id=%s title=%s", fanfic_id, chapter_id, chapter.title)
-    return _chapter_to_schema(chapter, include_content=True)
+    response = _chapter_to_schema(chapter, include_content=True)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=86400)
+    return response
 
 
 async def soft_delete_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> bool:
@@ -182,5 +190,5 @@ async def soft_delete_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> bool:
         return False
     fanfic.deleted_at = datetime.now(timezone.utc)
     await db.commit()
-    logger.info("soft_delete_fanfic completed | fanfic_id=%s title=%s", fanfic_id, fanfic.title)
+    await redis_cache.invalidate_fanfics(str(fanfic_id))
     return True
