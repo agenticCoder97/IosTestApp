@@ -309,5 +309,5 @@ class FanfictionNetScraper(BaseScraper):
         if not content_div:
             return ""
 
-        paragraphs = [p.get_text(separator="\n", strip=True) for p in content_div.find_all("p")]
+        paragraphs = [p.get_text(separator=" ", strip=True) for p in content_div.find_all("p")]
         return "\n\n".join(p for p in paragraphs if p)

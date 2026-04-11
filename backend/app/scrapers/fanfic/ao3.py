@@ -208,7 +208,7 @@ class AO3Scraper(BaseScraper):
         for notes in content_div.select(".end-notes"):
             notes.decompose()
 
-        paragraphs = [p.get_text(separator="\n", strip=True) for p in content_div.find_all("p")]
+        paragraphs = [p.get_text(separator=" ", strip=True) for p in content_div.find_all("p")]
         return "\n\n".join(p for p in paragraphs if p)
 
     async def get_all_chapters_bulk(self, story_url: str) -> dict[float, str]:
@@ -251,7 +251,7 @@ class AO3Scraper(BaseScraper):
                 for n in content.select(".end-notes"):
                     n.decompose()
 
-                paragraphs = [p.get_text(separator="\n", strip=True) for p in content.find_all("p")]
+                paragraphs = [p.get_text(separator=" ", strip=True) for p in content.find_all("p")]
                 text = "\n\n".join(p for p in paragraphs if p)
                 if text:
                     chapters[chapter_num] = text

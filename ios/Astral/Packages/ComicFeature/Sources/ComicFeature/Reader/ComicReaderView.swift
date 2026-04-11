@@ -51,6 +51,9 @@ struct ComicReaderView: View {
     @State private var localPageURLs: [URL]?
     @State private var prevChapterPull: CGFloat = 0
     @State private var prevChapterTriggered = false
+    @State private var showChapterList = false
+    @State private var autoScrollActive = false
+    @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -80,6 +83,11 @@ struct ComicReaderView: View {
     private var isFirstChapter: Bool { currentChapterIndex <= 0 }
     private var isLastChapter:  Bool { currentChapterIndex >= chapters.count - 1 }
 
+    private var chapterProgress: Double {
+        guard pages.count > 1 else { return pages.isEmpty ? 0 : 1 }
+        return Double(currentPage) / Double(pages.count - 1)
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -99,6 +107,23 @@ struct ComicReaderView: View {
             } else {
                 pageContent
             }
+
+            // Reading progress bar — always visible
+            VStack {
+                GeometryReader { geo in
+                    Rectangle()
+                        .fill(AstralColors.gold.opacity(0.6))
+                        .frame(
+                            width: geo.size.width * chapterProgress,
+                            height: 2.5
+                        )
+                        .animation(AstralAnimation.micro, value: currentPage)
+                }
+                .frame(height: 2.5)
+                Spacer()
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
 
             // Brightness overlay
             if brightnessOverlay > 0 {
@@ -198,12 +223,16 @@ struct ComicReaderView: View {
             }
         }
         .onDisappear {
+            autoScrollActive = false
             if let readingSession {
                 readingSession.endedAt = .now
                 try? modelContext.save()
             }
             UIApplication.shared.isIdleTimerDisabled = false
             if forceLandscape { setLandscape(false) }
+        }
+        .onChange(of: readingMode) { _, newMode in
+            if newMode != .webtoon { autoScrollActive = false }
         }
         .overlay(alignment: .top) {
             if showRotateHint {
@@ -233,6 +262,21 @@ struct ComicReaderView: View {
             Button("Save to Photos") { saveCurrentPage() }
             Button("Share")          { shareCurrentPage() }
             Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $showChapterList) {
+            ComicChapterListSheet(
+                chapters: chapters,
+                currentIndex: currentChapterIndex,
+                onSelect: { index in
+                    showChapterList = false
+                    withAnimation(AstralAnimation.quick) {
+                        currentChapterIndex = index
+                        currentPage = 0
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -322,16 +366,20 @@ struct ComicReaderView: View {
                 if let localURLs = localPageURLs, !localURLs.isEmpty {
                     // Device-saved pages — load from local files
                     ForEach(Array(localURLs.enumerated()), id: \.offset) { index, url in
-                        LocalPageView(fileURL: url)
-                            .id(index)
-                            .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
+                        ZoomablePageView {
+                            LocalPageView(fileURL: url)
+                        }
+                        .id(index)
+                        .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
                     }
                 } else {
                     // Network pages
                     ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                        ComicPageView(page: page)
-                            .id(index)
-                            .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
+                        ZoomablePageView {
+                            ComicPageView(page: page)
+                        }
+                        .id(index)
+                        .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
                     }
                 }
 
@@ -361,6 +409,7 @@ struct ComicReaderView: View {
                 toggleHUD()
             }
         )
+        .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
     }
 
     private func pagedReader(reversed: Bool) -> some View {
@@ -368,14 +417,16 @@ struct ComicReaderView: View {
         return ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
                 ForEach(Array(orderedPages.enumerated()), id: \.element.id) { index, page in
-                    ComicPageView(page: page)
-                        .containerRelativeFrame(.horizontal)
-                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                            content
-                                .opacity(phase.isIdentity ? 1.0 : 0.78)
-                                .scaleEffect(phase.isIdentity ? 1.0 : 0.94)
-                        }
-                        .id(index)
+                    ZoomablePageView {
+                        ComicPageView(page: page)
+                    }
+                    .containerRelativeFrame(.horizontal)
+                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                        content
+                            .opacity(phase.isIdentity ? 1.0 : 0.78)
+                            .scaleEffect(phase.isIdentity ? 1.0 : 0.94)
+                    }
+                    .id(index)
                 }
             }
             .scrollTargetLayout()
@@ -498,6 +549,16 @@ struct ComicReaderView: View {
             }
 
             Spacer()
+
+            Button {
+                showChapterList = true
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(AstralColors.white)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
 
             Button {
                 bookmarkCurrentChapter()
@@ -668,6 +729,34 @@ struct ComicReaderView: View {
                         .tint(AstralColors.gold)
                     Image(systemName: "sun.max.fill")
                         .foregroundStyle(AstralColors.muted)
+                }
+            }
+
+            // Auto-scroll (webtoon only)
+            if readingMode == .webtoon {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Image(systemName: "arrow.down.circle")
+                            .foregroundStyle(AstralColors.muted)
+                        Text("Auto-Scroll")
+                            .font(AstralTypography.body)
+                            .foregroundStyle(AstralColors.white)
+                        Spacer()
+                        Toggle("", isOn: $autoScrollActive)
+                            .tint(AstralColors.gold)
+                            .labelsHidden()
+                    }
+
+                    if autoScrollActive {
+                        HStack(spacing: 12) {
+                            Image(systemName: "tortoise")
+                                .foregroundStyle(AstralColors.muted)
+                            Slider(value: $autoScrollSpeed, in: 0.5...5.0, step: 0.5)
+                                .tint(AstralColors.gold)
+                            Image(systemName: "hare")
+                                .foregroundStyle(AstralColors.muted)
+                        }
+                    }
                 }
             }
 
@@ -913,6 +1002,154 @@ private struct LocalPageView: View {
     }
 }
 
+// MARK: - Auto-Scroll Modifier
+
+/// Finds the nearest UIScrollView ancestor and drives smooth continuous scrolling via CADisplayLink.
+private struct AutoScrollModifier: ViewModifier {
+    let isActive: Bool
+    let speed: Double  // points per frame at 60fps
+
+    func body(content: Content) -> some View {
+        content
+            .background(AutoScrollFinder(isActive: isActive, speed: speed))
+    }
+}
+
+/// UIViewRepresentable that finds the enclosing UIScrollView and attaches a CADisplayLink.
+private struct AutoScrollFinder: UIViewRepresentable {
+    let isActive: Bool
+    let speed: Double
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.speed = speed
+
+        if isActive {
+            context.coordinator.startScrolling(in: uiView)
+        } else {
+            context.coordinator.stopScrolling()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(speed: speed)
+    }
+
+    class Coordinator {
+        var speed: Double
+        private var displayLink: CADisplayLink?
+        private weak var scrollView: UIScrollView?
+
+        init(speed: Double) {
+            self.speed = speed
+        }
+
+        func startScrolling(in view: UIView) {
+            guard displayLink == nil else { return }
+            scrollView = findScrollView(in: view)
+            let link = CADisplayLink(target: self, selector: #selector(tick))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+
+        func stopScrolling() {
+            displayLink?.invalidate()
+            displayLink = nil
+        }
+
+        @objc private func tick() {
+            guard let sv = scrollView else { return }
+            let maxY = sv.contentSize.height - sv.bounds.height + sv.contentInset.bottom
+            guard maxY > 0 else { return }
+            let newY = min(sv.contentOffset.y + speed, maxY)
+            sv.contentOffset.y = newY
+        }
+
+        private func findScrollView(in view: UIView) -> UIScrollView? {
+            var current: UIView? = view
+            while let v = current {
+                if let sv = v as? UIScrollView { return sv }
+                current = v.superview
+            }
+            return nil
+        }
+
+        deinit {
+            displayLink?.invalidate()
+        }
+    }
+}
+
+// MARK: - Zoomable Page Wrapper
+
+/// Wraps a comic page view with pinch-to-zoom and double-tap-to-zoom.
+private struct ZoomablePageView<Content: View>: View {
+    let content: Content
+
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .scaleEffect(scale)
+            .offset(offset)
+            .gesture(
+                MagnifyGesture()
+                    .onChanged { value in
+                        scale = lastScale * value.magnification
+                    }
+                    .onEnded { value in
+                        lastScale = max(1.0, min(scale, 5.0))
+                        scale = lastScale
+                        if lastScale <= 1.0 {
+                            withAnimation(AstralAnimation.smooth) {
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        }
+                    }
+                    .simultaneously(with:
+                        DragGesture()
+                            .onChanged { value in
+                                guard scale > 1.0 else { return }
+                                offset = CGSize(
+                                    width: lastOffset.width + value.translation.width,
+                                    height: lastOffset.height + value.translation.height
+                                )
+                            }
+                            .onEnded { _ in
+                                lastOffset = offset
+                            }
+                    )
+            )
+            .onTapGesture(count: 2) {
+                withAnimation(AstralAnimation.smooth) {
+                    if scale > 1.0 {
+                        scale = 1.0
+                        lastScale = 1.0
+                        offset = .zero
+                        lastOffset = .zero
+                    } else {
+                        scale = 2.5
+                        lastScale = 2.5
+                    }
+                }
+            }
+    }
+}
+
 // MARK: - Helpers
 
 private extension Array {
@@ -1008,6 +1245,92 @@ private struct NextChapterTrigger: View {
             }
             .opacity(progress > 0.02 ? 1 : 0.3)
         }
+    }
+}
+
+// MARK: - Chapter List Sheet
+
+private struct ComicChapterListSheet: View {
+    let chapters: [LocalComicChapter]
+    let currentIndex: Int
+    let onSelect: (Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                List(Array(chapters.enumerated()), id: \.element.id) { index, chapter in
+                    Button {
+                        onSelect(index)
+                    } label: {
+                        HStack(spacing: 12) {
+                            // Chapter number pill
+                            Text(chapterNum(chapter))
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(index == currentIndex ? AstralColors.gold : AstralColors.body)
+                                .frame(width: 40, alignment: .center)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let title = chapter.title, !title.isEmpty {
+                                    Text(title)
+                                        .font(AstralTypography.body)
+                                        .foregroundStyle(index == currentIndex ? AstralColors.white : AstralColors.body)
+                                        .lineLimit(1)
+                                }
+                                Text("\(chapter.totalPages) pages")
+                                    .font(AstralTypography.caption)
+                                    .foregroundStyle(AstralColors.muted)
+                            }
+
+                            Spacer()
+
+                            if index == currentIndex {
+                                Image(systemName: "book.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(AstralColors.gold)
+                            }
+
+                            if chapter.isDownloaded {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(AstralColors.success)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .listRowBackground(
+                        index == currentIndex
+                            ? AstralColors.gold.opacity(0.1)
+                            : Color.clear
+                    )
+                    .id(index)
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(AstralColors.background)
+                .onAppear {
+                    proxy.scrollTo(currentIndex, anchor: .center)
+                }
+            }
+            .navigationTitle("Chapters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(AstralColors.gold)
+                }
+            }
+            .toolbarBackground(AstralColors.surface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+        }
+    }
+
+    private func chapterNum(_ ch: LocalComicChapter) -> String {
+        ch.chapterNumber.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(ch.chapterNumber))"
+            : String(format: "%.1f", ch.chapterNumber)
     }
 }
 

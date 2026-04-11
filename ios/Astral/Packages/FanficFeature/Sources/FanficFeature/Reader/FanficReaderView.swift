@@ -31,6 +31,7 @@ struct FanficReaderView: View {
     @AppStorage("fanficReaderHorizontalMargin") private var horizontalMargin: Double = 20
     @State private var showBookmarkSheet = false
     @State private var bookmarkParagraphIndex: Int?
+    @State private var showChapterList = false
     @State private var readingSession: LocalReadingSession?
     @State private var hasRestoredScroll = false
     @State private var scrollTargetIndex: Int?
@@ -60,6 +61,15 @@ struct FanficReaderView: View {
                                         .font(fontFamily.boldFont(size: fontSize * 1.4))
                                         .foregroundStyle(textColor)
                                 }
+
+                                // Reading time estimate
+                                HStack(spacing: 6) {
+                                    Image(systemName: "clock")
+                                        .font(.system(size: fontSize * 0.65))
+                                    Text(readingTimeLabel)
+                                        .font(fontFamily.font(size: fontSize * 0.75))
+                                }
+                                .foregroundStyle(AstralColors.muted.opacity(0.8))
                             }
                             .padding(.bottom, 8)
 
@@ -135,6 +145,23 @@ struct FanficReaderView: View {
                     }
                 }
             }
+
+            // Reading progress bar — always visible
+            VStack {
+                GeometryReader { geo in
+                    Rectangle()
+                        .fill(AstralColors.gold.opacity(0.6))
+                        .frame(
+                            width: geo.size.width * (fanfic.scrollOffsetPercent ?? 0),
+                            height: 2.5
+                        )
+                        .animation(AstralAnimation.micro, value: fanfic.scrollOffsetPercent)
+                }
+                .frame(height: 2.5)
+                Spacer()
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
 
             // Chapter + favourite overlay — top right
             if showReaderBar {
@@ -224,6 +251,18 @@ struct FanficReaderView: View {
             )
             .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showChapterList) {
+            FanficChapterListSheet(
+                chapters: allChapters,
+                currentChapterId: currentChapter.id,
+                onSelect: { chapter in
+                    showChapterList = false
+                    navigateTo(chapter)
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private var backgroundColor: Color {
@@ -240,6 +279,15 @@ struct FanficReaderView: View {
         case .sepia: Color(hex: 0xD4C5A9)
         case .paper: Color(hex: 0x2C2C2C)
         }
+    }
+
+    private var readingTimeLabel: String {
+        let wordCount = chapterContent.split(separator: " ").count
+        let minutes = max(1, wordCount / 238)
+        let wordStr = wordCount > 1000
+            ? String(format: "%.1fk words", Double(wordCount) / 1000.0)
+            : "\(wordCount) words"
+        return "\(wordStr) · \(minutes) min read"
     }
 
     private var chapterFavOverlay: some View {
@@ -263,6 +311,20 @@ struct FanficReaderView: View {
                         .monospacedDigit()
                 }
             }
+
+            Button {
+                showChapterList = true
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(AstralColors.white)
+                }
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
 
             Button {
                 withAnimation(AstralAnimation.bouncy) {
@@ -399,7 +461,14 @@ struct FanficReaderView: View {
     private var paragraphs: [String] {
         chapterContent
             .components(separatedBy: "\n\n")
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { block in
+                // Collapse stray single newlines within a paragraph to spaces.
+                // Scraped content may contain \n from inline HTML tags (<em>, <br>, etc.)
+                // that should not cause mid-paragraph line breaks.
+                block.replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
     }
 
     private func isSceneBreak(_ text: String) -> Bool {
@@ -560,6 +629,88 @@ struct FanficReaderView: View {
         try? modelContext.save()
         // Changing currentChapter triggers .task(id:) to re-fire
         currentChapter = chapter
+    }
+}
+
+// MARK: - Chapter List Sheet
+
+private struct FanficChapterListSheet: View {
+    let chapters: [LocalFanficChapter]
+    let currentChapterId: UUID
+    let onSelect: (LocalFanficChapter) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                List(chapters, id: \.id) { chapter in
+                    let isCurrent = chapter.id == currentChapterId
+                    Button {
+                        onSelect(chapter)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(chapterNum(chapter))
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(isCurrent ? AstralColors.gold : AstralColors.body)
+                                .frame(width: 40, alignment: .center)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let title = chapter.title, !title.isEmpty {
+                                    Text(title)
+                                        .font(AstralTypography.body)
+                                        .foregroundStyle(isCurrent ? AstralColors.white : AstralColors.body)
+                                        .lineLimit(1)
+                                }
+                                if let wc = chapter.wordCount, wc > 0 {
+                                    Text("\(wc.formatted()) words · \(max(1, wc / 238)) min")
+                                        .font(AstralTypography.caption)
+                                        .foregroundStyle(AstralColors.muted)
+                                }
+                            }
+
+                            Spacer()
+
+                            if isCurrent {
+                                Image(systemName: "book.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(AstralColors.gold)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .listRowBackground(
+                        isCurrent
+                            ? AstralColors.gold.opacity(0.1)
+                            : Color.clear
+                    )
+                    .id(chapter.id)
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(AstralColors.background)
+                .onAppear {
+                    proxy.scrollTo(currentChapterId, anchor: .center)
+                }
+            }
+            .navigationTitle("Chapters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(AstralColors.gold)
+                }
+            }
+            .toolbarBackground(AstralColors.surface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+        }
+    }
+
+    private func chapterNum(_ ch: LocalFanficChapter) -> String {
+        ch.chapterNumber.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(ch.chapterNumber))"
+            : String(format: "%.1f", ch.chapterNumber)
     }
 }
 
