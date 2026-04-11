@@ -54,6 +54,7 @@ struct ComicReaderView: View {
     @State private var showChapterList = false
     @State private var autoScrollActive = false
     @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
+    @State private var offlineError = false
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -106,6 +107,21 @@ struct ComicReaderView: View {
                 .foregroundStyle(AstralColors.white)
             } else {
                 pageContent
+            }
+
+            if offlineError && pages.isEmpty && localPageURLs == nil {
+                VStack(spacing: 16) {
+                    Image(systemName: "cloud.slash")
+                        .font(.system(size: 44))
+                        .foregroundStyle(AstralColors.muted)
+                    Text("Pages not available offline")
+                        .font(AstralTypography.body)
+                        .foregroundStyle(AstralColors.white)
+                    Text("Download this chapter or connect to read")
+                        .font(AstralTypography.caption)
+                        .foregroundStyle(AstralColors.muted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             // Reading progress bar — always visible
@@ -897,15 +913,23 @@ struct ComicReaderView: View {
         }
 
         // Try local files first (device-saved chapter)
-        if let urls = ChapterDownloadService.shared.localPageURLs(for: chapter), !urls.isEmpty {
-            localPageURLs = urls
-            pages = []  // empty — webtoon reader will use localPageURLs directly
-            AstralLogger.info("loadPages: using \(urls.count) local pages", context: "ComicReader")
-            isLoading = false
-            return
+        if let urls = ChapterDownloadService.shared.localPageURLs(for: chapter) {
+            if urls.count == chapter.totalPages || chapter.totalPages == 0 {
+                localPageURLs = urls
+                pages = []
+                AstralLogger.info("loadPages: using \(urls.count) local pages", context: "ComicReader")
+                isLoading = false
+                return
+            } else {
+                // Page count mismatch — partial/corrupt download
+                chapter.downloadStatus = .failed
+                chapter.downloadError = "Expected \(chapter.totalPages) pages, found \(urls.count)"
+                AstralLogger.warning("loadPages: local page count mismatch (\(urls.count)/\(chapter.totalPages)), falling through to network", context: "ComicReader")
+            }
         }
 
         localPageURLs = nil
+        offlineError = false
         do {
             let response: [PageResponse] = try await APIClient.shared.request(
                 .chapterPages(comicId: comic.id, chapterId: chapter.id)
@@ -914,6 +938,7 @@ struct ComicReaderView: View {
             AstralLogger.info("loadPages: got \(pages.count) pages", context: "ComicReader")
         } catch {
             AstralLogger.error("loadPages failed: \(error)", context: "ComicReader")
+            offlineError = true
         }
         isLoading = false
     }
