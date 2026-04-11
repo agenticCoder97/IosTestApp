@@ -2,9 +2,21 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
+
+class AstralAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        BackgroundDownloadSession.shared.systemCompletionHandler = completionHandler
+    }
+}
 
 @main
 struct AstralApp: App {
+    @UIApplicationDelegateAdaptor(AstralAppDelegate.self) var appDelegate
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             LocalComic.self,

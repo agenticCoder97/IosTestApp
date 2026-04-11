@@ -217,4 +217,92 @@ final class ChapterDownloadService {
             throw DownloadError.insufficientDiskSpace
         }
     }
+
+    // MARK: - Background Downloads
+
+    /// Enqueue all pending chapters for background download (survives app kill).
+    func downloadAllChaptersBackground(
+        comic: LocalComic,
+        chapters: [LocalComicChapter],
+        modelContext: ModelContext
+    ) async {
+        let pending = chapters.filter { $0.downloadStatus != .complete && $0.scrapeStatus == "scraped" }
+        guard !pending.isEmpty else { return }
+
+        BackgroundDownloadSession.shared.onChapterComplete = { [weak self] comicId, chapterId in
+            guard let self else { return }
+            self.finalizeBackgroundChapter(comicId: comicId, chapterId: chapterId, chapters: chapters, comic: comic, modelContext: modelContext)
+        }
+        BackgroundDownloadSession.shared.onChapterFailed = { _, chapterId, error in
+            if let ch = chapters.first(where: { $0.id == chapterId }) {
+                ch.downloadStatus = .failed
+                ch.downloadError = error
+                try? modelContext.save()
+            }
+        }
+
+        for chapter in pending {
+            do {
+                try checkDiskSpace(estimatedBytes: Int64(chapter.totalPages) * 500_000)
+
+                let pages: [PageResponse] = try await APIClient.shared.request(
+                    .chapterPages(comicId: comic.id, chapterId: chapter.id)
+                )
+
+                let stagingDir = tempDownloadDir.appendingPathComponent(chapter.id.uuidString)
+                let pageURLs = pages.compactMap { page -> (pageNumber: Int, url: URL)? in
+                    guard let url = URL(string: AppConfig.staticBaseURL + page.filePath) else { return nil }
+                    return (page.pageNumber, url)
+                }
+
+                chapter.downloadStatus = .downloading
+                try? modelContext.save()
+
+                await BackgroundDownloadSession.shared.enqueueChapter(
+                    comicId: comic.id,
+                    chapterId: chapter.id,
+                    pageURLs: pageURLs,
+                    stagingDir: stagingDir
+                )
+            } catch {
+                chapter.downloadStatus = .failed
+                chapter.downloadError = error.localizedDescription
+                try? modelContext.save()
+            }
+        }
+    }
+
+    /// Called when BackgroundDownloadSession finishes all pages for a chapter.
+    private func finalizeBackgroundChapter(
+        comicId: UUID,
+        chapterId: UUID,
+        chapters: [LocalComicChapter],
+        comic: LocalComic,
+        modelContext: ModelContext
+    ) {
+        guard let chapter = chapters.first(where: { $0.id == chapterId }) else { return }
+
+        let stagingDir = tempDownloadDir.appendingPathComponent(chapterId.uuidString)
+        let relativeDir = "comics/\(comicId)/\(chapterId)"
+        let finalDir = documentsDir.appendingPathComponent(relativeDir)
+
+        do {
+            if fileManager.fileExists(atPath: finalDir.path) {
+                try fileManager.removeItem(at: finalDir)
+            }
+            try fileManager.createDirectory(at: finalDir.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.moveItem(at: stagingDir, to: finalDir)
+
+            chapter.localPagesPath = relativeDir
+            chapter.downloadStatus = .complete
+            chapter.downloadedAt = .now
+            chapter.isDownloaded = true
+            comic.isDownloaded = chapters.allSatisfy { $0.downloadStatus == .complete }
+            try modelContext.save()
+        } catch {
+            chapter.downloadStatus = .failed
+            chapter.downloadError = "Failed to finalize: \(error.localizedDescription)"
+            try? modelContext.save()
+        }
+    }
 }
