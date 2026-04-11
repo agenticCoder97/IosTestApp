@@ -469,48 +469,28 @@ struct FanficDetailView: View {
     }
 
     private func handleDownloadTap() {
-        // Download all chapter text to device for offline reading
         guard !isDownloading else { return }
-        let pendingChapters = chapters.filter { $0.localTextPath == nil && $0.scrapeStatus == "scraped" }
-        if pendingChapters.isEmpty {
-            // All downloaded — delete local files
-            for chapter in chapters {
-                if let path = chapter.localTextPath {
-                    let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                        .appendingPathComponent(path)
-                    try? FileManager.default.removeItem(at: url)
-                    chapter.localTextPath = nil
-                    chapter.isDownloaded = false
-                }
-            }
-            fanfic.isDownloaded = false
-            try? modelContext.save()
+
+        let allComplete = !chapters.isEmpty && chapters.allSatisfy { $0.downloadStatus == .complete }
+        if allComplete {
+            FanficDownloadService.shared.deleteAllChapters(
+                fanfic: fanfic,
+                chapters: Array(chapters),
+                modelContext: modelContext
+            )
             return
         }
 
         isDownloading = true
         Task {
-            for (idx, chapter) in pendingChapters.enumerated() {
-                do {
-                    let response: FanficChapterResponse = try await APIClient.shared.request(
-                        .fanficChapter(fanficId: fanfic.id, chapterId: chapter.id)
-                    )
-                    if let content = response.content {
-                        let relPath = "fanfics/\(fanfic.id)/ch\(Int(chapter.chapterNumber)).txt"
-                        let fullURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                            .appendingPathComponent(relPath)
-                        try FileManager.default.createDirectory(at: fullURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                        try content.write(to: fullURL, atomically: true, encoding: .utf8)
-                        chapter.localTextPath = relPath
-                        chapter.isDownloaded = true
-                    }
-                } catch {
-                    AstralLogger.error("Download ch \(chapter.chapterNumber) failed: \(error)", context: "FanficDownload")
+            await FanficDownloadService.shared.downloadAllChapters(
+                fanfic: fanfic,
+                chapters: Array(chapters),
+                modelContext: modelContext,
+                onProgress: { completed, total in
+                    downloadProgress = (completed, total)
                 }
-                downloadProgress = (idx + 1, pendingChapters.count)
-            }
-            fanfic.isDownloaded = chapters.allSatisfy { $0.localTextPath != nil }
-            try? modelContext.save()
+            )
             isDownloading = false
         }
     }
