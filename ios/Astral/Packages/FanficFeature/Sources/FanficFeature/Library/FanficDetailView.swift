@@ -664,6 +664,8 @@ private struct FanficChapterRow: View {
 
             Spacer()
 
+            downloadStatusIcon(for: chapter)
+
             statusIcon(for: chapter.scrapeStatus)
         }
         .padding(.horizontal, 16)
@@ -676,6 +678,25 @@ private struct FanficChapterRow: View {
         return num.truncatingRemainder(dividingBy: 1) == 0
             ? "Chapter \(Int(num))"
             : "Chapter \(num)"
+    }
+
+    @ViewBuilder
+    private func downloadStatusIcon(for chapter: LocalFanficChapter) -> some View {
+        switch chapter.downloadStatus {
+        case .complete:
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(AstralColors.success)
+        case .downloading, .queued:
+            ProgressView()
+                .scaleEffect(0.6)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(AstralColors.error)
+        case .none:
+            EmptyView()
+        }
     }
 
     @ViewBuilder

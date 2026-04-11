@@ -745,11 +745,32 @@ private struct ComicChapterRow: View {
 
             Spacer()
 
+            downloadStatusIcon(for: chapter)
+
             statusIcon(for: chapter.scrapeStatus)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func downloadStatusIcon(for chapter: LocalComicChapter) -> some View {
+        switch chapter.downloadStatus {
+        case .complete:
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(AstralColors.success)
+        case .downloading, .queued:
+            ProgressView()
+                .scaleEffect(0.6)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(AstralColors.error)
+        case .none:
+            EmptyView()
+        }
     }
 
     @ViewBuilder
