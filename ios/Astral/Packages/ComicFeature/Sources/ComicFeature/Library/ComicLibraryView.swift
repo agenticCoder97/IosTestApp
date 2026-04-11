@@ -62,6 +62,17 @@ struct ComicLibraryView: View {
                     }
                 }
 
+                if let latestSync = displayedComics.compactMap(\.lastSyncedAt).max() {
+                    HStack {
+                        Spacer()
+                        Text("Updated \(latestSync, format: .relative(presentation: .named))")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                }
+
                 if !filterFavourites && !inProgressComics.isEmpty {
                     ContinueReadingStrip(comics: inProgressComics)
                         .padding(.top, 8)

@@ -122,6 +122,17 @@ struct FanficLibraryView: View {
                     }
                 }
 
+                if let latestSync = filteredFanfics.compactMap(\.lastSyncedAt).max() {
+                    HStack {
+                        Spacer()
+                        Text("Updated \(latestSync, format: .relative(presentation: .named))")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                }
+
                 if !filterFavourites && !inProgressFanfics.isEmpty && searchText.isEmpty {
                     FanficContinueReadingStrip(fanfics: inProgressFanfics)
                         .padding(.top, 8)

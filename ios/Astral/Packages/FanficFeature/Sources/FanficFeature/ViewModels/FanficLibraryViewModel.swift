@@ -126,6 +126,9 @@ final class FanficLibraryViewModel {
                     fanfic.progressPercent = Double(progress.lastChapterNumber) / Double(fanfic.totalChapters)
                 }
             }
+            for fanfic in allFanfics {
+                fanfic.lastSyncedAt = .now
+            }
             try modelContext.save()
             lastSyncTime = .now
         } catch is URLError {

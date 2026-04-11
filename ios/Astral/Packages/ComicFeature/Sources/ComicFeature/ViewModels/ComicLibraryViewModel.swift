@@ -86,6 +86,9 @@ final class ComicLibraryViewModel {
                     comic.progressPercent = Double(progress.lastChapterNumber) / Double(comic.totalChapters)
                 }
             }
+            for comic in allComics {
+                comic.lastSyncedAt = .now
+            }
             try modelContext.save()
             lastSyncTime = .now
         } catch let error as APIError where error == .cookieRefreshNeeded {
