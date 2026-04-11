@@ -54,6 +54,8 @@ public final class LocalFanfic {
     public var bookmarksCount: Int?
     /// Date when the user first completed this fanfic (progressPercent reached 1.0)
     public var completedAt: Date?
+    /// Last time the fanfic metadata was synced from the backend
+    public var lastSyncedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalFanficChapter.fanfic)
     public var chapters: [LocalFanficChapter]?
@@ -105,5 +107,10 @@ public final class LocalFanfic {
     public var estimatedWordsRead: Int {
         guard let wc = wordCount, totalChapters > 0 else { return 0 }
         return Int(Double(wc) * progressPercent)
+    }
+
+    public var isFullyDownloaded: Bool {
+        guard let chs = chapters, !chs.isEmpty else { return false }
+        return chs.allSatisfy { $0.downloadStatus == .complete }
     }
 }

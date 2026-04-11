@@ -41,6 +41,8 @@ public final class LocalComic {
     public var archiveStatus: String?
     /// When the comic was archived
     public var archivedAt: Date?
+    /// Last time the comic metadata was synced from the backend
+    public var lastSyncedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalComicChapter.comic)
     public var chapters: [LocalComicChapter]?
@@ -88,4 +90,9 @@ public final class LocalComic {
     public var isArchived: Bool { archiveStatus == "archived" }
     public var isArchiving: Bool { archiveStatus == "archiving" }
     public var isUnarchiving: Bool { archiveStatus == "unarchiving" }
+
+    public var isFullyDownloaded: Bool {
+        guard let chs = chapters, !chs.isEmpty else { return false }
+        return chs.allSatisfy { $0.downloadStatus == .complete }
+    }
 }
