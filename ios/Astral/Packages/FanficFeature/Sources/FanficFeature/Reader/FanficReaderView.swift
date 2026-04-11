@@ -35,6 +35,7 @@ struct FanficReaderView: View {
     @State private var readingSession: LocalReadingSession?
     @State private var hasRestoredScroll = false
     @State private var scrollTargetIndex: Int?
+    @State private var offlineError = false
 
     var body: some View {
         ZStack {
@@ -44,6 +45,19 @@ struct FanficReaderView: View {
                 ProgressView()
                     .tint(AstralColors.gold)
                     .scaleEffect(1.2)
+            } else if offlineError && chapterContent.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "cloud.slash")
+                        .font(.system(size: 44))
+                        .foregroundStyle(AstralColors.muted)
+                    Text("Chapter not available offline")
+                        .font(AstralTypography.body)
+                        .foregroundStyle(AstralColors.body)
+                    Text("Download this chapter or connect to read")
+                        .font(AstralTypography.caption)
+                        .foregroundStyle(AstralColors.muted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -484,25 +498,51 @@ struct FanficReaderView: View {
 
     private func loadChapter() async {
         AstralLogger.info("loadChapter: ch \(currentChapter.chapterNumber) (id=\(currentChapter.id)) for '\(fanfic.title)'", context: "FanficReader")
+        offlineError = false
+
         if let previewContent {
             chapterContent = previewContent
             calculateScrollTarget()
             isLoading = false
             return
         }
+
+        // 1. Try local file first (offline reading)
+        if let localPath = currentChapter.localTextPath {
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent(localPath)
+            if let content = try? String(contentsOf: url, encoding: .utf8), !content.isEmpty {
+                chapterContent = content
+                AstralLogger.info("loadChapter: loaded \(content.count) chars from local file", context: "FanficReader")
+                calculateScrollTarget()
+                isLoading = false
+                return
+            } else {
+                // File missing or corrupt — reset download state
+                currentChapter.downloadStatus = .none
+                currentChapter.localTextPath = nil
+                currentChapter.isDownloaded = false
+                try? modelContext.save()
+                AstralLogger.warning("loadChapter: local file missing/corrupt, falling through to network", context: "FanficReader")
+            }
+        }
+
+        // 2. Try network
         do {
             let response: FanficChapterResponse = try await APIClient.shared.request(
                 .fanficChapter(fanficId: fanfic.id, chapterId: currentChapter.id)
             )
             guard !Task.isCancelled else { return }
             chapterContent = response.content ?? ""
-            AstralLogger.info("loadChapter: got \(chapterContent.count) chars", context: "FanficReader")
+            AstralLogger.info("loadChapter: got \(chapterContent.count) chars from network", context: "FanficReader")
         } catch {
             guard !Task.isCancelled else { return }
-            chapterContent = "Failed to load chapter."
+            // 3. Both local and network failed
+            chapterContent = ""
+            offlineError = true
             AstralLogger.error("loadChapter failed: \(error)", context: "FanficReader")
         }
-        // Calculate scroll target BEFORE isLoading flips — captures position before paragraph .onAppear can overwrite it
+
         calculateScrollTarget()
         isLoading = false
     }
