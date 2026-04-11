@@ -50,6 +50,10 @@ struct AstralApp: App {
         WindowGroup {
             RootView()
                 .task { ContentBlocker.shared.precompile() }
+                .task {
+                    let context = sharedModelContainer.mainContext
+                    OrphanCleanupService.cleanOnLaunch(modelContext: context)
+                }
         }
         .modelContainer(sharedModelContainer)
     }
