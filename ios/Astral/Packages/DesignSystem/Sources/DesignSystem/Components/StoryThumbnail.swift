@@ -1,16 +1,19 @@
 import SwiftUI
+import Core
 
-/// Reusable thumbnail view — tries loading from URL, falls back to a colored placeholder.
+/// Reusable thumbnail view — uses disk-cached image loading, falls back to a colored placeholder.
 public struct StoryThumbnail: View {
-    let url: URL?
+    let path: String?
+    let baseURL: String
     let title: String
     let icon: String
     let width: CGFloat
     let height: CGFloat
 
-    /// Initialize with a pre-resolved URL (caller constructs from AppConfig.staticBaseURL + path).
+    /// Initialize with a pre-resolved URL (backward compat).
     public init(url: URL?, title: String, icon: String = "book.fill", width: CGFloat = 100, height: CGFloat = 140) {
-        self.url = url
+        self.path = url?.absoluteString
+        self.baseURL = ""
         self.title = title
         self.icon = icon
         self.width = width
@@ -23,31 +26,13 @@ public struct StoryThumbnail: View {
         self.icon = icon
         self.width = width
         self.height = height
-        if let path, !path.isEmpty {
-            if path.hasPrefix("http") {
-                self.url = URL(string: path)
-            } else {
-                self.url = URL(string: baseURL + path)
-            }
-        } else {
-            self.url = nil
-        }
+        self.baseURL = baseURL
+        self.path = path
     }
 
     public var body: some View {
-        if let url {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: width, height: height)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                default:
-                    PlaceholderThumbnail(title: title, icon: icon, size: CGSize(width: width, height: height))
-                }
-            }
+        if let path, !path.isEmpty {
+            CachedAsyncImage(remotePath: path, baseURL: baseURL, width: width, height: height)
         } else {
             PlaceholderThumbnail(title: title, icon: icon, size: CGSize(width: width, height: height))
         }
