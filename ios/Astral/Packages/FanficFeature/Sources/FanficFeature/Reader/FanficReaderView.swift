@@ -194,7 +194,7 @@ struct FanficReaderView: View {
                 }
             }
 
-            // Floating back button — always visible
+            // Floating back button — always visible as escape hatch
             VStack {
                 HStack {
                     Button { dismiss() } label: {
@@ -207,10 +207,12 @@ struct FanficReaderView: View {
                     .accessibilityIdentifier(AccessibilityID.readerBackButton)
                     .padding(.leading, 16)
                     .padding(.top, 54)
+                    .opacity(showReaderBar ? 0 : 0.6)
                     Spacer()
                 }
                 Spacer()
             }
+            .allowsHitTesting(!showReaderBar)
 
             // Reading progress bar — always visible
             VStack {
