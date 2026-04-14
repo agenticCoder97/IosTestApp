@@ -28,13 +28,16 @@ jobs:
         working-directory: ios/Astral
         run: xcodegen generate
 
-      - name: Build and test Core package
-        working-directory: ios/Astral/Packages/Core
-        run: swift test --parallel
-
-      - name: Build and test Networking package
-        working-directory: ios/Astral/Packages/Networking
-        run: swift test --parallel
+      - name: Run unit tests
+        working-directory: ios/Astral
+        run: |
+          xcodebuild test \
+            -scheme Astral \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
+            -only-testing:CoreTests \
+            -only-testing:NetworkingTests \
+            CODE_SIGNING_ALLOWED=NO
 
   ui-tests:
     name: UI Tests
@@ -60,7 +63,7 @@ jobs:
           xcodebuild build-for-testing \
             -scheme Astral \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 15,OS=17.2" \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
@@ -70,7 +73,7 @@ jobs:
           xcodebuild test-without-building \
             -scheme AstralUITests \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 15,OS=17.2" \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             -derivedDataPath build \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO
