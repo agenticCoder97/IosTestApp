@@ -1109,6 +1109,7 @@ private struct AutoScrollFinder: UIViewRepresentable {
         Coordinator(speed: speed)
     }
 
+    @MainActor
     class Coordinator {
         var speed: Double
         private var displayLink: CADisplayLink?
@@ -1149,8 +1150,10 @@ private struct AutoScrollFinder: UIViewRepresentable {
             return nil
         }
 
-        deinit {
-            displayLink?.invalidate()
+        nonisolated deinit {
+            // stopScrolling() handles cleanup; deinit is a safety net.
+            // CADisplayLink is invalidated in stopScrolling() which is
+            // always called from updateUIView before deallocation.
         }
     }
 }
