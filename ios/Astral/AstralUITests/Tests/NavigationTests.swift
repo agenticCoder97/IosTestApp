@@ -28,10 +28,7 @@ final class NavigationTests: BaseTestCase {
         comicLibrary.assertVisible()
 
         // Open sidebar (the hamburger menu button)
-        let sidebarButton = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS 'line.3.horizontal'")
-        ).firstMatch
-        sidebarButton.waitAndTap()
+        app.buttons["sidebar.toggle"].waitAndTap()
 
         // Tap Stats
         let sidebar = SidebarScreen(app: app)
