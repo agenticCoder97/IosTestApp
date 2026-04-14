@@ -57,6 +57,7 @@ struct FanficDetailView: View {
                             selectedChapter = chapter
                         }
                     )
+                    .accessibilityIdentifier(AccessibilityID.detailContinueReading)
                     .padding(.horizontal, 16)
                 }
 
@@ -124,6 +125,7 @@ struct FanficDetailView: View {
                                         isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
                                     )
                                 }
+                                .accessibilityIdentifier(AccessibilityID.chapterRow(Int(chapter.chapterNumber)))
                                 .buttonStyle(.plain)
                                 .contextMenu {
                                     Button {
