@@ -34,7 +34,7 @@ jobs:
           xcodebuild test \
             -scheme Astral \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 16,OS=18.0" \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             -only-testing:CoreTests \
             -only-testing:NetworkingTests \
             CODE_SIGNING_ALLOWED=NO
@@ -63,7 +63,7 @@ jobs:
           xcodebuild build-for-testing \
             -scheme Astral \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 16,OS=18.0" \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
@@ -73,7 +73,7 @@ jobs:
           xcodebuild test-without-building \
             -scheme AstralUITests \
             -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 16,OS=18.0" \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             -derivedDataPath build \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO
