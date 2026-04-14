@@ -28,15 +28,22 @@ jobs:
         working-directory: ios/Astral
         run: xcodegen generate
 
-      - name: Run unit tests
+      - name: Run Core tests
         working-directory: ios/Astral
         run: |
           xcodebuild test \
-            -scheme Astral \
+            -scheme Core \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
-            -only-testing:CoreTests \
-            -only-testing:NetworkingTests \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run Networking tests
+        working-directory: ios/Astral
+        run: |
+          xcodebuild test \
+            -scheme Networking \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             CODE_SIGNING_ALLOWED=NO
 
   ui-tests:
