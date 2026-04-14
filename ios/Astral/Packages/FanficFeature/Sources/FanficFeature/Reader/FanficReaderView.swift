@@ -19,6 +19,7 @@ struct FanficReaderView: View {
     }
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
 
     @State private var chapterContent = ""
     @State private var isLoading = true
@@ -36,6 +37,7 @@ struct FanficReaderView: View {
     @State private var hasRestoredScroll = false
     @State private var scrollTargetIndex: Int?
     @State private var offlineError = false
+    @State private var horizontalPage: String? = "current"
 
     var body: some View {
         ZStack {
@@ -59,105 +61,154 @@ struct FanficReaderView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: paragraphSpacing) {
-                            // Chapter header
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Chapter \(currentChapter.chapterNumber, specifier: "%.0f")")
-                                    .font(fontFamily.font(size: fontSize * 0.75))
-                                    .tracking(1.5)
-                                    .textCase(.uppercase)
-                                    .foregroundStyle(AstralColors.muted)
-
-                                if let title = currentChapter.title {
-                                    Text(title)
-                                        .font(fontFamily.boldFont(size: fontSize * 1.4))
-                                        .foregroundStyle(textColor)
-                                }
-
-                                // Reading time estimate
-                                HStack(spacing: 6) {
-                                    Image(systemName: "clock")
-                                        .font(.system(size: fontSize * 0.65))
-                                    Text(readingTimeLabel)
-                                        .font(fontFamily.font(size: fontSize * 0.75))
-                                }
-                                .foregroundStyle(AstralColors.muted.opacity(0.8))
-                            }
-                            .padding(.bottom, 8)
-
-                            // Divider between header and content
-                            HStack(spacing: 8) {
-                                Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
-                                Image(systemName: "diamond.fill")
-                                    .font(.system(size: 5))
-                                    .foregroundStyle(AstralColors.muted.opacity(0.5))
-                                Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
-                            }
-                            .padding(.bottom, 4)
-
-                            ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
-                                if isSceneBreak(paragraph) {
-                                    // Scene break — centered ornament
-                                    HStack {
-                                        Spacer()
-                                        Text("* * *")
-                                            .font(fontFamily.font(size: fontSize))
-                                            .tracking(6)
-                                            .foregroundStyle(AstralColors.muted.opacity(0.6))
-                                        Spacer()
-                                    }
-                                    .padding(.vertical, 8)
-                                    .id(index)
-                                } else {
-                                    Text(paragraph)
-                                        .font(fontFamily.font(size: fontSize))
-                                        .lineSpacing((lineHeight - 1.0) * fontSize)
-                                        .foregroundStyle(textColor)
-                                        .id(index)
-                                        .onAppear {
-                                            // Only track scroll after restoration to avoid overwriting saved position
-                                            guard hasRestoredScroll else { return }
-                                            if paragraphs.count > 1 {
-                                                fanfic.scrollOffsetPercent = Double(index) / Double(paragraphs.count - 1)
-                                            }
-                                        }
-                                        .simultaneousGesture(
-                                            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                                                bookmarkParagraphIndex = index
-                                                showBookmarkSheet = true
-                                            }
-                                        )
-                                }
-                            }
-
-                            // Chapter navigation footer
-                            chapterNavigationFooter
+                // Horizontal paging: prev chapter | current chapter | next chapter
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 0) {
+                        // Previous chapter placeholder
+                        if let prev = previousChapter {
+                            chapterPlaceholder(chapter: prev, direction: "Previous Chapter", icon: "chevron.left")
+                                .containerRelativeFrame([.horizontal, .vertical])
+                                .id("prev")
                         }
-                        .padding(.horizontal, horizontalMargin)
-                        .padding(.vertical, 20)
-                        .animation(AstralAnimation.quick, value: fontSize)
-                        .animation(AstralAnimation.quick, value: lineHeight)
-                        .animation(AstralAnimation.quick, value: horizontalMargin)
-                        .padding(.bottom, 100)
-                    }
-                    .onAppear {
-                        guard !hasRestoredScroll else { return }
-                        if let target = scrollTargetIndex, !paragraphs.isEmpty {
-                            // Scroll to saved position, then enable tracking
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                withAnimation { proxy.scrollTo(target, anchor: .top) }
-                                // Enable scroll tracking after restoration settles
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+
+                        // Current chapter — vertical scroll content
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: paragraphSpacing) {
+                                    // Chapter header
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("Chapter \(currentChapter.chapterNumber, specifier: "%.0f")")
+                                            .font(fontFamily.font(size: fontSize * 0.75))
+                                            .tracking(1.5)
+                                            .textCase(.uppercase)
+                                            .foregroundStyle(AstralColors.muted)
+
+                                        if let title = currentChapter.title {
+                                            Text(title)
+                                                .font(fontFamily.boldFont(size: fontSize * 1.4))
+                                                .foregroundStyle(textColor)
+                                        }
+
+                                        // Reading time estimate
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "clock")
+                                                .font(.system(size: fontSize * 0.65))
+                                            Text(readingTimeLabel)
+                                                .font(fontFamily.font(size: fontSize * 0.75))
+                                        }
+                                        .foregroundStyle(AstralColors.muted.opacity(0.8))
+                                    }
+                                    .padding(.bottom, 8)
+
+                                    // Divider between header and content
+                                    HStack(spacing: 8) {
+                                        Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
+                                        Image(systemName: "diamond.fill")
+                                            .font(.system(size: 5))
+                                            .foregroundStyle(AstralColors.muted.opacity(0.5))
+                                        Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
+                                    }
+                                    .padding(.bottom, 4)
+
+                                    ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
+                                        if isSceneBreak(paragraph) {
+                                            // Scene break — centered ornament
+                                            HStack {
+                                                Spacer()
+                                                Text("* * *")
+                                                    .font(fontFamily.font(size: fontSize))
+                                                    .tracking(6)
+                                                    .foregroundStyle(AstralColors.muted.opacity(0.6))
+                                                Spacer()
+                                            }
+                                            .padding(.vertical, 8)
+                                            .id(index)
+                                        } else {
+                                            Text(paragraph)
+                                                .font(fontFamily.font(size: fontSize))
+                                                .lineSpacing((lineHeight - 1.0) * fontSize)
+                                                .foregroundStyle(textColor)
+                                                .id(index)
+                                                .onAppear {
+                                                    guard hasRestoredScroll else { return }
+                                                    if paragraphs.count > 1 {
+                                                        fanfic.scrollOffsetPercent = Double(index) / Double(paragraphs.count - 1)
+                                                    }
+                                                }
+                                                .simultaneousGesture(
+                                                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                                                        bookmarkParagraphIndex = index
+                                                        showBookmarkSheet = true
+                                                    }
+                                                )
+                                        }
+                                    }
+
+                                    // Chapter navigation footer
+                                    chapterNavigationFooter
+                                }
+                                .padding(.horizontal, horizontalMargin)
+                                .padding(.vertical, 20)
+                                .animation(AstralAnimation.quick, value: fontSize)
+                                .animation(AstralAnimation.quick, value: lineHeight)
+                                .animation(AstralAnimation.quick, value: horizontalMargin)
+                                .padding(.bottom, 100)
+                            }
+                            .onAppear {
+                                guard !hasRestoredScroll else { return }
+                                if let target = scrollTargetIndex, !paragraphs.isEmpty {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        withAnimation { proxy.scrollTo(target, anchor: .top) }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                            hasRestoredScroll = true
+                                        }
+                                    }
+                                } else {
                                     hasRestoredScroll = true
                                 }
                             }
-                        } else {
-                            hasRestoredScroll = true
+                        }
+                        .containerRelativeFrame([.horizontal, .vertical])
+                        .id("current")
+
+                        // Next chapter placeholder
+                        if let next = nextChapter {
+                            chapterPlaceholder(chapter: next, direction: "Next Chapter", icon: "chevron.right")
+                                .containerRelativeFrame([.horizontal, .vertical])
+                                .id("next")
                         }
                     }
+                    .scrollTargetLayout()
                 }
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $horizontalPage)
+                .onChange(of: horizontalPage) { _, newPage in
+                    guard let newPage, newPage != "current" else { return }
+                    if newPage == "prev", let prev = previousChapter {
+                        horizontalPage = "current"
+                        navigateTo(prev)
+                    } else if newPage == "next", let next = nextChapter {
+                        horizontalPage = "current"
+                        navigateTo(next)
+                    }
+                }
+            }
+
+            // Floating back button — always visible
+            VStack {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(.leading, 16)
+                    .padding(.top, 54)
+                    Spacer()
+                }
+                Spacer()
             }
 
             // Reading progress bar — always visible
@@ -195,6 +246,7 @@ struct FanficReaderView: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+
         }
         .onTapGesture {
             withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
@@ -621,6 +673,24 @@ struct FanficReaderView: View {
         }
     }
 
+    private func chapterPlaceholder(chapter: LocalFanficChapter, direction: String, icon: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: icon)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AstralColors.gold)
+            Text(direction)
+                .font(AstralTypography.bodyMedium)
+                .foregroundStyle(AstralColors.white)
+            Text(chapterLabel(chapter))
+                .font(AstralTypography.caption)
+                .foregroundStyle(AstralColors.muted)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(backgroundColor)
+    }
+
     private func chapterLabel(_ ch: LocalFanficChapter) -> String {
         let num = ch.chapterNumber
         let formatted = num.truncatingRemainder(dividingBy: 1) == 0 ? "Ch. \(Int(num))" : "Ch. \(num)"
@@ -659,6 +729,7 @@ struct FanficReaderView: View {
         hasRestoredScroll = false
         scrollTargetIndex = nil
         bookmarkParagraphIndex = nil
+        horizontalPage = "current"
         // Update reading progress
         fanfic.lastReadChapterNumber = Int(chapter.chapterNumber)
         fanfic.scrollOffsetPercent = nil

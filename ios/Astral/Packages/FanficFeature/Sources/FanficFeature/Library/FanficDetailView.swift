@@ -31,6 +31,7 @@ struct FanficDetailView: View {
     @State private var isDownloading = false
     @State private var downloadProgress: (Int, Int) = (0, 0)
     @State private var isRescraping = false
+    @State private var selectedChapter: LocalFanficChapter?
 
     private enum FanficDetailTab: String, CaseIterable {
         case chapters = "Chapters"
@@ -52,7 +53,9 @@ struct FanficDetailView: View {
                     FanficContinueReadingButton(
                         chapters: Array(chapters),
                         lastReadChapterNumber: fanfic.lastReadChapterNumber,
-                        fanfic: fanfic
+                        onSelect: { chapter in
+                            selectedChapter = chapter
+                        }
                     )
                     .padding(.horizontal, 16)
                 }
@@ -111,8 +114,8 @@ struct FanficDetailView: View {
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(chapters) { chapter in
-                                NavigationLink {
-                                    FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter)
+                                Button {
+                                    selectedChapter = chapter
                                 } label: {
                                     FanficChapterRow(
                                         chapter: chapter,
@@ -122,7 +125,7 @@ struct FanficDetailView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                .contextMenu {
                                     Button {
                                         withAnimation(AstralAnimation.bouncy) {
                                             addBookmark(for: chapter)
@@ -130,7 +133,6 @@ struct FanficDetailView: View {
                                     } label: {
                                         Label("Bookmark", systemImage: "bookmark")
                                     }
-                                    .tint(AstralColors.gold)
                                 }
 
                                 Divider()
@@ -152,9 +154,9 @@ struct FanficDetailView: View {
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(bookmarks) { bookmark in
-                                NavigationLink {
+                                Button {
                                     if let chapter = chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
-                                        FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter)
+                                        selectedChapter = chapter
                                     }
                                 } label: {
                                     HStack(spacing: 12) {
@@ -188,7 +190,7 @@ struct FanficDetailView: View {
                                     .padding(.vertical, 10)
                                 }
                                 .buttonStyle(.plain)
-                                .swipeActions(edge: .trailing) {
+                                .contextMenu {
                                     Button(role: .destructive) {
                                         deleteBookmark(bookmark)
                                     } label: {
@@ -207,6 +209,9 @@ struct FanficDetailView: View {
             .padding(.bottom, 100)
         }
         .background(AstralColors.background)
+        .fullScreenCover(item: $selectedChapter) { chapter in
+            FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter)
+        }
         .navigationTitle(fanfic.title)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -729,7 +734,7 @@ private struct FanficChapterRow: View {
 private struct FanficContinueReadingButton: View {
     let chapters: [LocalFanficChapter]
     let lastReadChapterNumber: Int
-    let fanfic: LocalFanfic
+    let onSelect: (LocalFanficChapter) -> Void
 
     private enum ReadingState {
         case start(LocalFanficChapter)
@@ -754,8 +759,8 @@ private struct FanficContinueReadingButton: View {
 
     var body: some View {
         if let state = readingState {
-            NavigationLink {
-                FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: targetChapter(for: state))
+            Button {
+                onSelect(targetChapter(for: state))
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: iconName(for: state))

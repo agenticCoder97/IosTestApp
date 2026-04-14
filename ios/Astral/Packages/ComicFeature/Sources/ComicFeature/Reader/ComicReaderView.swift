@@ -240,10 +240,11 @@ struct ComicReaderView: View {
         }
         .onDisappear {
             autoScrollActive = false
+            comic.lastReadPageNumber = currentPage + 1
             if let readingSession {
                 readingSession.endedAt = .now
-                try? modelContext.save()
             }
+            try? modelContext.save()
             UIApplication.shared.isIdleTimerDisabled = false
             if forceLandscape { setLandscape(false) }
         }
@@ -386,7 +387,7 @@ struct ComicReaderView: View {
                             LocalPageView(fileURL: url)
                         }
                         .id(index)
-                        .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
+                        .onAppear { currentPage = index }
                     }
                 } else {
                     // Network pages
@@ -395,7 +396,7 @@ struct ComicReaderView: View {
                             ComicPageView(page: page)
                         }
                         .id(index)
-                        .onAppear { currentPage = index; comic.lastReadPageNumber = index + 1 }
+                        .onAppear { currentPage = index }
                     }
                 }
 
@@ -428,10 +429,25 @@ struct ComicReaderView: View {
         .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
     }
 
+    /// Sentinel IDs for chapter-transition pages in the paged reader.
+    /// Offset far from real page indices so they never collide.
+    private let prevChapterSentinel = -1
+    private let nextChapterSentinel = -2
+
     private func pagedReader(reversed: Bool) -> some View {
         let orderedPages = reversed ? pages.reversed() as [PageResponse] : pages
         return ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
+                // Previous chapter sentinel
+                if !isFirstChapter {
+                    Button { goToPrevChapter() } label: {
+                        chapterTransitionPage(direction: "Previous Chapter", icon: "chevron.left")
+                    }
+                    .buttonStyle(.plain)
+                    .containerRelativeFrame(.horizontal)
+                    .id(prevChapterSentinel)
+                }
+
                 ForEach(Array(orderedPages.enumerated()), id: \.element.id) { index, page in
                     ZoomablePageView {
                         ComicPageView(page: page)
@@ -444,6 +460,16 @@ struct ComicReaderView: View {
                     }
                     .id(index)
                 }
+
+                // Next chapter sentinel
+                if !isLastChapter {
+                    Button { goToNextChapter() } label: {
+                        chapterTransitionPage(direction: "Next Chapter", icon: "chevron.right")
+                    }
+                    .buttonStyle(.plain)
+                    .containerRelativeFrame(.horizontal)
+                    .id(nextChapterSentinel)
+                }
             }
             .scrollTargetLayout()
         }
@@ -451,9 +477,12 @@ struct ComicReaderView: View {
         .scrollPosition(id: Binding(
             get: { scrolledPageID },
             set: { newID in
-                guard let id = newID, id != currentPage else { return }
-                scrolledPageID = id
-                currentPage = id
+                guard let id = newID else { return }
+                // Ignore sentinel IDs for currentPage tracking
+                if id >= 0 && id != currentPage {
+                    scrolledPageID = id
+                    currentPage = id
+                }
             }
         ))
         .onChange(of: currentPage) { _, new in
@@ -824,6 +853,21 @@ struct ComicReaderView: View {
         }
     }
 
+    private func chapterTransitionPage(direction: String, icon: String) -> some View {
+        VStack(spacing: 12) {
+            ProgressView().tint(AstralColors.gold)
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(direction)
+                    .font(AstralTypography.bodyMedium)
+            }
+            .foregroundStyle(AstralColors.muted)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+    }
+
     // MARK: - Bookmark
 
     private var isCurrentChapterBookmarked: Bool {
@@ -1130,7 +1174,7 @@ private struct ZoomablePageView<Content: View>: View {
         content
             .scaleEffect(scale)
             .offset(offset)
-            .gesture(
+            .simultaneousGesture(
                 MagnifyGesture()
                     .onChanged { value in
                         scale = lastScale * value.magnification
@@ -1145,19 +1189,19 @@ private struct ZoomablePageView<Content: View>: View {
                             }
                         }
                     }
-                    .simultaneously(with:
-                        DragGesture()
-                            .onChanged { value in
-                                guard scale > 1.0 else { return }
-                                offset = CGSize(
-                                    width: lastOffset.width + value.translation.width,
-                                    height: lastOffset.height + value.translation.height
-                                )
-                            }
-                            .onEnded { _ in
-                                lastOffset = offset
-                            }
-                    )
+            )
+            .gesture(scale > 1.0 ?
+                DragGesture()
+                    .onChanged { value in
+                        offset = CGSize(
+                            width: lastOffset.width + value.translation.width,
+                            height: lastOffset.height + value.translation.height
+                        )
+                    }
+                    .onEnded { _ in
+                        lastOffset = offset
+                    }
+                : nil
             )
             .onTapGesture(count: 2) {
                 withAnimation(AstralAnimation.smooth) {

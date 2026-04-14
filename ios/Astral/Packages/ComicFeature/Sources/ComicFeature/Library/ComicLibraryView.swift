@@ -202,18 +202,10 @@ private struct ContinueReadingCardLink: View {
     }
 
     var body: some View {
-        if let chapter = nextChapter, !chapters.isEmpty {
-            NavigationLink {
-                ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
-            } label: {
-                ContinueReadingCard(comic: comic)
-            }
-        } else {
-            NavigationLink {
-                ComicDetailView(comic: comic)
-            } label: {
-                ContinueReadingCard(comic: comic)
-            }
+        NavigationLink {
+            ComicDetailView(comic: comic)
+        } label: {
+            ContinueReadingCard(comic: comic)
         }
     }
 }

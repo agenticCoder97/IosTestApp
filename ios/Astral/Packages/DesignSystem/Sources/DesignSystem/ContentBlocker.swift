@@ -199,7 +199,13 @@ public final class ContentBlocker {
       {"trigger":{"url-filter":"\\\\.vidoomy\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":"\\\\.carbonads\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
       {"trigger":{"url-filter":"\\\\.mouseflow\\\\.com","load-type":["third-party"]},"action":{"type":"block"}},
-      {"trigger":{"url-filter":".*[/=?&](?:ad|ads|advert|banner|popup|popunder|interstitial)[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}}
+      {"trigger":{"url-filter":"[/=?&]ad[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"[/=?&]ads[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"[/=?&]advert[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"[/=?&]banner[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"[/=?&]popup[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"[/=?&]popunder[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}},
+      {"trigger":{"url-filter":"[/=?&]interstitial[/=?&_.-]","load-type":["third-party"],"resource-type":["script","raw"]},"action":{"type":"block"}}
     ]
     """
 
