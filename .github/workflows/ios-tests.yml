@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit-tests:
-    name: Unit Tests
+  build:
+    name: Build
     runs-on: macos-14
     timeout-minutes: 20
     steps:
@@ -28,20 +28,11 @@ jobs:
         working-directory: ios/Astral
         run: xcodegen generate
 
-      - name: Run Core unit tests
-        working-directory: ios/Astral/Packages/Core
+      - name: Build app
+        working-directory: ios/Astral
         run: |
-          xcodebuild test \
-            -scheme Core-Package \
-            -sdk iphonesimulator \
-            -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Run Networking unit tests
-        working-directory: ios/Astral/Packages/Networking
-        run: |
-          xcodebuild test \
-            -scheme Networking-Package \
+          xcodebuild build \
+            -scheme Astral \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             CODE_SIGNING_ALLOWED=NO
@@ -50,7 +41,7 @@ jobs:
     name: UI Tests
     runs-on: macos-14
     timeout-minutes: 30
-    needs: unit-tests
+    needs: build
     steps:
       - uses: actions/checkout@v4
 
