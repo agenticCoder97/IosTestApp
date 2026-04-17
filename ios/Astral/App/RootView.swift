@@ -412,7 +412,7 @@ private struct MorphLandingView: View {
         }
 
         // Driver — morph spring. Carries completion into Phase 4.
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0.3),
+        withAnimation(.bouncy(duration: 0.5, extraBounce: 0.15),
                       completionCriteria: .logicallyComplete) {
             goldSize = 120
             blueSize = 120
