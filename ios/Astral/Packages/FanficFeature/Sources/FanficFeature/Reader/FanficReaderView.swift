@@ -194,26 +194,6 @@ struct FanficReaderView: View {
                 }
             }
 
-            // Floating back button — always visible as escape hatch
-            VStack {
-                HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    .accessibilityIdentifier(AccessibilityID.readerBackButton)
-                    .padding(.leading, 16)
-                    .padding(.top, 54)
-                    .opacity(showReaderBar ? 0 : 0.6)
-                    Spacer()
-                }
-                Spacer()
-            }
-            .allowsHitTesting(!showReaderBar)
-
             // Reading progress bar — always visible
             VStack {
                 GeometryReader { geo in
@@ -230,6 +210,16 @@ struct FanficReaderView: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+
+            // Top bar — slides in from above with reader bar
+            VStack(spacing: 0) {
+                fanficTopBar
+                Spacer()
+            }
+            .offset(y: showReaderBar ? 0 : -110)
+            .opacity(showReaderBar ? 1 : 0)
+            .animation(.easeInOut(duration: 0.22), value: showReaderBar)
+            .allowsHitTesting(showReaderBar)
 
             // Chapter + favourite overlay — top right
             if showReaderBar {
@@ -413,6 +403,32 @@ struct FanficReaderView: View {
             }
             .buttonStyle(PressButtonStyle(scale: 0.88))
         }
+    }
+
+    // MARK: - Top Bar
+
+    private var fanficTopBar: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(AstralColors.white)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
+            .accessibilityIdentifier(AccessibilityID.readerBackButton)
+
+            Text(fanfic.title)
+                .font(AstralTypography.bodyMedium)
+                .foregroundStyle(AstralColors.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 56)
+        .padding(.bottom, 12)
+        .background(.ultraThinMaterial)
     }
 
     private var chapterDisplayNum: String {
