@@ -409,6 +409,7 @@ private struct MorphLandingView: View {
         withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
             titleScale = 1.0
             titleOpacity = 1
+            titleBlur = 0
         }
 
         // Driver — morph spring. Carries completion into Phase 4.
