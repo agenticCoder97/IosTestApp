@@ -340,31 +340,16 @@ private struct MorphLandingView: View {
             contentSlide = 0
         }
 
-        // Driver — longest positional drift (1.5s). Chains into mid-drift.
+        // Positions kept wider — centers ≥148pt apart on a 390pt screen,
+        // clearing 140pt orbs. Replaces the old two-step drift that
+        // pulled orbs to ~68pt center distance (72pt visual overlap) (AST-2).
+        // Driver — longest (1.5s). Chains into Phase 3.
         withAnimation(.easeInOut(duration: 1.5),
                       completionCriteria: .logicallyComplete) {
-            goldOffset = CGSize(width: -(halfW * 0.3), height: -(halfH * 0.2))
-            blueOffset = CGSize(width: halfW * 0.25, height: halfH * 0.2)
+            goldOffset = CGSize(width: -(halfW * 0.38), height: -(halfH * 0.2))
+            blueOffset = CGSize(width: halfW * 0.38, height: halfH * 0.2)
             goldRotation = -8
             blueRotation = 6
-        } completion: {
-            guard token == animationToken else { return }
-            runPhase2MidDrift()
-        }
-    }
-
-    private func runPhase2MidDrift() {
-        let halfW = screenSize.width / 2
-        let halfH = screenSize.height / 3
-        let token = animationToken
-
-        // Driver — 1.0s. Chains into Phase 3.
-        withAnimation(.easeInOut(duration: 1.0),
-                      completionCriteria: .logicallyComplete) {
-            goldOffset = CGSize(width: -(halfW * 0.2), height: -(halfH * 0.1))
-            blueOffset = CGSize(width: halfW * 0.15, height: halfH * 0.12)
-            goldRotation = -4
-            blueRotation = 3
         } completion: {
             guard token == animationToken else { return }
             runPhase3()
