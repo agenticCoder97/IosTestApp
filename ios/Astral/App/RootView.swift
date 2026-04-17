@@ -282,15 +282,19 @@ private struct MorphLandingView: View {
             ambientShift = true
         }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 1: Blob Appear (0.3s - 1.0s)
-        // Tiny organic shapes pop in far from center
-        // ═══════════════════════════════════════════════════════
+        runPhase1()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { runPhase2() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { runPhase2MidDrift() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { runPhase3() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.8) { runPhase4() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.2) { phase = 4 }
+    }
 
+    // PHASE 1: Blob Appear (0.3s–1.0s) — tiny shapes pop in far from center
+    private func runPhase1() {
         let halfW = screenSize.width / 2
         let halfH = screenSize.height / 3
 
-        // Gold appears first — tiny dot at top-left corner
         withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
             goldOpacity = 1
             goldSize = 30
@@ -298,7 +302,6 @@ private struct MorphLandingView: View {
             goldGlow = 0.5
         }
 
-        // Blue appears 0.2s after — tiny dot at bottom-right corner
         withAnimation(.easeOut(duration: 0.5).delay(0.5)) {
             blueOpacity = 1
             blueSize = 24
@@ -306,112 +309,92 @@ private struct MorphLandingView: View {
             blueGlow = 0.5
         }
 
-        // Both drift inward from corners while still small
         withAnimation(.easeInOut(duration: 1.2).delay(0.5)) {
             goldOffset = CGSize(width: -(halfW * 0.45), height: -(halfH * 0.5))
             blueOffset = CGSize(width: halfW * 0.4, height: halfH * 0.45)
             goldRotation = -18
             blueRotation = 12
         }
+    }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 2: Expand + Drift (1.0s - 2.8s)
-        // Orbs grow dramatically, content fades in, gentle float
-        // ═══════════════════════════════════════════════════════
+    // PHASE 2: Expand + Drift (1.0s–2.8s) — orbs grow, content fades in
+    private func runPhase2() {
+        let halfW = screenSize.width / 2
+        let halfH = screenSize.height / 3
+        phase = 2
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            phase = 2
-
-            // Dramatic expansion to full size
-            withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
-                goldSize = 140
-                blueSize = 135
-                goldBlobSkew = 1.0 // become circular
-                blueBlobSkew = 1.0
-                goldGlow = 0.7
-                blueGlow = 0.7
-            }
-
-            // Drift closer together but still spread wide
-            withAnimation(.easeInOut(duration: 1.5)) {
-                goldOffset = CGSize(width: -(halfW * 0.3), height: -(halfH * 0.2))
-                blueOffset = CGSize(width: halfW * 0.25, height: halfH * 0.2)
-                goldRotation = -8
-                blueRotation = 6
-            }
-
-            // Content fades in and slides up
-            withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
-                contentRevealGold = 0.85
-                contentRevealBlue = 0.85
-                contentSlide = 0
-            }
+        withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
+            goldSize = 140
+            blueSize = 135
+            goldBlobSkew = 1.0
+            blueBlobSkew = 1.0
+            goldGlow = 0.7
+            blueGlow = 0.7
         }
 
-        // Mid-drift — floating motion, pulling gradually closer
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-            withAnimation(.easeInOut(duration: 1.0)) {
-                goldOffset = CGSize(width: -(halfW * 0.2), height: -(halfH * 0.1))
-                blueOffset = CGSize(width: halfW * 0.15, height: halfH * 0.12)
-                goldRotation = -4
-                blueRotation = 3
-            }
+        withAnimation(.easeInOut(duration: 1.5)) {
+            goldOffset = CGSize(width: -(halfW * 0.3), height: -(halfH * 0.2))
+            blueOffset = CGSize(width: halfW * 0.25, height: halfH * 0.2)
+            goldRotation = -8
+            blueRotation = 6
         }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 3: Contract + Morph (2.8s - 3.8s)
-        // Pull inward, shape morphs circle→roundedRect, content fades
-        // ═══════════════════════════════════════════════════════
+        withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
+            contentRevealGold = 0.85
+            contentRevealBlue = 0.85
+            contentSlide = 0
+        }
+    }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
-            phase = 3
+    // Mid-drift — floating motion, pulling gradually closer (to be removed in Task 4)
+    private func runPhase2MidDrift() {
+        let halfW = screenSize.width / 2
+        let halfH = screenSize.height / 3
 
-            // Content dissolves
-            withAnimation(.easeIn(duration: 0.4)) {
-                contentRevealGold = 1.0 // icon stays, decorative lines will be clipped
-                contentRevealBlue = 1.0
-                contentSlide = -5
-            }
+        withAnimation(.easeInOut(duration: 1.0)) {
+            goldOffset = CGSize(width: -(halfW * 0.2), height: -(halfH * 0.1))
+            blueOffset = CGSize(width: halfW * 0.15, height: halfH * 0.12)
+            goldRotation = -4
+            blueRotation = 3
+        }
+    }
 
-            // Shape morph + pull to final position with OVERSHOOT
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0.3)) {
-                goldSize = 120
-                blueSize = 120
-                goldCornerRadius = 28
-                blueCornerRadius = 28
-                // Final resting: spaced apart so 120pt orbs don't overlap
-                // Each needs to be at least 70pt from center (120/2 + gap)
-                goldOffset = CGSize(width: -80, height: 30)
-                blueOffset = CGSize(width: 80, height: 30)
-                goldRotation = 0
-                blueRotation = 0
-                goldGlow = 0.3
-                blueGlow = 0.3
-            }
+    // PHASE 3: Contract + Morph (2.8s–3.8s) — pull inward, shape morphs
+    private func runPhase3() {
+        phase = 3
 
-            // Title appears with scale spring
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
-                titleScale = 1.0
-                titleOpacity = 1
-            }
+        withAnimation(.easeIn(duration: 0.4)) {
+            contentRevealGold = 1.0
+            contentRevealBlue = 1.0
+            contentSlide = -5
         }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 4: Ready (3.8s - 4.5s)
-        // Labels appear, buttons become tappable
-        // ═══════════════════════════════════════════════════════
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.8) {
-            withAnimation(.easeOut(duration: 0.5)) {
-                subtitleOpacity = 1
-            }
-            withAnimation(.easeOut(duration: 0.4).delay(0.15)) {
-                labelOpacity = 1
-            }
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0.3)) {
+            goldSize = 120
+            blueSize = 120
+            goldCornerRadius = 28
+            blueCornerRadius = 28
+            goldOffset = CGSize(width: -80, height: 30)
+            blueOffset = CGSize(width: 80, height: 30)
+            goldRotation = 0
+            blueRotation = 0
+            goldGlow = 0.3
+            blueGlow = 0.3
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.2) {
-            phase = 4
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
+            titleScale = 1.0
+            titleOpacity = 1
+        }
+    }
+
+    // PHASE 4: Ready (3.8s–4.5s) — labels appear, buttons tappable
+    private func runPhase4() {
+        withAnimation(.easeOut(duration: 0.5)) {
+            subtitleOpacity = 1
+        }
+        withAnimation(.easeOut(duration: 0.4).delay(0.15)) {
+            labelOpacity = 1
         }
     }
 }
