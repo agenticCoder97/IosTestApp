@@ -156,16 +156,17 @@ struct FanficReaderView: View {
                             }
                             .onAppear {
                                 guard !hasRestoredScroll else { return }
-                                if let target = scrollTargetIndex, !paragraphs.isEmpty {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        withAnimation { proxy.scrollTo(target, anchor: .top) }
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                            hasRestoredScroll = true
-                                        }
-                                    }
+                                if let target = scrollTargetIndex {
+                                    proxy.scrollTo(target, anchor: .top)
+                                    hasRestoredScroll = true
                                 } else {
                                     hasRestoredScroll = true
                                 }
+                            }
+                            .onChange(of: scrollTargetIndex) { _, newTarget in
+                                guard !hasRestoredScroll, let target = newTarget else { return }
+                                proxy.scrollTo(target, anchor: .top)
+                                hasRestoredScroll = true
                             }
                         }
                         .containerRelativeFrame([.horizontal, .vertical])
