@@ -15,6 +15,29 @@
 
 ---
 
+## Task 0 — Add `completionStatus` to `LocalComic`
+
+**File to modify**: `ios/Astral/Packages/Core/Sources/Core/Models/LocalComic.swift`
+
+Add one optional property to the `@Model` class:
+
+```swift
+/// Story completion status: "ongoing", "complete", or "abandoned". nil = unknown.
+public var completionStatus: String? = nil
+```
+
+**Placement**: after the existing `archiveStatus` / `isArchived` properties (they're thematically adjacent — both describe a comic's lifecycle state).
+
+**No migration needed**: SwiftData automatically sets the new optional property to `nil` for all existing persisted rows. No `@Attribute` decorator required (not unique, no special behavior).
+
+**Type rationale**: `LocalFanfic.completionStatus` is a non-optional `String` (default `"ongoing"`), but for comics we use `String?` so that existing rows don't silently inherit a wrong status the scraper never provided.
+
+**Commit message**: `[ios] AST-15 add completionStatus to LocalComic`
+
+**Verification**: Project builds. `LocalComic` in Swift REPL (or a unit test) shows `completionStatus` is nil by default on a fresh instance.
+
+---
+
 ## Task 1 — Extract shared filter UI primitives to DesignSystem
 
 **Files to create**:
@@ -109,6 +132,8 @@ case .lastRead:
 // ComicFilterPrefs.swift
 struct ComicFilterPrefs: Codable {
     var showArchived: Bool = false
+    var completionStatus: String? = nil       // "ongoing" / "complete" / "abandoned" / nil = all
+    var tagsKeyword: String = ""             // case-insensitive substring match on tagsJSON
     var category: String? = nil
     var sourceKey: String? = nil
     var sortBy: String = ComicSortOption.lastRead.rawValue
@@ -126,17 +151,22 @@ enum ComicSortOption: String, CaseIterable {
 @Observable
 final class ComicFilterState {
     var showArchived: Bool = false
+    var completionStatus: String? = nil       // nil = all
+    var tagsKeyword: String = ""             // "" = no filter
     var category: String? = nil
     var sourceKey: String? = nil
     var sortBy: ComicSortOption = .lastRead
     var sortAscending: Bool = false
 
     var isActive: Bool {
-        showArchived || category != nil || sourceKey != nil || sortBy != .lastRead
+        showArchived || completionStatus != nil || !tagsKeyword.isEmpty
+            || category != nil || sourceKey != nil || sortBy != .lastRead
     }
 
     func reset() {
         showArchived = false
+        completionStatus = nil
+        tagsKeyword = ""
         category = nil
         sourceKey = nil
         sortBy = .lastRead
@@ -167,9 +197,22 @@ Structure mirrors `FanficFilterView` using the DesignSystem components from Task
 
 Sections:
 1. **Sort** — `ComicSortOption` chips + `FilterSortDirectionToggle`
-2. **Status** — "Show Archived" toggle chip
-3. **Category** — `FilterTextField` bound to `filterState.category`
-4. **Source** — chips: All / nhentai / toongod / hentai20
+2. **Status** — "Show Archived" toggle chip; completion status chips: All / Ongoing / Complete / Abandoned (bound to `filterState.completionStatus`; selecting "All" sets it to nil)
+3. **Tags** — `FilterTextField` bound to `filterState.tagsKeyword`; label: "Tags contain…"; filter logic in `ComicLibraryView.displayedComics` uses `.localizedCaseInsensitiveContains` on `tagsJSON ?? ""`; intentionally no JSON parsing — raw substring match only
+4. **Category** — `FilterTextField` bound to `filterState.category`
+5. **Source** — chips: All / nhentai / toongod / hentai20
+
+**In `ComicLibraryView.displayedComics`**, add the two new filter clauses after the existing archive filter:
+```swift
+if let status = filter?.completionStatus {
+    ready = ready.filter { $0.completionStatus == status }
+}
+if !filter.tagsKeyword.isEmpty {
+    ready = ready.filter {
+        ($0.tagsJSON ?? "").localizedCaseInsensitiveContains(filter.tagsKeyword)
+    }
+}
+```
 
 **File to modify**: `ComicTabView.swift`
 
@@ -249,13 +292,50 @@ Follow the same pattern as Task 2 for Fanfic:
 
 ---
 
-## Task 7 — Add `isActive` badge to FanficFilterView toolbar button
+## Task 7 — Lift `FanficFilterState` to `FanficNavigation` + add toolbar badge
 
-**File to modify**: `FanficTabView.swift`
+**Decision**: Confirmed by user — lift `FanficFilterState` from `FanficLibraryView` to `FanficNavigation` so the toolbar badge has access to `isActive`. This mirrors the comic-side pattern exactly.
 
-Apply the same active-indicator pattern as the Comic side (Task 4).
+**Files to modify**:
 
-Check `FanficNavigation`'s access to `filterState.isActive` (the state is in `FanficLibraryView` today — may need to move `FanficFilterState` up to `FanficNavigation` for the toolbar button to see it, same as the Comic pattern).
+### `FanficNavigation` (wherever it is defined — check `FanficTabView.swift` or a dedicated file)
+
+Add property:
+```swift
+var filterState = FanficFilterState()
+```
+
+### `FanficLibraryView.swift`
+
+**Remove**: `@State private var filterState = FanficFilterState()`
+
+**Add**: read `filterState` from `fanficNavigation` (already in environment):
+```swift
+@Environment(FanficNavigation.self) private var fanficNavigation
+// replace all filterState references with fanficNavigation.filterState
+```
+
+The `@AppStorage` persistence wiring (Task 2) should move to `FanficTabView` (alongside the `@AppStorage` for `ComicTabView`) so persistence is co-located with ownership:
+```swift
+// FanficTabView.swift
+@AppStorage("fanfic.filter.v1") private var filterPrefsJSON: String = ""
+// decode on appear → fanficNavigation.filterState.load(from:)
+// onChange → encode back
+```
+
+### `FanficTabView.swift`
+
+Add toolbar badge, identical shape to comic side:
+```swift
+Image(systemName: fanficNavigation.filterState.isActive
+    ? "line.3.horizontal.decrease.circle.fill"
+    : "line.3.horizontal.decrease.circle")
+    .foregroundStyle(fanficNavigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
+```
+
+**Binding thread**: `FanficFilterView` already accepts a `filterState` argument — pass `fanficNavigation.filterState` from the sheet call site in `FanficTabView`.
+
+**Commit message**: `[ios] AST-15 lift FanficFilterState to FanficNavigation, add toolbar badge`
 
 ---
 
@@ -279,11 +359,14 @@ Tests:
 
 - [ ] Filter state for both libraries survives app restart
 - [ ] Comic library respects sort (Last Read / Date Added / Title / Chapters) and direction
-- [ ] Comic library can filter by archive status, category, source
+- [ ] Comic library can filter by archive status, completionStatus, tags keyword, category, source
+- [ ] Comic `tagsKeyword` filter uses case-insensitive substring match on raw `tagsJSON` — no JSON parsing
 - [ ] Fanfic library sort includes "Last Read" option
-- [ ] Filter toolbar button shows active indicator (gold icon) when non-default filters applied
+- [ ] Filter toolbar button shows active indicator (gold `line.3.horizontal.decrease.circle.fill`) on **both** tab bars when non-default filters applied
+- [ ] `FanficFilterState` owned by `FanficNavigation` (not `FanficLibraryView`)
 - [ ] Reset button clears all filters to defaults
 - [ ] Both `FanficFilterPrefs` and `ComicFilterPrefs` have round-trip Codable tests passing
+- [ ] `LocalComic.completionStatus` is `String?`, defaults to nil on existing rows
 - [ ] No hardcoded hex colors added (all from `AstralColors`)
 - [ ] `project.yml` updated and `xcodegen generate` run after new files are added to packages
 - [ ] Build succeeds: `xcodebuild -scheme Astral -sdk iphonesimulator ... build`
@@ -292,19 +375,20 @@ Tests:
 
 ## File Checklist
 
-| File | Action |
-|---|---|
-| `DesignSystem/Components/LibraryFilter/FlowLayout.swift` | Create |
-| `DesignSystem/Components/LibraryFilter/FilterSectionCard.swift` | Create |
-| `DesignSystem/Components/LibraryFilter/FilterChips.swift` | Create |
-| `DesignSystem/Components/LibraryFilter/FilterTextField.swift` | Create |
-| `DesignSystem/Components/LibraryFilter/FilterSortDirectionToggle.swift` | Create |
-| `FanficFeature/Library/FanficFilterPrefs.swift` | Create |
-| `FanficFeature/Library/FanficFilterView.swift` | Modify (use DS components, add lastRead sort) |
-| `FanficFeature/Library/FanficLibraryView.swift` | Modify (add persistence, lastRead sort case) |
-| `FanficFeature/FanficTabView.swift` | Modify (move filterState to FanficNavigation, active badge) |
-| `ComicFeature/Library/ComicFilterPrefs.swift` | Create |
-| `ComicFeature/Library/ComicFilterState.swift` | Create |
-| `ComicFeature/Library/ComicFilterView.swift` | Create |
-| `ComicFeature/Library/ComicLibraryView.swift` | Modify (wire filter state) |
-| `ComicFeature/ComicTabView.swift` | Modify (replace stub, add filterState to nav, persistence, active badge) |
+| File | Action | Task |
+|---|---|---|
+| `Core/Models/LocalComic.swift` | Modify (add `completionStatus: String?`) | Task 0 |
+| `DesignSystem/Components/LibraryFilter/FlowLayout.swift` | Create | Task 1 |
+| `DesignSystem/Components/LibraryFilter/FilterSectionCard.swift` | Create | Task 1 |
+| `DesignSystem/Components/LibraryFilter/FilterChips.swift` | Create | Task 1 |
+| `DesignSystem/Components/LibraryFilter/FilterTextField.swift` | Create | Task 1 |
+| `DesignSystem/Components/LibraryFilter/FilterSortDirectionToggle.swift` | Create | Task 1 |
+| `FanficFeature/Library/FanficFilterPrefs.swift` | Create | Task 2 |
+| `FanficFeature/Library/FanficFilterView.swift` | Modify (use DS components, add lastRead sort) | Task 1 |
+| `FanficFeature/Library/FanficLibraryView.swift` | Modify (remove local filterState, use nav) | Task 7 |
+| `FanficFeature/FanficTabView.swift` | Modify (own filterState on nav, persistence, active badge) | Task 7 |
+| `ComicFeature/Library/ComicFilterPrefs.swift` | Create (includes completionStatus + tagsKeyword) | Task 3 |
+| `ComicFeature/Library/ComicFilterState.swift` | Create (includes completionStatus + tagsKeyword) | Task 3 |
+| `ComicFeature/Library/ComicFilterView.swift` | Create (Status + Tags + Category + Source sections) | Task 4 |
+| `ComicFeature/Library/ComicLibraryView.swift` | Modify (wire filter state incl. completionStatus + tagsKeyword) | Task 5 |
+| `ComicFeature/ComicTabView.swift` | Modify (replace stub, filterState on nav, persistence, active badge) | Task 4+6 |

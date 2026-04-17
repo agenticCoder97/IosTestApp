@@ -3,7 +3,7 @@
 **Date**: 2026-04-17
 **Author**: Design agent (autonomous)
 **Branch**: `feature/ast-15-library-filter-refactor`
-**Status**: Design only — no implementation
+**Status**: Design only — no implementation (user decisions folded in 2026-04-17)
 
 ---
 
@@ -45,7 +45,7 @@ Both library views (Comic and Fanfic) need a working filter + sort system. Fanfi
 | `progressPercent` (read state) | Double | Double | **Shared** |
 | `sourceKey` (filter by source) | String | String | **Shared** |
 | `title` (sort) | String | String | **Shared** |
-| `completionStatus` | String (ongoing/complete/abandoned) | — | **Fanfic-only** |
+| `completionStatus` | String (ongoing/complete/abandoned) | String? (ongoing/complete/abandoned, nil=unknown) | **Shared** |
 | `rating` | String? (G/T/M/E/NR) | — | **Fanfic-only** |
 | `fandom` | String? | — | **Fanfic-only** |
 | `wordCount` | Int? | — | **Fanfic-only** |
@@ -58,7 +58,7 @@ Both library views (Comic and Fanfic) need a working filter + sort system. Fanfi
 | `category` | — | String? | **Comic-only** |
 | `tagsJSON` (keyword search) | — | String? | **Comic-only** |
 
-**Summary**: 8 shared filterable fields, 9 fanfic-only, 3 comic-only.
+**Summary**: 9 shared filterable fields, 8 fanfic-only, 3 comic-only.
 
 ---
 
@@ -101,12 +101,36 @@ struct FanficFilterPrefs: Codable {
 // In ComicFeature package
 struct ComicFilterPrefs: Codable {
     var showArchived: Bool = false
+    var completionStatus: String? = nil       // "ongoing" / "complete" / "abandoned" / nil = all
+    var tagsKeyword: String = ""             // case-insensitive substring match on tagsJSON
     var category: String? = nil
     var sourceKey: String? = nil              // "nhentai", "toongod", "hentai20", nil = all
     var sortBy: String = ComicSortOption.lastRead.rawValue
     var sortAscending: Bool = false
 }
 ```
+
+---
+
+## Model Changes
+
+### `LocalComic.completionStatus`
+
+**Type**: `String?` (optional)
+**Default**: `nil` (no default value — omitted from init; nil means "unknown / not yet set")
+**Raw values**: mirrors `LocalFanfic.completionStatus` — `"ongoing"`, `"complete"`, `"abandoned"`
+**No data migration needed**: SwiftData treats a newly added optional property as nil for all existing rows automatically.
+**Note**: `LocalFanfic.completionStatus` is a non-optional `String` with a default of `"ongoing"`. For `LocalComic` we use `String?` so that existing library entries don't assume "ongoing" when the scraper never provided a value.
+
+Add to `LocalComic` in `Core` package:
+```swift
+/// Story completion status: "ongoing", "complete", or "abandoned". nil = unknown.
+public var completionStatus: String? = nil
+```
+
+No `@Attribute` decorator needed (not unique; no special SwiftData behavior required).
+
+---
 
 ### @Observable State Classes (runtime)
 
@@ -183,18 +207,46 @@ Sections:
 
 Sections:
 1. **Sort** — sort picker chips + direction toggle
-2. **Status** — show archived toggle (default: hide archived)
-3. **Category** — category text field (matches `category` field)
-4. **Source** — source chips (nhentai / toongod / hentai20 / All)
+2. **Status** — show archived toggle (default: hide archived); completion status chips (All / Ongoing / Complete / Abandoned) — filters on `completionStatus`
+3. **Tags** — `FilterTextField` bound to `filterState.tagsKeyword`; filter logic applies `.localizedCaseInsensitiveContains` on the raw `tagsJSON` string — intentionally simple substring match, no JSON parsing; a future issue will track structured tag-chip UI if ever needed
+4. **Category** — category text field (matches `category` field)
+5. **Source** — source chips (nhentai / toongod / hentai20 / All)
 
 The `ComicFilterView` replaces `ComicFilterSheet` in `ComicTabView.swift`. The `showFilter` state and sheet attachment remain in `ComicTabView`; the filter state (`ComicFilterState`) must be threaded from `ComicTabView` down to `ComicLibraryView` (via environment or direct binding, same pattern as `fanficNavigation.showFilter`).
 
-### Wire-up pattern (Comic, mirroring Fanfic)
+### FilterState Architecture (both libraries)
 
-Option A: Add `filterState: ComicFilterState` to `ComicNavigation` (matches how `FanficNavigation` holds `showFilter`).
-Option B: Hold `ComicFilterState` in `ComicTabView` and pass via `@Environment`.
+#### Comic side
+`ComicFilterState` lives on `ComicNavigation` (already decided). `ComicTabView` owns `ComicNavigation` as an `@State` object, reads `navigation.filterState.isActive` for the toolbar badge, and passes `navigation.filterState` to `ComicFilterView` and `ComicLibraryView`.
 
-**Decision**: Option A — add `filterState` to `ComicNavigation`. This keeps all coordinator state co-located and avoids adding a new environment key.
+#### Fanfic side — lift `FanficFilterState` to `FanficNavigation`
+
+**Decision (user-confirmed)**: Lift `FanficFilterState` from `FanficLibraryView` up to `FanficNavigation` so that the fanfic toolbar button can show the same active-filter badge as the comic side.
+
+**Current state**: `FanficFilterState` is `@State private var` inside `FanficLibraryView`, invisible to `FanficTabView`.
+
+**Target state**:
+- Add `var filterState = FanficFilterState()` to `FanficNavigation` (@Observable class).
+- `FanficTabView` reads `fanficNavigation.filterState.isActive` to drive toolbar badge.
+- `FanficLibraryView` receives `filterState` via the existing `fanficNavigation` environment object instead of owning it locally.
+- `FanficFilterView` binding unchanged — it already takes `filterState` by reference.
+
+**Toolbar badge pattern (both libraries)**:
+```swift
+// In FanficTabView toolbar:
+Image(systemName: fanficNavigation.filterState.isActive
+    ? "line.3.horizontal.decrease.circle.fill"
+    : "line.3.horizontal.decrease.circle")
+    .foregroundStyle(fanficNavigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
+
+// In ComicTabView toolbar — identical shape:
+Image(systemName: navigation.filterState.isActive
+    ? "line.3.horizontal.decrease.circle.fill"
+    : "line.3.horizontal.decrease.circle")
+    .foregroundStyle(navigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
+```
+
+The `isActive` check for `FanficFilterState` must be updated to include `completionStatus != nil` once the fanfic filter gains that field (already present for `ComicFilterState`).
 
 ---
 
@@ -240,9 +292,11 @@ AST-13 ("default sort by last read") is a subset of this work:
 
 ---
 
-## Open Questions
+## Confirmed Decisions (user answers, 2026-04-17)
 
-1. **`abandonded` status on comics**: `LocalComic.status` holds archive state (`archiving`, `archived`, etc.), not story completion. Should we add a `completionStatus` to `LocalComic` to match the fanfic model, or is this out of scope for AST-15?
-2. **Tag filtering on comics**: `tagsJSON` is a JSON array of `{name, tag_type}` dicts. Full tag chip filtering would require JSON parsing in the filter layer. Is keyword-substring search on `tagsJSON` sufficient for now?
-3. **Source filter UX**: Comics have 3 sources (nhentai/toongod/hentai20), fanfics have 2 (ao3/ffnet). Should source filtering use the same chip style or a Picker? Chips preferred for consistency.
-4. **`isActive` badge**: `FanficFilterState.isActive` drives a visual indicator that filters are applied. Should the comic filter button in the toolbar also show a badge dot when filters are active? Recommended: yes, for parity.
+| Question | Decision |
+|---|---|
+| Add `completionStatus` to `LocalComic`? | **Yes** — `String?` optional, same raw values as `LocalFanfic` ("ongoing"/"complete"/"abandoned"). nil = unknown. No backfill needed. |
+| Comic tag filtering approach? | **Keyword-substring on raw `tagsJSON` string** — case-insensitive `.localizedCaseInsensitiveContains`. No JSON parser, no tag-chip UI. Future issue if structured tags are ever needed. |
+| Lift `FanficFilterState` to `FanficNavigation`? | **Yes** — both tab views show an active-filter badge (`line.3.horizontal.decrease.circle.fill` in gold) when `filterState.isActive` is true. Mirrors the comic-side pattern. |
+| Source filter UX (chips vs Picker)? | **Chips** — consistent with fanfic source filter and all other single-select filters in the sheet. (Autonomous decision, confirmed by omission.) |
