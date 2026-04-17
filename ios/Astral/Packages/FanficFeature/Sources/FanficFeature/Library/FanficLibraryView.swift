@@ -20,6 +20,7 @@ struct FanficLibraryView: View {
     @State private var showFilter = false
     @State private var sortOption: FanficSortOption = .lastRead
     @State private var filterState = FanficFilterState()
+    @AppStorage("fanfic.filter.v1") private var filterPrefsJSON: String = ""
 
     private var inProgressFanfics: [LocalFanfic] {
         allFanfics
@@ -91,6 +92,16 @@ struct FanficLibraryView: View {
         }
         .background(AstralColors.background)
         .task { await viewModel.fetchFanfics(modelContext: modelContext) }
+        .onAppear {
+            if let data = filterPrefsJSON.data(using: .utf8),
+               let prefs = try? JSONDecoder().decode(FanficFilterPrefs.self, from: data) {
+                filterState.load(from: prefs)
+            }
+        }
+        .onChange(of: filterState.snapshotForPersistence.sortBy) { _, _ in saveFilterPrefs() }
+        .onChange(of: filterState.snapshotForPersistence.fandom) { _, _ in saveFilterPrefs() }
+        .onChange(of: filterState.snapshotForPersistence.completionStatus) { _, _ in saveFilterPrefs() }
+        .onChange(of: filterState.snapshotForPersistence.sourceKey) { _, _ in saveFilterPrefs() }
         .sheet(isPresented: $showFilter) {
             FanficFilterView(filterState: filterState)
                 .presentationDetents([.medium, .large])
@@ -105,6 +116,13 @@ struct FanficLibraryView: View {
                 }
                 .buttonStyle(PressButtonStyle(scale: 0.88))
             }
+        }
+    }
+
+    private func saveFilterPrefs() {
+        if let data = try? JSONEncoder().encode(filterState.snapshotForPersistence),
+           let str = String(data: data, encoding: .utf8) {
+            filterPrefsJSON = str
         }
     }
 }
