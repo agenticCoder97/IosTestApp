@@ -98,7 +98,7 @@ struct ComicReaderView: View {
                 ProgressView()
                     .tint(AstralColors.gold)
                     .scaleEffect(1.2)
-            } else if pages.isEmpty {
+            } else if pages.isEmpty && (localPageURLs?.isEmpty ?? true) {
                 EmptyStateView(
                     icon: "photo.on.rectangle.angled",
                     title: "No Pages",
