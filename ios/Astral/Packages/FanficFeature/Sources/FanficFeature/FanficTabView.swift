@@ -4,6 +4,8 @@ import DesignSystem
 public struct FanficTabView: View {
     @State private var navigation = FanficNavigation()
     @State private var searchText = ""
+    @State private var showFilter = false
+    @AppStorage("fanfic.filter.v1") private var filterPrefsJSON: String = ""
     var onSwitchTab: () -> Void
 
     public init(onSwitchTab: @escaping () -> Void = {}) {
@@ -19,15 +21,15 @@ public struct FanficTabView: View {
                 Group {
                     switch navigation.activeSection {
                     case .library:
-                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
+                        FanficLibraryView(searchText: $searchText, filterFavourites: false, filterState: navigation.filterState)
                     case .favourites:
-                        FanficLibraryView(searchText: .constant(""), filterFavourites: true)
+                        FanficLibraryView(searchText: .constant(""), filterFavourites: true, filterState: navigation.filterState)
                     case .browse:
                         FanficBrowserView()
                     case .scrapes:
                         FanficScrapesView()
                     case .downloads:
-                        FanficLibraryView(searchText: $searchText, filterFavourites: false)
+                        FanficLibraryView(searchText: $searchText, filterFavourites: false, filterState: navigation.filterState)
                     case .stats:
                         FanficStatsView()
                     }
@@ -69,6 +71,15 @@ public struct FanficTabView: View {
                                     .foregroundStyle(AstralColors.body)
                             }
                             Button {
+                                showFilter = true
+                            } label: {
+                                Image(systemName: navigation.filterState.isActive
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease.circle")
+                                    .foregroundStyle(navigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
+                            }
+                            .buttonStyle(PressButtonStyle(scale: 0.88))
+                            Button {
                                 withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
                                     navigation.isSidebarOpen.toggle()
                                 }
@@ -80,11 +91,32 @@ public struct FanficTabView: View {
                     }
                 }
             }
+            .onAppear {
+                if let data = filterPrefsJSON.data(using: .utf8),
+                   let prefs = try? JSONDecoder().decode(FanficFilterPrefs.self, from: data) {
+                    navigation.filterState.load(from: prefs)
+                }
+            }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sortBy) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.fandom) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.completionStatus) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sourceKey) { _, _ in saveFilterPrefs() }
+            .sheet(isPresented: $showFilter) {
+                FanficFilterView(filterState: navigation.filterState)
+                    .presentationDetents([.medium, .large])
+            }
 
             FanficSidebarView(
                 isOpen: $navigation.isSidebarOpen,
                 activeSection: $navigation.activeSection
             )
+        }
+    }
+
+    private func saveFilterPrefs() {
+        if let data = try? JSONEncoder().encode(navigation.filterState.snapshotForPersistence),
+           let str = String(data: data, encoding: .utf8) {
+            filterPrefsJSON = str
         }
     }
 }
@@ -93,6 +125,7 @@ public struct FanficTabView: View {
 final class FanficNavigation {
     var activeSection: FanficSection = .library
     var isSidebarOpen = false
+    var filterState = FanficFilterState()
 }
 
 /// Architecture fix #9: Added .scrapes section — missing from original doc's fanfic sidebar.
