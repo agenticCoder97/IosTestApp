@@ -283,17 +283,13 @@ private struct MorphLandingView: View {
         }
 
         runPhase1()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { runPhase2() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { runPhase2MidDrift() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { runPhase3() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.8) { runPhase4() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.2) { phase = 4 }
     }
 
     // PHASE 1: Blob Appear (0.3s–1.0s) — tiny shapes pop in far from center
     private func runPhase1() {
         let halfW = screenSize.width / 2
         let halfH = screenSize.height / 3
+        let token = animationToken
 
         withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
             goldOpacity = 1
@@ -309,11 +305,16 @@ private struct MorphLandingView: View {
             blueGlow = 0.5
         }
 
-        withAnimation(.easeInOut(duration: 1.2).delay(0.5)) {
+        // Driver — longest (0.5 + 1.2 = 1.7s). Carries completion.
+        withAnimation(.easeInOut(duration: 1.2).delay(0.5),
+                      completionCriteria: .logicallyComplete) {
             goldOffset = CGSize(width: -(halfW * 0.45), height: -(halfH * 0.5))
             blueOffset = CGSize(width: halfW * 0.4, height: halfH * 0.45)
             goldRotation = -18
             blueRotation = 12
+        } completion: {
+            guard token == animationToken else { return }
+            runPhase2()
         }
     }
 
@@ -321,6 +322,7 @@ private struct MorphLandingView: View {
     private func runPhase2() {
         let halfW = screenSize.width / 2
         let halfH = screenSize.height / 3
+        let token = animationToken
         phase = 2
 
         withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
@@ -332,35 +334,46 @@ private struct MorphLandingView: View {
             blueGlow = 0.7
         }
 
-        withAnimation(.easeInOut(duration: 1.5)) {
-            goldOffset = CGSize(width: -(halfW * 0.3), height: -(halfH * 0.2))
-            blueOffset = CGSize(width: halfW * 0.25, height: halfH * 0.2)
-            goldRotation = -8
-            blueRotation = 6
-        }
-
         withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
             contentRevealGold = 0.85
             contentRevealBlue = 0.85
             contentSlide = 0
         }
+
+        // Driver — longest positional drift (1.5s). Chains into mid-drift.
+        withAnimation(.easeInOut(duration: 1.5),
+                      completionCriteria: .logicallyComplete) {
+            goldOffset = CGSize(width: -(halfW * 0.3), height: -(halfH * 0.2))
+            blueOffset = CGSize(width: halfW * 0.25, height: halfH * 0.2)
+            goldRotation = -8
+            blueRotation = 6
+        } completion: {
+            guard token == animationToken else { return }
+            runPhase2MidDrift()
+        }
     }
 
-    // Mid-drift — floating motion, pulling gradually closer (to be removed in Task 4)
     private func runPhase2MidDrift() {
         let halfW = screenSize.width / 2
         let halfH = screenSize.height / 3
+        let token = animationToken
 
-        withAnimation(.easeInOut(duration: 1.0)) {
+        // Driver — 1.0s. Chains into Phase 3.
+        withAnimation(.easeInOut(duration: 1.0),
+                      completionCriteria: .logicallyComplete) {
             goldOffset = CGSize(width: -(halfW * 0.2), height: -(halfH * 0.1))
             blueOffset = CGSize(width: halfW * 0.15, height: halfH * 0.12)
             goldRotation = -4
             blueRotation = 3
+        } completion: {
+            guard token == animationToken else { return }
+            runPhase3()
         }
     }
 
     // PHASE 3: Contract + Morph (2.8s–3.8s) — pull inward, shape morphs
     private func runPhase3() {
+        let token = animationToken
         phase = 3
 
         withAnimation(.easeIn(duration: 0.4)) {
@@ -369,7 +382,14 @@ private struct MorphLandingView: View {
             contentSlide = -5
         }
 
-        withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0.3)) {
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
+            titleScale = 1.0
+            titleOpacity = 1
+        }
+
+        // Driver — morph spring. Carries completion into Phase 4.
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0.3),
+                      completionCriteria: .logicallyComplete) {
             goldSize = 120
             blueSize = 120
             goldCornerRadius = 28
@@ -380,21 +400,27 @@ private struct MorphLandingView: View {
             blueRotation = 0
             goldGlow = 0.3
             blueGlow = 0.3
-        }
-
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
-            titleScale = 1.0
-            titleOpacity = 1
+        } completion: {
+            guard token == animationToken else { return }
+            runPhase4()
         }
     }
 
     // PHASE 4: Ready (3.8s–4.5s) — labels appear, buttons tappable
     private func runPhase4() {
+        let token = animationToken
+
         withAnimation(.easeOut(duration: 0.5)) {
             subtitleOpacity = 1
         }
-        withAnimation(.easeOut(duration: 0.4).delay(0.15)) {
+
+        // Driver — labels are last. Flips phase to 4 when done.
+        withAnimation(.easeOut(duration: 0.4).delay(0.15),
+                      completionCriteria: .logicallyComplete) {
             labelOpacity = 1
+        } completion: {
+            guard token == animationToken else { return }
+            phase = 4
         }
     }
 }
