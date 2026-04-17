@@ -4,6 +4,7 @@ import DesignSystem
 public struct ComicTabView: View {
     @State private var navigation = ComicNavigation()
     @State private var showFilter = false
+    @AppStorage("comic.filter.v1") private var filterPrefsJSON: String = ""
     var onSwitchTab: () -> Void
 
     public init(onSwitchTab: @escaping () -> Void = {}) {
@@ -87,6 +88,17 @@ public struct ComicTabView: View {
                 }
             }
             .environment(\.comicNavigation, navigation)
+            .onAppear {
+                if let data = filterPrefsJSON.data(using: .utf8),
+                   let prefs = try? JSONDecoder().decode(ComicFilterPrefs.self, from: data) {
+                    navigation.filterState.load(from: prefs)
+                }
+            }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sortBy) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.showArchived) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.completionStatus) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sourceKey) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.tagsKeyword) { _, _ in saveFilterPrefs() }
             .sheet(isPresented: $showFilter) {
                 ComicFilterView(filterState: navigation.filterState)
                     .presentationDetents([.medium, .large])
@@ -97,6 +109,13 @@ public struct ComicTabView: View {
                 isOpen: $navigation.isSidebarOpen,
                 activeSection: $navigation.activeSection
             )
+        }
+    }
+
+    private func saveFilterPrefs() {
+        if let data = try? JSONEncoder().encode(navigation.filterState.snapshotForPersistence),
+           let str = String(data: data, encoding: .utf8) {
+            filterPrefsJSON = str
         }
     }
 }
