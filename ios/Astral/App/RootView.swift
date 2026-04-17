@@ -17,6 +17,23 @@ private enum WobbleBeat: CaseIterable {
     }
 }
 
+/// Single source of truth for the landing animation's Phase 4 final state.
+/// Consumed by both `runPhase3()` and `applyReducedMotionState()` so the
+/// reduce-motion fallback cannot silently drift from the animated path.
+private enum LandingTerminalState {
+    static let orbSize: CGFloat = 120
+    static let goldOffset = CGSize(width: -80, height: 30)
+    static let blueOffset = CGSize(width: 80, height: 30)
+    static let cornerRadius: CGFloat = 28
+    static let glow: Double = 0.3
+    static let blobSkew: CGFloat = 1.0
+    static let rotation: Double = 0
+    static let contentSlide: CGFloat = -5
+    static let contentReveal: Double = 1.0
+    static let titleScale: CGFloat = 1.0
+    static let titleBlur: CGFloat = 0
+}
+
 struct RootView: View {
     @State private var appState = AppState()
     @State private var showLanding = !CommandLine.arguments.contains("--uitesting")
@@ -332,23 +349,23 @@ private struct MorphLandingView: View {
 
     private func applyReducedMotionState() {
         // Snap all state vars to Phase 4 final values (no motion).
-        goldSize = 120
-        blueSize = 120
-        goldOffset = CGSize(width: -80, height: 30)
-        blueOffset = CGSize(width: 80, height: 30)
-        goldRotation = 0
-        blueRotation = 0
-        goldBlobSkew = 1.0
-        blueBlobSkew = 1.0
-        goldCornerRadius = 28
-        blueCornerRadius = 28
-        goldGlow = 0.3
-        blueGlow = 0.3
-        contentRevealGold = 1.0
-        contentRevealBlue = 1.0
-        contentSlide = -5
-        titleScale = 1.0
-        titleBlur = 0
+        goldSize = LandingTerminalState.orbSize
+        blueSize = LandingTerminalState.orbSize
+        goldOffset = LandingTerminalState.goldOffset
+        blueOffset = LandingTerminalState.blueOffset
+        goldRotation = LandingTerminalState.rotation
+        blueRotation = LandingTerminalState.rotation
+        goldBlobSkew = LandingTerminalState.blobSkew
+        blueBlobSkew = LandingTerminalState.blobSkew
+        goldCornerRadius = LandingTerminalState.cornerRadius
+        blueCornerRadius = LandingTerminalState.cornerRadius
+        goldGlow = LandingTerminalState.glow
+        blueGlow = LandingTerminalState.glow
+        contentRevealGold = LandingTerminalState.contentReveal
+        contentRevealBlue = LandingTerminalState.contentReveal
+        contentSlide = LandingTerminalState.contentSlide
+        titleScale = LandingTerminalState.titleScale
+        titleBlur = LandingTerminalState.titleBlur
 
         // Single cross-fade for opacity values — no positional motion, no ambient drift.
         withAnimation(.easeOut(duration: 0.3)) {
@@ -441,30 +458,30 @@ private struct MorphLandingView: View {
         phase = 3
 
         withAnimation(.easeIn(duration: 0.4)) {
-            contentRevealGold = 1.0
-            contentRevealBlue = 1.0
-            contentSlide = -5
+            contentRevealGold = LandingTerminalState.contentReveal
+            contentRevealBlue = LandingTerminalState.contentReveal
+            contentSlide = LandingTerminalState.contentSlide
         }
 
         withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
-            titleScale = 1.0
+            titleScale = LandingTerminalState.titleScale
             titleOpacity = 1
-            titleBlur = 0
+            titleBlur = LandingTerminalState.titleBlur
         }
 
         // Driver — morph spring. Carries completion into Phase 4.
         withAnimation(.bouncy(duration: 0.5, extraBounce: 0.15),
                       completionCriteria: .logicallyComplete) {
-            goldSize = 120
-            blueSize = 120
-            goldCornerRadius = 28
-            blueCornerRadius = 28
-            goldOffset = CGSize(width: -80, height: 30)
-            blueOffset = CGSize(width: 80, height: 30)
-            goldRotation = 0
-            blueRotation = 0
-            goldGlow = 0.3
-            blueGlow = 0.3
+            goldSize = LandingTerminalState.orbSize
+            blueSize = LandingTerminalState.orbSize
+            goldCornerRadius = LandingTerminalState.cornerRadius
+            blueCornerRadius = LandingTerminalState.cornerRadius
+            goldOffset = LandingTerminalState.goldOffset
+            blueOffset = LandingTerminalState.blueOffset
+            goldRotation = LandingTerminalState.rotation
+            blueRotation = LandingTerminalState.rotation
+            goldGlow = LandingTerminalState.glow
+            blueGlow = LandingTerminalState.glow
         } completion: {
             guard token == animationToken else { return }
             runPhase4()
