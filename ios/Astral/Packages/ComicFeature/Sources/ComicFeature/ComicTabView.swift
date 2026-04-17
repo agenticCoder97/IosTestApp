@@ -89,6 +89,7 @@ final class ComicNavigation {
     var activeSection: ComicSection = .library
     var isSidebarOpen = false
     var searchText = ""
+    var filterState = ComicFilterState()
 
     func searchFor(_ term: String) {
         searchText = term
