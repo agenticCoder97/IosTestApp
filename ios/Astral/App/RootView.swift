@@ -4,6 +4,19 @@ import DesignSystem
 import ComicFeature
 import FanficFeature
 
+// Three-beat wobble cycle used by orbs during Phase 2 expansion.
+private enum WobbleBeat: CaseIterable {
+    case rest, left, right, settle
+    var angle: Double {
+        switch self {
+        case .rest: return 0
+        case .left: return -5
+        case .right: return 5
+        case .settle: return 0
+        }
+    }
+}
+
 struct RootView: View {
     @State private var appState = AppState()
     @State private var showLanding = !CommandLine.arguments.contains("--uitesting")
@@ -189,6 +202,15 @@ private struct MorphLandingView: View {
     // MARK: - Gold Orb (Comics)
 
     private var goldOrb: some View {
+        PhaseAnimator(WobbleBeat.allCases, trigger: phase == 2) { beat in
+            goldOrbBody
+                .rotationEffect(.degrees(beat.angle))
+        } animation: { _ in
+            .easeInOut(duration: 0.7)
+        }
+    }
+
+    private var goldOrbBody: some View {
         ZStack {
             // Glow halo
             RoundedRectangle(cornerRadius: goldCornerRadius)
@@ -241,6 +263,15 @@ private struct MorphLandingView: View {
     // MARK: - Blue Orb (Fanfic)
 
     private var blueOrb: some View {
+        PhaseAnimator(WobbleBeat.allCases, trigger: phase == 2) { beat in
+            blueOrbBody
+                .rotationEffect(.degrees(beat.angle))
+        } animation: { _ in
+            .easeInOut(duration: 0.7).delay(0.15)
+        }
+    }
+
+    private var blueOrbBody: some View {
         ZStack {
             // Glow halo
             RoundedRectangle(cornerRadius: blueCornerRadius)
