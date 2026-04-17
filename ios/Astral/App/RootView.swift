@@ -370,10 +370,13 @@ private struct MorphLandingView: View {
             blueGlow = 0.7
         }
 
+        // Stagger: gold reveals first, blue 0.15s later.
         withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
             contentRevealGold = 0.85
-            contentRevealBlue = 0.85
             contentSlide = 0
+        }
+        withAnimation(.easeOut(duration: 1.0).delay(0.45)) {
+            contentRevealBlue = 0.85
         }
 
         // Positions kept wider — centers ≥148pt apart on a 390pt screen,
