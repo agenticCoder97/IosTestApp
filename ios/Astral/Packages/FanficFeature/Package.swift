@@ -18,5 +18,10 @@ let package = Package(
             name: "FanficFeature",
             dependencies: ["Core", "Networking", "DesignSystem"]
         ),
+        .testTarget(
+            name: "FanficFeatureTests",
+            dependencies: ["FanficFeature", "Core"],
+            path: "Tests/FanficFeatureTests"
+        ),
     ]
 )
