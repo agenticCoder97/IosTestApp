@@ -7,6 +7,7 @@ from app.tasks.comic_scrape_task import comic_scrape_task
 from app.tasks.fanfic_scrape_task import fanfic_scrape_task
 from app.tasks.comic_archive_task import comic_archive_task
 from app.tasks.comic_unarchive_task import comic_unarchive_task
+from app.tasks.comic_media_wipe_task import comic_media_wipe_task
 from app.tasks.cleanup_task import cleanup_task
 from app.tasks.auto_update_task import auto_update_task
 
@@ -29,7 +30,7 @@ async def shutdown(ctx: dict) -> None:
 
 
 class WorkerSettings:
-    functions = [comic_scrape_task, fanfic_scrape_task, comic_archive_task, comic_unarchive_task]
+    functions = [comic_scrape_task, fanfic_scrape_task, comic_archive_task, comic_unarchive_task, comic_media_wipe_task]
     cron_jobs = [
         cron(cleanup_task, hour=3, minute=0),           # nightly at 03:00 UTC
         cron(auto_update_task, hour={0, 6, 12, 18}, minute=0),  # every 6 hours
