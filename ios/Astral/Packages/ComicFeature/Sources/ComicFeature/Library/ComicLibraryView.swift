@@ -40,7 +40,7 @@ struct ComicLibraryView: View {
         // Sort archived comics to the bottom
         return ready.sorted { lhs, rhs in
             if lhs.isArchived != rhs.isArchived { return !lhs.isArchived }
-            return lhs.addedAt > rhs.addedAt
+            return (lhs.lastReadAt ?? lhs.addedAt) > (rhs.lastReadAt ?? rhs.addedAt)
         }
     }
 
