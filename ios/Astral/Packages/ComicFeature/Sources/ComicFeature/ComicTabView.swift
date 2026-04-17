@@ -3,6 +3,7 @@ import DesignSystem
 
 public struct ComicTabView: View {
     @State private var navigation = ComicNavigation()
+    @State private var showFilter = false
     var onSwitchTab: () -> Void
 
     public init(onSwitchTab: @escaping () -> Void = {}) {
@@ -62,18 +63,34 @@ public struct ComicTabView: View {
                         .tint(AstralColors.gold)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                                navigation.isSidebarOpen.toggle()
+                        HStack(spacing: 16) {
+                            Button {
+                                showFilter = true
+                            } label: {
+                                Image(systemName: navigation.filterState.isActive
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease.circle")
+                                    .foregroundStyle(navigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
                             }
-                        } label: {
-                            Image(systemName: "line.3.horizontal")
-                                .foregroundStyle(AstralColors.body)
+                            .buttonStyle(PressButtonStyle(scale: 0.88))
+
+                            Button {
+                                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                                    navigation.isSidebarOpen.toggle()
+                                }
+                            } label: {
+                                Image(systemName: "line.3.horizontal")
+                                    .foregroundStyle(AstralColors.body)
+                            }
                         }
                     }
                 }
             }
             .environment(\.comicNavigation, navigation)
+            .sheet(isPresented: $showFilter) {
+                ComicFilterView(filterState: navigation.filterState)
+                    .presentationDetents([.medium, .large])
+            }
 
             // Sidebar overlay
             ComicSidebarView(
