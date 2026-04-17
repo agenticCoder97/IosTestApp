@@ -95,9 +95,6 @@ private struct MorphLandingView: View {
     @State private var blueCornerRadius: CGFloat = 100
     @State private var blueGlow: Double = 0
 
-    // Screen-relative offsets calculated from geometry
-    @State private var screenSize: CGSize = .zero
-
     // Content inside orbs
     @State private var contentRevealGold: Double = 0
     @State private var contentRevealBlue: Double = 0
@@ -204,11 +201,11 @@ private struct MorphLandingView: View {
             }
         }
         .onAppear {
-            screenSize = geo.size
+            let size = geo.size
             // Start orbs at absolute screen corners
-            goldOffset = CGSize(width: -(geo.size.width / 2 - 20), height: -(geo.size.height / 3))
-            blueOffset = CGSize(width: geo.size.width / 2 - 20, height: geo.size.height / 3)
-            runAnimation()
+            goldOffset = CGSize(width: -(size.width / 2 - 20), height: -(size.height / 3))
+            blueOffset = CGSize(width: size.width / 2 - 20, height: size.height / 3)
+            runAnimation(in: size)
         }
         .onDisappear {
             animationToken = UUID()
@@ -333,7 +330,7 @@ private struct MorphLandingView: View {
 
     // MARK: - Animation Sequence
 
-    private func runAnimation() {
+    private func runAnimation(in size: CGSize) {
         if reduceMotion {
             applyReducedMotionState()
             return
@@ -344,7 +341,7 @@ private struct MorphLandingView: View {
             ambientShift = true
         }
 
-        runPhase1()
+        runPhase1(in: size)
     }
 
     private func applyReducedMotionState() {
@@ -379,9 +376,9 @@ private struct MorphLandingView: View {
     }
 
     // PHASE 1: Blob Appear (0.3s–1.0s) — tiny shapes pop in far from center
-    private func runPhase1() {
-        let halfW = screenSize.width / 2
-        let halfH = screenSize.height / 3
+    private func runPhase1(in size: CGSize) {
+        let halfW = size.width / 2
+        let halfH = size.height / 3
         let token = animationToken
 
         withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
@@ -407,14 +404,14 @@ private struct MorphLandingView: View {
             blueRotation = 12
         } completion: {
             guard token == animationToken else { return }
-            runPhase2()
+            runPhase2(in: size)
         }
     }
 
     // PHASE 2: Expand + Drift (1.0s–2.8s) — orbs grow, content fades in
-    private func runPhase2() {
-        let halfW = screenSize.width / 2
-        let halfH = screenSize.height / 3
+    private func runPhase2(in size: CGSize) {
+        let halfW = size.width / 2
+        let halfH = size.height / 3
         let token = animationToken
         phase = 2
 
@@ -448,12 +445,12 @@ private struct MorphLandingView: View {
             blueRotation = 6
         } completion: {
             guard token == animationToken else { return }
-            runPhase3()
+            runPhase3(in: size)
         }
     }
 
     // PHASE 3: Contract + Morph (2.8s–3.8s) — pull inward, shape morphs
-    private func runPhase3() {
+    private func runPhase3(in size: CGSize) {
         let token = animationToken
         phase = 3
 
@@ -484,13 +481,14 @@ private struct MorphLandingView: View {
             blueGlow = LandingTerminalState.glow
         } completion: {
             guard token == animationToken else { return }
-            runPhase4()
+            runPhase4(in: size)
         }
     }
 
     // PHASE 4: Ready (3.8s–4.5s) — labels appear, buttons tappable
-    private func runPhase4() {
+    private func runPhase4(in size: CGSize) {
         let token = animationToken
+        _ = size // signature uniformity — runPhase4 does not currently need size
 
         withAnimation(.easeOut(duration: 0.5)) {
             subtitleOpacity = 1
