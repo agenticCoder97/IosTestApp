@@ -152,14 +152,23 @@ private struct MorphLandingView: View {
             // Tap zones — only active in phase 4
             if phase >= 4 {
                 HStack(spacing: 0) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { onSelect(.comic) }
-                        .accessibilityIdentifier(AccessibilityID.landingComicOrb)
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { onSelect(.fanfic) }
-                        .accessibilityIdentifier(AccessibilityID.landingFanficOrb)
+                    Button {
+                        onSelect(.comic)
+                    } label: {
+                        Color.clear
+                            .contentShape(Rectangle())
+                    }
+                    .pressEffect()
+                    .accessibilityIdentifier(AccessibilityID.landingComicOrb)
+
+                    Button {
+                        onSelect(.fanfic)
+                    } label: {
+                        Color.clear
+                            .contentShape(Rectangle())
+                    }
+                    .pressEffect()
+                    .accessibilityIdentifier(AccessibilityID.landingFanficOrb)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
