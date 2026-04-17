@@ -70,3 +70,9 @@ async def delete_comic(comic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     deleted = await comic_service.soft_delete_comic(db, comic_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Comic not found")
+
+
+@router.delete("/{comic_id}/permanent", status_code=204)
+async def permanent_delete_comic_route(comic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    await comic_service.permanent_delete_comic(db, comic_id)
+    # Idempotent: always 204, even for unknown ids
