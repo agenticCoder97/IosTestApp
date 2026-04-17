@@ -237,7 +237,7 @@ private struct FanficContinueCardLink: View {
     }
 
     private var nextChapter: LocalFanficChapter? {
-        let lastRead = Double(fanfic.lastReadChapterNumber)
+        let lastRead = fanfic.lastReadChapterNumber ?? 0
         return chapters.first { $0.chapterNumber > lastRead } ?? chapters.first
     }
 
@@ -307,7 +307,7 @@ struct FanficRowView: View {
 
     private var progressPercent: Double {
         guard fanfic.totalChapters > 0 else { return 0 }
-        return Double(fanfic.lastReadChapterNumber) / Double(fanfic.totalChapters)
+        return (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
     }
 
     private func thumbnailURL(_ path: String) -> URL? {
@@ -458,7 +458,7 @@ struct FanficRowView: View {
             }
 
             // Progress — circular + text like comic cards
-            if fanfic.totalChapters > 0 && fanfic.lastReadChapterNumber > 0 {
+            if fanfic.totalChapters > 0 && (fanfic.lastReadChapterNumber ?? 0) > 0 {
                 HStack(spacing: 6) {
                     ZStack {
                         Circle()
@@ -470,7 +470,7 @@ struct FanficRowView: View {
                     }
                     .frame(width: 18, height: 18)
 
-                    Text("\(fanfic.lastReadChapterNumber)/\(fanfic.totalChapters) chapters")
+                    Text("\(Int(fanfic.lastReadChapterNumber ?? 0))/\(fanfic.totalChapters) chapters")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(AstralColors.body)
                 }

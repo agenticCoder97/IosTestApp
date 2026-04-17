@@ -262,10 +262,10 @@ struct FanficReaderView: View {
             let session = LocalReadingSession(contentType: "fanfic", storyId: fanfic.id)
             modelContext.insert(session)
             // Persist reading progress
-            fanfic.lastReadChapterNumber = Int(currentChapter.chapterNumber)
+            fanfic.lastReadChapterNumber = currentChapter.chapterNumber
             fanfic.lastReadAt = .now
             if fanfic.totalChapters > 0 {
-                fanfic.progressPercent = Double(fanfic.lastReadChapterNumber) / Double(fanfic.totalChapters)
+                fanfic.progressPercent = (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
                 if fanfic.progressPercent >= 1.0 && fanfic.completedAt == nil {
                     fanfic.completedAt = .now
                 }
@@ -289,7 +289,7 @@ struct FanficReaderView: View {
                 readingSession.endedAt = .now
                 Task {
                     let body = FanficProgressRequest(
-                        lastChapterNumber: fanfic.lastReadChapterNumber,
+                        lastChapterNumber: Int(fanfic.lastReadChapterNumber ?? 0),
                         scrollOffsetPercent: fanfic.scrollOffsetPercent
                     )
                     let _: ProgressResponse? = try? await APIClient.shared.request(
@@ -705,7 +705,7 @@ struct FanficReaderView: View {
 
     private func calculateScrollTarget() {
         guard let pct = fanfic.scrollOffsetPercent, pct > 0,
-              Int(currentChapter.chapterNumber) == fanfic.lastReadChapterNumber,
+              currentChapter.chapterNumber == (fanfic.lastReadChapterNumber ?? 0),
               !paragraphs.isEmpty else { return }
         scrollTargetIndex = min(Int(pct * Double(paragraphs.count - 1)), paragraphs.count - 1)
         AstralLogger.info("scrollTarget: paragraph \(scrollTargetIndex ?? -1) of \(paragraphs.count) (pct=\(pct))", context: "FanficReader")
@@ -734,11 +734,11 @@ struct FanficReaderView: View {
         bookmarkParagraphIndex = nil
         horizontalPage = "current"
         // Update reading progress
-        fanfic.lastReadChapterNumber = Int(chapter.chapterNumber)
+        fanfic.lastReadChapterNumber = chapter.chapterNumber
         fanfic.scrollOffsetPercent = nil
         fanfic.lastReadAt = .now
         if fanfic.totalChapters > 0 {
-            fanfic.progressPercent = Double(fanfic.lastReadChapterNumber) / Double(fanfic.totalChapters)
+            fanfic.progressPercent = (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
         }
         try? modelContext.save()
         // Changing currentChapter triggers .task(id:) to re-fire
