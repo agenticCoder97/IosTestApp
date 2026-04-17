@@ -161,6 +161,7 @@ struct ComicReaderView: View {
                             .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
                     }
+                    .accessibilityIdentifier(AccessibilityID.readerBackButton)
                     .padding(.leading, 16)
                     .padding(.top, 54)
                     .opacity(showHUD ? 0 : 0.6)
@@ -1109,6 +1110,7 @@ private struct AutoScrollFinder: UIViewRepresentable {
         Coordinator(speed: speed)
     }
 
+    @MainActor
     class Coordinator {
         var speed: Double
         private var displayLink: CADisplayLink?
@@ -1149,8 +1151,10 @@ private struct AutoScrollFinder: UIViewRepresentable {
             return nil
         }
 
-        deinit {
-            displayLink?.invalidate()
+        nonisolated deinit {
+            // stopScrolling() handles cleanup; deinit is a safety net.
+            // CADisplayLink is invalidated in stopScrolling() which is
+            // always called from updateUIView before deallocation.
         }
     }
 }

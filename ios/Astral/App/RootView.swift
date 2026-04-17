@@ -1,11 +1,12 @@
 import SwiftUI
+import Core
 import DesignSystem
 import ComicFeature
 import FanficFeature
 
 struct RootView: View {
     @State private var appState = AppState()
-    @State private var showLanding = true
+    @State private var showLanding = !CommandLine.arguments.contains("--uitesting")
 
     var body: some View {
         DebugShakeDetector {
@@ -147,9 +148,11 @@ private struct MorphLandingView: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { onSelect(.comic) }
+                        .accessibilityIdentifier(AccessibilityID.landingComicOrb)
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { onSelect(.fanfic) }
+                        .accessibilityIdentifier(AccessibilityID.landingFanficOrb)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

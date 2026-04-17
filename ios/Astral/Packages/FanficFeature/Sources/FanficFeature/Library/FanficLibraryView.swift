@@ -158,6 +158,7 @@ struct FanficLibraryView: View {
                             } label: {
                                 FanficRowView(fanfic: fanfic)
                             }
+                            .accessibilityIdentifier(AccessibilityID.storyCard(fanfic.id))
                             .buttonStyle(PressButtonStyle())
                             .staggeredAppear(index: index)
                             .contextMenu {

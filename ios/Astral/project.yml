@@ -50,3 +50,15 @@ targets:
       - package: DesignSystem
       - package: ComicFeature
       - package: FanficFeature
+
+  AstralUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: AstralUITests
+    settings:
+      base:
+        IPHONEOS_DEPLOYMENT_TARGET: "17.2"
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: Astral

@@ -98,6 +98,7 @@ struct ComicLibraryView: View {
                             } label: {
                                 ComicCardView(comic: comic)
                             }
+                            .accessibilityIdentifier(AccessibilityID.storyCard(comic.id))
                             .buttonStyle(PressButtonStyle())
                             .staggeredAppear(index: index)
                             .contextMenu {

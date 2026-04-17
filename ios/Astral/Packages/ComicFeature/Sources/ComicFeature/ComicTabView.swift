@@ -1,4 +1,5 @@
 import SwiftUI
+import Core
 import DesignSystem
 
 public struct ComicTabView: View {
@@ -100,6 +101,7 @@ public struct ComicTabView: View {
                                 Image(systemName: "line.3.horizontal")
                                     .foregroundStyle(AstralColors.body)
                             }
+                            .accessibilityIdentifier(AccessibilityID.sidebarToggle)
                         }
                     }
                 }

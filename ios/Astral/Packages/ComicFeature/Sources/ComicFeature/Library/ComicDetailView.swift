@@ -322,6 +322,7 @@ struct ComicDetailView: View {
                                             isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
                                         )
                                     }
+                                    .accessibilityIdentifier(AccessibilityID.chapterRow(Int(chapter.chapterNumber)))
                                     .buttonStyle(.plain)
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         Button {
