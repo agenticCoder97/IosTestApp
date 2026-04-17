@@ -14,6 +14,67 @@
 
 **Scope note:** This PR ships backend-only. The iOS client continues to use the existing soft-delete endpoint until PR 2 lands. Deploying this PR is safe — no breaking change.
 
+## Corrections discovered during Task 1 FK inspection (applied throughout)
+
+The spec got several backend details wrong; Task 1 verified the real state of the codebase. Any task in this plan that conflicts with the items below should follow the Task 1 findings:
+
+1. **Worker file is `backend/app/worker.py` (flat module), not `backend/app/worker/worker.py`.** The `WorkerSettings` class has `functions = [comic_scrape_task, fanfic_scrape_task, comic_archive_task, comic_unarchive_task]`. New tasks go in `functions` (event-driven), not `cron_jobs`.
+2. **ARQ pool pattern is NOT `arq.create_pool(settings.arq_redis_settings)`** — there is no such setting. Use the existing enqueue pattern from `comic_service.archive_comic` (lines 242-245):
+   ```python
+   import redis.asyncio as aioredis
+   from arq.connections import ArqRedis
+   r = await aioredis.from_url(settings.redis_url)
+   arq_redis = ArqRedis(r.connection_pool)
+   await arq_redis.enqueue_job("task_name", arg1)
+   await arq_redis.aclose()
+   ```
+3. **Media root setting key is `settings.block_volume_path`** (default `/tmp/astral-media`, prod env overrides to `/mnt/astral-media`). There is no `astral_media_root` key.
+4. **FK cascades are NOT configured** — every child delete is explicit. No `ondelete="CASCADE"` anywhere.
+5. **Polymorphic association tables:** `reading_progress` and `scrape_jobs` use `content_type` (string) + `story_id` (uuid) — no FK from them to `comics`/`fanfics`. Delete with `WHERE content_type='comic' AND story_id=:id`.
+6. **Additional tables to purge** that the spec missed:
+   - `comic_authors` (join), `comic_tags` (join) — for comic permanent delete.
+   - `fanfic_authors` (join) — for fanfic permanent delete.
+   - `reading_progress` (polymorphic) — both.
+7. **Archived comics** have media at `{block_volume_path}/archive/comics/{id}/` instead of `{block_volume_path}/comics/{id}/`. The media-wipe task must handle both paths (rmtree both with `ignore_errors=True`).
+8. **Fanfic has NO page table** — chapter body is inline on `fanfic_chapters.content`. No media directory for fanfic pages; only a shared pool of random thumbnail covers (don't delete those).
+9. **FK from `comics.scrape_job_id` to `scrape_jobs.id`** means the comic row MUST be deleted before the scrape_jobs row (or null the FK first). The delete order below respects this.
+10. **No cleanup of `scrape_logs`** today — orphans accumulate already. Optional follow-up; skip for this PR.
+
+## Corrected DELETE order
+
+**Comic:**
+1. `pages WHERE chapter_id IN (SELECT id FROM comic_chapters WHERE comic_id=:id)`
+2. `comic_chapters WHERE comic_id=:id`
+3. `comic_authors WHERE comic_id=:id`
+4. `comic_tags WHERE comic_id=:id`
+5. `reading_progress WHERE content_type='comic' AND story_id=:id`
+6. `comics WHERE id=:id`
+7. `scrape_jobs WHERE content_type='comic' AND story_id=:id`  — AFTER comic (FK from comics.scrape_job_id)
+
+**Fanfic:**
+1. `fanfic_chapters WHERE fanfic_id=:id`
+2. `fanfic_authors WHERE fanfic_id=:id`
+3. `reading_progress WHERE content_type='fanfic' AND story_id=:id`
+4. `fanfics WHERE id=:id`
+5. `scrape_jobs WHERE content_type='fanfic' AND story_id=:id`
+
+## Running pytest (critical)
+
+The `backend-fastapi-1` container's image does NOT include `pytest` or the `tests/` directory. For test execution in this worktree, the harness has been prepped:
+- `pytest==8.3.3`, `pytest-asyncio==0.24.0`, `aiosqlite==0.20.0`, `httpx==0.27.2` are installed in the running container.
+- `backend/tests/` and `backend/pytest.ini` have been copied into `/app/tests` and `/app/pytest.ini` via `docker cp`.
+
+**When you add a NEW test file**, you MUST copy it into the container before running pytest:
+
+```bash
+docker cp backend/tests/services/<new_file>.py backend-fastapi-1:/app/tests/services/
+docker exec -w /app backend-fastapi-1 pytest tests/services/<new_file>.py -v
+```
+
+**Do NOT use** `docker compose -f docker-compose.local.yml exec backend pytest ...` (the plan's original text). The service name in compose is `fastapi`, not `backend`, and pytest isn't on the image PATH by default.
+
+**Pre-existing test failures to ignore:** 4 tests fail on `development` unrelated to this work — `test_update_comic_title`, `test_update_comic_thumbnail`, `test_update_comic_partial_fields`, `test_soft_delete_comic_hides_from_list`. Do not try to fix them; do not let them block a green run for new tests you add.
+
 ---
 
 ### Task 1: Inspect FK constraints and existing delete paths
