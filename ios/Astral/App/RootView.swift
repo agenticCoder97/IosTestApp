@@ -42,6 +42,7 @@ struct RootView: View {
 
 private struct MorphLandingView: View {
     let onSelect: (AppTab) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Phase tracking
     @State private var phase = 0 // 0=blank, 1=blobAppear, 2=expand, 3=morph, 4=ready
@@ -68,7 +69,8 @@ private struct MorphLandingView: View {
     @State private var screenSize: CGSize = .zero
 
     // Content inside orbs
-    @State private var contentReveal: Double = 0
+    @State private var contentRevealGold: Double = 0
+    @State private var contentRevealBlue: Double = 0
     @State private var contentSlide: CGFloat = 20 // internal content slides up
 
     // Title + labels
@@ -76,6 +78,10 @@ private struct MorphLandingView: View {
     @State private var titleOpacity: Double = 0
     @State private var subtitleOpacity: Double = 0
     @State private var labelOpacity: Double = 0
+    @State private var titleBlur: CGFloat = 8
+
+    // Cancellation guard for phase completion chain
+    @State private var animationToken = UUID()
 
     // Ambient
     @State private var ambientShift: Bool = false
@@ -106,6 +112,7 @@ private struct MorphLandingView: View {
                 Text("Astral")
                     .font(.system(size: 42, weight: .heavy, design: .rounded))
                     .foregroundStyle(AstralColors.white)
+                    .blur(radius: titleBlur)
                     .scaleEffect(titleScale)
                     .opacity(titleOpacity)
 
@@ -164,6 +171,9 @@ private struct MorphLandingView: View {
             blueOffset = CGSize(width: geo.size.width / 2 - 20, height: geo.size.height / 3)
             runAnimation()
         }
+        .onDisappear {
+            animationToken = UUID()
+        }
         } // GeometryReader
     }
 
@@ -214,7 +224,7 @@ private struct MorphLandingView: View {
                 }
             }
             .offset(y: contentSlide)
-            .opacity(contentReveal)
+            .opacity(contentRevealGold)
             .clipShape(RoundedRectangle(cornerRadius: goldCornerRadius))
         }
     }
@@ -259,7 +269,7 @@ private struct MorphLandingView: View {
                 }
             }
             .offset(y: contentSlide)
-            .opacity(contentReveal)
+            .opacity(contentRevealBlue)
             .clipShape(RoundedRectangle(cornerRadius: blueCornerRadius))
         }
     }
@@ -332,7 +342,8 @@ private struct MorphLandingView: View {
 
             // Content fades in and slides up
             withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
-                contentReveal = 0.85
+                contentRevealGold = 0.85
+                contentRevealBlue = 0.85
                 contentSlide = 0
             }
         }
@@ -357,7 +368,8 @@ private struct MorphLandingView: View {
 
             // Content dissolves
             withAnimation(.easeIn(duration: 0.4)) {
-                contentReveal = 1.0 // icon stays, decorative lines will be clipped
+                contentRevealGold = 1.0 // icon stays, decorative lines will be clipped
+                contentRevealBlue = 1.0
                 contentSlide = -5
             }
 
