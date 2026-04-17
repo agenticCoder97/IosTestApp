@@ -216,11 +216,17 @@ private struct MorphLandingView: View {
     // MARK: - Gold Orb (Comics)
 
     private var goldOrb: some View {
-        PhaseAnimator(WobbleBeat.allCases, trigger: phase == 2) { beat in
-            goldOrbBody
-                .rotationEffect(.degrees(beat.angle))
-        } animation: { _ in
-            .easeInOut(duration: 0.7)
+        Group {
+            if phase == 2 {
+                PhaseAnimator(WobbleBeat.allCases) { beat in
+                    goldOrbBody
+                        .rotationEffect(.degrees(beat.angle))
+                } animation: { _ in
+                    .easeInOut(duration: 0.7)
+                }
+            } else {
+                goldOrbBody
+            }
         }
     }
 
@@ -277,11 +283,17 @@ private struct MorphLandingView: View {
     // MARK: - Blue Orb (Fanfic)
 
     private var blueOrb: some View {
-        PhaseAnimator(WobbleBeat.allCases, trigger: phase == 2) { beat in
-            blueOrbBody
-                .rotationEffect(.degrees(beat.angle))
-        } animation: { _ in
-            .easeInOut(duration: 0.7).delay(0.15)
+        Group {
+            if phase == 2 {
+                PhaseAnimator(WobbleBeat.allCases) { beat in
+                    blueOrbBody
+                        .rotationEffect(.degrees(beat.angle))
+                } animation: { _ in
+                    .easeInOut(duration: 0.7).delay(0.15)
+                }
+            } else {
+                blueOrbBody
+            }
         }
     }
 
