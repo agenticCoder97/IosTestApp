@@ -277,12 +277,48 @@ private struct MorphLandingView: View {
     // MARK: - Animation Sequence
 
     private func runAnimation() {
+        if reduceMotion {
+            applyReducedMotionState()
+            return
+        }
+
         // Ambient background — continuous slow drift
         withAnimation(.easeInOut(duration: 5.0).repeatForever(autoreverses: true)) {
             ambientShift = true
         }
 
         runPhase1()
+    }
+
+    private func applyReducedMotionState() {
+        // Snap all state vars to Phase 4 final values (no motion).
+        goldSize = 120
+        blueSize = 120
+        goldOffset = CGSize(width: -80, height: 30)
+        blueOffset = CGSize(width: 80, height: 30)
+        goldRotation = 0
+        blueRotation = 0
+        goldBlobSkew = 1.0
+        blueBlobSkew = 1.0
+        goldCornerRadius = 28
+        blueCornerRadius = 28
+        goldGlow = 0.3
+        blueGlow = 0.3
+        contentRevealGold = 1.0
+        contentRevealBlue = 1.0
+        contentSlide = -5
+        titleScale = 1.0
+        titleBlur = 0
+
+        // Single cross-fade for opacity values — no positional motion, no ambient drift.
+        withAnimation(.easeOut(duration: 0.3)) {
+            goldOpacity = 1
+            blueOpacity = 1
+            titleOpacity = 1
+            subtitleOpacity = 1
+            labelOpacity = 1
+        }
+        phase = 4
     }
 
     // PHASE 1: Blob Appear (0.3s–1.0s) — tiny shapes pop in far from center
