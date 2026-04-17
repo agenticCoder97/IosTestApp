@@ -2,10 +2,12 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
-from tests.conftest import make_comic
+from tests.conftest import make_comic, make_progress, make_scrape_job
 from app.models.comic import Comic, ComicChapter, Page
+from app.models.progress import ReadingProgress
+from app.models.scrape import ScrapeJob
 
 
 async def _seed_comic(db_session):
@@ -70,3 +72,62 @@ async def test_permanent_delete_comic_unknown_id_is_idempotent(db_session):
     from app.services import comic_service
     result = await comic_service.permanent_delete_comic(db_session, uuid.uuid4())
     assert result is True
+
+
+@pytest.mark.asyncio
+async def test_permanent_delete_comic_removes_polymorphic_rows_only_for_comic(db_session):
+    """Verify permanent_delete_comic deletes only its own content_type rows
+    in the polymorphic reading_progress and scrape_jobs tables — bystander
+    fanfic rows must survive."""
+    comic, _ = await _seed_comic(db_session)
+    comic_id = comic.id
+
+    # Target rows — comic-scoped polymorphic state.
+    target_progress = make_progress(content_type="comic", story_id=comic_id)
+    target_job = make_scrape_job(content_type="comic", story_id=comic_id)
+
+    # Bystander — an unrelated fanfic progress row that must NOT be touched.
+    bystander_fanfic_story_id = uuid.uuid4()
+    bystander_progress = make_progress(
+        content_type="fanfic", story_id=bystander_fanfic_story_id
+    )
+
+    db_session.add_all([target_progress, target_job, bystander_progress])
+    await db_session.commit()
+
+    from app.services import comic_service
+    result = await comic_service.permanent_delete_comic(db_session, comic_id)
+    assert result is True
+
+    # Comic-scoped reading_progress gone.
+    remaining_target_progress = (await db_session.execute(
+        select(ReadingProgress).where(
+            and_(
+                ReadingProgress.content_type == "comic",
+                ReadingProgress.story_id == comic_id,
+            )
+        )
+    )).scalars().all()
+    assert remaining_target_progress == []
+
+    # Comic-scoped scrape_jobs gone.
+    remaining_target_jobs = (await db_session.execute(
+        select(ScrapeJob).where(
+            and_(
+                ScrapeJob.content_type == "comic",
+                ScrapeJob.story_id == comic_id,
+            )
+        )
+    )).scalars().all()
+    assert remaining_target_jobs == []
+
+    # Bystander fanfic reading_progress survives.
+    remaining_bystander = (await db_session.execute(
+        select(ReadingProgress).where(
+            and_(
+                ReadingProgress.content_type == "fanfic",
+                ReadingProgress.story_id == bystander_fanfic_story_id,
+            )
+        )
+    )).scalar_one_or_none()
+    assert remaining_bystander is not None

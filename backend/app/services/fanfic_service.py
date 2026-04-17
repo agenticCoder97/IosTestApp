@@ -4,12 +4,17 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from math import ceil
-from sqlalchemy import select, func
+import redis.asyncio as aioredis
+from arq.connections import ArqRedis
+from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, defer
 from app.models.fanfic import Fanfic, FanficChapter, FanficAuthor
+from app.models.scrape import ScrapeJob
+from app.models.progress import ReadingProgress
 from app.schemas.fanfic import FanficResponse, FanficChapterResponse
 from app.schemas.shared import PaginatedResponse, AuthorResponse
+from app.core.config import settings
 from app.cache import redis_cache
 
 logger = logging.getLogger(__name__)
@@ -189,4 +194,61 @@ async def soft_delete_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> bool:
     fanfic.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     await redis_cache.invalidate_fanfics(str(fanfic_id))
+    return True
+
+
+async def permanent_delete_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> bool:
+    """Hard-delete a fanfic and every dependent row.
+
+    FK-safe order:
+      fanfic_chapters -> fanfic_authors -> reading_progress (polymorphic)
+        -> fanfics
+        -> scrape_jobs (polymorphic; FK is fanfics.scrape_job_id,
+           so scrape_jobs must be deleted AFTER fanfics).
+
+    Enqueues a best-effort `fanfic_media_wipe_task` ARQ job for pipeline
+    symmetry with comics (the task itself is a no-op today — fanfic has
+    no per-story media dir; thumbnails come from a shared pool and must
+    NOT be deleted). Idempotent: returns True even when no fanfic row
+    exists (iOS retry queue safety).
+    """
+    logger.info("permanent_delete_fanfic called | fanfic_id=%s", fanfic_id)
+
+    await db.execute(delete(FanficChapter).where(FanficChapter.fanfic_id == fanfic_id))
+    await db.execute(delete(FanficAuthor).where(FanficAuthor.fanfic_id == fanfic_id))
+    await db.execute(
+        delete(ReadingProgress).where(
+            and_(
+                ReadingProgress.content_type == "fanfic",
+                ReadingProgress.story_id == fanfic_id,
+            )
+        )
+    )
+    await db.execute(delete(Fanfic).where(Fanfic.id == fanfic_id))
+    await db.execute(
+        delete(ScrapeJob).where(
+            and_(
+                ScrapeJob.content_type == "fanfic",
+                ScrapeJob.story_id == fanfic_id,
+            )
+        )
+    )
+    await db.commit()
+
+    await redis_cache.invalidate_fanfics(str(fanfic_id))
+
+    # Best-effort media wipe — mirrors permanent_delete_comic enqueue pattern.
+    try:
+        r = await aioredis.from_url(settings.redis_url)
+        arq_redis = ArqRedis(r.connection_pool)
+        await arq_redis.enqueue_job("fanfic_media_wipe_task", str(fanfic_id))
+        await arq_redis.aclose()
+    except Exception as e:
+        logger.warning(
+            "permanent_delete_fanfic ARQ enqueue failed | fanfic_id=%s error=%s",
+            fanfic_id,
+            e,
+        )
+
+    logger.info("permanent_delete_fanfic done | fanfic_id=%s", fanfic_id)
     return True
