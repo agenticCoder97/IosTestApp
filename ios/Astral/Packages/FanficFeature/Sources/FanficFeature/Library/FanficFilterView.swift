@@ -4,72 +4,120 @@ import DesignSystem
 
 struct FanficFilterView: View {
     @Environment(\.dismiss) private var dismiss
-
-    @State private var fandom = ""
-    @State private var selectedRatings: Set<String> = []
-    @State private var selectedStatus: CompletionStatus?
-    @State private var wordCountRange: ClosedRange<Double> = 0...500_000
-    @State private var language = ""
+    @Bindable var filterState: FanficFilterState
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Fandom") {
-                    TextField("e.g. Harry Potter", text: $fandom)
-                }
+            ScrollView {
+                VStack(spacing: 12) {
+                    // MARK: Sort
+                    FilterSectionCard("Sort") {
+                        FlowLayout(spacing: 8) {
+                            ForEach(FanficSortOption.allCases, id: \.self) { option in
+                                FilterStatusChip(
+                                    option.rawValue,
+                                    isSelected: filterState.sortBy == option
+                                ) {
+                                    filterState.sortBy = option
+                                }
+                            }
+                        }
+                        FilterSortDirectionToggle(ascending: $filterState.sortAscending)
+                    }
 
-                Section("Rating") {
-                    ForEach(FanficRating.allCases, id: \.self) { rating in
-                        Toggle(
-                            ratingLabel(rating),
-                            isOn: Binding(
-                                get: { selectedRatings.contains(rating.rawValue) },
-                                set: { isOn in
-                                    if isOn {
-                                        selectedRatings.insert(rating.rawValue)
+                    // MARK: Work Info
+                    FilterSectionCard("Work Info") {
+                        FilterTextField("Fandom", placeholder: "e.g. Harry Potter", text: $filterState.fandom)
+
+                        Text("Completion Status")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
+                        FlowLayout(spacing: 8) {
+                            FilterStatusChip("All", isSelected: filterState.completionStatus == nil) {
+                                filterState.completionStatus = nil
+                            }
+                            ForEach(CompletionStatus.allCases, id: \.self) { status in
+                                FilterStatusChip(
+                                    status.rawValue.capitalized,
+                                    isSelected: filterState.completionStatus == status.rawValue
+                                ) {
+                                    filterState.completionStatus = status.rawValue
+                                }
+                            }
+                        }
+
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading) {
+                                FilterTextField("Min Words", placeholder: "0", text: Binding(
+                                    get: { filterState.wordCountMin.map { String($0) } ?? "" },
+                                    set: { filterState.wordCountMin = Int($0) }
+                                ))
+                            }
+                            VStack(alignment: .leading) {
+                                FilterTextField("Max Words", placeholder: "any", text: Binding(
+                                    get: { filterState.wordCountMax.map { String($0) } ?? "" },
+                                    set: { filterState.wordCountMax = Int($0) }
+                                ))
+                            }
+                        }
+                    }
+
+                    // MARK: Tags
+                    FilterSectionCard("Tags") {
+                        Text("Rating")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
+                        FlowLayout(spacing: 8) {
+                            ForEach(FanficRating.allCases, id: \.self) { rating in
+                                FilterToggleChip(
+                                    ratingLabel(rating),
+                                    isActive: filterState.selectedRatings.contains(rating.rawValue)
+                                ) {
+                                    if filterState.selectedRatings.contains(rating.rawValue) {
+                                        filterState.selectedRatings.removeAll { $0 == rating.rawValue }
                                     } else {
-                                        selectedRatings.remove(rating.rawValue)
+                                        filterState.selectedRatings.append(rating.rawValue)
                                     }
                                 }
-                            )
-                        )
-                    }
-                }
+                            }
+                        }
 
-                Section("Completion Status") {
-                    Picker("Status", selection: $selectedStatus) {
-                        Text("Any").tag(CompletionStatus?.none)
-                        ForEach(CompletionStatus.allCases, id: \.self) { status in
-                            Text(status.rawValue.capitalized).tag(Optional(status))
+                        FilterTextField("Characters", placeholder: "e.g. Hermione", text: $filterState.characters)
+                        FilterTextField("Relationship", placeholder: "e.g. Harry/Ginny", text: $filterState.relationship)
+                    }
+
+                    // MARK: Source
+                    FilterSectionCard("Source") {
+                        FlowLayout(spacing: 8) {
+                            FilterStatusChip("All", isSelected: filterState.sourceKey == nil) {
+                                filterState.sourceKey = nil
+                            }
+                            ForEach(FanficSource.allCases, id: \.self) { source in
+                                FilterStatusChip(
+                                    source.rawValue.uppercased(),
+                                    isSelected: filterState.sourceKey == source.rawValue
+                                ) {
+                                    filterState.sourceKey = source.rawValue
+                                }
+                            }
                         }
                     }
                 }
-
-                Section("Word Count") {
-                    VStack {
-                        Text("\(Int(wordCountRange.lowerBound)) – \(Int(wordCountRange.upperBound))")
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.muted)
-                    }
-                }
-
-                Section("Language") {
-                    TextField("e.g. English", text: $language)
-                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .scrollContentBackground(.hidden)
             .background(AstralColors.background)
             .navigationTitle("Filter")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Reset") {
-                        resetFilters()
+                        filterState.reset()
                     }
                     .foregroundStyle(AstralColors.muted)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Apply") {
+                    Button("Done") {
                         dismiss()
                     }
                     .foregroundStyle(AstralColors.gold)
@@ -80,18 +128,10 @@ struct FanficFilterView: View {
 
     private func ratingLabel(_ rating: FanficRating) -> String {
         switch rating {
-        case .general: "General Audiences (G)"
-        case .teen: "Teen And Up (T)"
-        case .mature: "Mature (M)"
-        case .explicit: "Explicit (E)"
+        case .general: "G"
+        case .teen: "T"
+        case .mature: "M"
+        case .explicit: "E"
         }
-    }
-
-    private func resetFilters() {
-        fandom = ""
-        selectedRatings = []
-        selectedStatus = nil
-        wordCountRange = 0...500_000
-        language = ""
     }
 }

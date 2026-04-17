@@ -18,7 +18,8 @@ struct FanficLibraryView: View {
     private var allFanfics: [LocalFanfic]
 
     @State private var showFilter = false
-    @State private var sortOption: FanficSortOption = .dateAdded
+    @State private var sortOption: FanficSortOption = .lastRead
+    @State private var filterState = FanficFilterState()
 
     private var inProgressFanfics: [LocalFanfic] {
         allFanfics
@@ -37,12 +38,18 @@ struct FanficLibraryView: View {
             result = result.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
         }
         switch sortOption {
+        case .lastRead:
+            return result.sorted { ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast) }
         case .dateAdded:
             return result.sorted { $0.addedAt > $1.addedAt }
+        case .dateUpdated:
+            return result.sorted { ($0.updatedAtSource ?? $0.addedAt) > ($1.updatedAtSource ?? $1.addedAt) }
         case .wordCount:
             return result.sorted { ($0.wordCount ?? 0) > ($1.wordCount ?? 0) }
         case .title:
             return result.sorted { $0.title < $1.title }
+        case .chapters:
+            return result.sorted { $0.totalChapters > $1.totalChapters }
         }
     }
 
@@ -85,7 +92,7 @@ struct FanficLibraryView: View {
         .background(AstralColors.background)
         .task { await viewModel.fetchFanfics(modelContext: modelContext) }
         .sheet(isPresented: $showFilter) {
-            FanficFilterView()
+            FanficFilterView(filterState: filterState)
                 .presentationDetents([.medium, .large])
         }
         .toolbar {
@@ -221,9 +228,12 @@ private struct FanficContinueCard: View {
 // MARK: - Sort Option
 
 enum FanficSortOption: String, CaseIterable {
+    case lastRead = "Last Read"
     case dateAdded = "Date Added"
+    case dateUpdated = "Date Updated"
     case wordCount = "Word Count"
     case title = "Title"
+    case chapters = "Chapters"
 }
 
 // MARK: - Row View
