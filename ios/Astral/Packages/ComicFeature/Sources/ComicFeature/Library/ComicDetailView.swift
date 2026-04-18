@@ -2,14 +2,30 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
 
 struct ComicDetailView: View {
     let comic: LocalComic
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.comicNavigation) private var comicNavigation
+    @Environment(\.dismiss) private var dismiss
     @Query private var chapters: [LocalComicChapter]
     @Query private var bookmarks: [LocalBookmark]
+    @State private var selectedChapter: LocalComicChapter?
+    @State private var scrollOffset: CGFloat = 0
+    @State private var isDownloading = false
+    @State private var downloadProgress: (Int, Int) = (0, 0)
+    @State private var activeTab: DetailTab = .chapters
+    @State private var showDeleteAlert = false
+
+    private enum DetailTab: String, CaseIterable {
+        case chapters = "Chapters"
+        case bookmarks = "Bookmarks"
+    }
+
+    // Height of the hero image — used to derive title opacity
+    private let heroAspect: CGFloat = 3.0 / 4.0
 
     init(comic: LocalComic) {
         self.comic = comic
@@ -25,6 +41,8 @@ struct ComicDetailView: View {
         )
     }
 
+    // MARK: - Decoded metadata
+
     private var decodedTags: [[String: String]] {
         guard let json = comic.tagsJSON, let data = json.data(using: .utf8),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]]
@@ -39,199 +57,554 @@ struct ComicDetailView: View {
         return arr
     }
 
+    private var formattedAddedDate: String {
+        comic.addedAt.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    // MARK: - Title overlay opacity
+
+    /// Fades the title out as the user scrolls down past ~30 % of the hero height.
+    /// scrollOffset is negative when scrolled down (coordinate space flips).
+    private func titleOpacity(heroHeight: CGFloat) -> Double {
+        // scrollOffset > 0 means pulled down (bounce) — keep full opacity.
+        // scrollOffset < 0 means scrolled up — fade from 0 % scroll to 40 % of hero height.
+        let fadeRange: CGFloat = heroHeight * 0.4
+        guard scrollOffset < 0 else { return 1.0 }
+        let progress = min(abs(scrollOffset) / fadeRange, 1.0)
+        return Double(1.0 - progress)
+    }
+
+    // MARK: - Body
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // MARK: Hero thumbnail
-                ZStack(alignment: .bottomLeading) {
-                    if let path = comic.thumbnailPath, let url = thumbnailURL(path) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            default:
-                                Rectangle()
-                                    .fill(AstralColors.elevated)
-                                    .overlay {
-                                        Image(systemName: "book.fill")
-                                            .font(.system(size: 48))
-                                            .foregroundStyle(AstralColors.muted)
-                                    }
-                            }
-                        }
-                    } else {
-                        Rectangle()
-                            .fill(AstralColors.elevated)
-                            .overlay {
-                                Image(systemName: "book.fill")
-                                    .font(.system(size: 48))
-                                    .foregroundStyle(AstralColors.muted)
-                            }
-                    }
+        GeometryReader { geo in
+            let heroHeight = geo.size.width / heroAspect
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // MARK: Hero + floating title
+                    ZStack(alignment: .bottomLeading) {
+                        heroThumbnail
+                            .frame(maxWidth: .infinity)
+                            .aspectRatio(heroAspect, contentMode: .fit)
+                            .clipped()
 
-                    // Title overlay with gradient
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.85)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 120)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
+                        // Full-width gradient at bottom of thumbnail
+                        LinearGradient(
+                            colors: [.clear, AstralColors.background],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: heroHeight * 0.55)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(comic.title)
-                            .font(AstralTypography.title)
-                            .foregroundStyle(AstralColors.white)
-                            .lineLimit(3)
+                        // Floating title — fades on scroll
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(comic.title)
+                                .font(AstralTypography.title)
+                                .foregroundStyle(AstralColors.white)
+                                .lineLimit(3)
+                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
 
-                        HStack(spacing: 8) {
-                            StatusBadge(comic.sourceKey)
-                            StatusBadge(comic.status)
-                            if comic.totalChapters > 0 {
-                                StatusBadge("\(comic.totalChapters) ch", color: AstralColors.muted)
-                            }
-                        }
-                    }
-                    .padding(16)
-                }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(3/4, contentMode: .fit)
-                .clipped()
-
-                // MARK: Metadata section
-                VStack(alignment: .leading, spacing: 12) {
-                    if let desc = comic.comicDescription, !desc.isEmpty {
-                        Text(desc)
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.body)
-                            .lineLimit(6)
-                    }
-
-                    if let category = comic.category {
-                        HStack(spacing: 6) {
-                            Text("Category")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
-                            Button { comicNavigation?.searchFor(category) } label: {
-                                StatusBadge(category)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    if !decodedAuthors.isEmpty {
-                        HStack(spacing: 6) {
-                            Text("Authors")
-                                .font(AstralTypography.caption)
-                                .foregroundStyle(AstralColors.muted)
-                            ForEach(decodedAuthors, id: \.self) { author in
-                                if let name = author["name"] {
-                                    Button { comicNavigation?.searchFor(name) } label: {
-                                        StatusBadge(name, color: AstralColors.gold)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }
-
-                    if !decodedTags.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
-                                ForEach(decodedTags, id: \.self) { tag in
-                                    if let name = tag["name"] {
-                                        Button { comicNavigation?.searchFor(name) } label: {
-                                            StatusBadge(name, color: AstralColors.body)
+                                StatusBadge(comic.sourceKey.uppercased())
+                                StatusBadge(comic.status)
+                            }
+                        }
+                        .padding(16)
+                        .opacity(titleOpacity(heroHeight: heroHeight))
+                    }
+
+                    // MARK: Metadata section
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        // Authors row
+                        if !decodedAuthors.isEmpty {
+                            metadataRow(label: "Artists") {
+                                ForEach(decodedAuthors, id: \.self) { author in
+                                    if let name = author["name"] {
+                                        Button {
+                                            comicNavigation?.searchFor(name)
+                                        } label: {
+                                            StatusBadge(name, color: AstralColors.gold)
                                         }
                                         .buttonStyle(.plain)
                                     }
                                 }
                             }
                         }
-                    }
-                }
-                .padding(16)
 
-                // MARK: Continue Reading button
-                if !chapters.isEmpty {
-                    ContinueReadingButton(
-                        chapters: Array(chapters),
-                        lastReadChapterNumber: comic.lastReadChapterNumber,
-                        destination: { chapter in
-                            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
+                        // Category row
+                        if let category = comic.category, !category.isEmpty {
+                            metadataRow(label: "Category") {
+                                Button {
+                                    comicNavigation?.searchFor(category)
+                                } label: {
+                                    StatusBadge(category, color: AstralColors.body)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                    )
+
+                        // Tags — horizontal scroll
+                        if !decodedTags.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Tags")
+                                    .font(AstralTypography.captionMedium)
+                                    .foregroundStyle(AstralColors.muted)
+                                    .textCase(.uppercase)
+                                    .tracking(0.8)
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 6) {
+                                        ForEach(decodedTags, id: \.self) { tag in
+                                            if let name = tag["name"] {
+                                                Button {
+                                                    comicNavigation?.searchFor(name)
+                                                } label: {
+                                                    StatusBadge(name, color: AstralColors.body)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 1) // avoid clipping capsule shadows
+                                }
+                            }
+                        }
+
+                        Divider()
+                            .background(AstralColors.elevated)
+
+                        // Pages / Source / Added
+                        HStack(spacing: 20) {
+                            if comic.totalChapters > 0 {
+                                infoCell(label: "Chapters", value: "\(comic.totalChapters)")
+                            }
+                            infoCell(label: "Source", value: comic.sourceKey.uppercased())
+                            infoCell(label: "Added", value: formattedAddedDate)
+                        }
+                    }
+                    .padding(16)
+
+                    // MARK: Continue Reading / Archive actions
+                    if comic.isArchived {
+                        Button {
+                            unarchiveComic()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.uturn.left.circle.fill")
+                                Text("Unarchive — Restore Full Quality")
+                                    .font(AstralTypography.bodyMedium)
+                            }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(AstralColors.gold)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                    } else if comic.isArchiving || comic.isUnarchiving {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(AstralColors.gold).scaleEffect(0.8)
+                            Text(comic.isArchiving ? "Archiving..." : "Restoring...")
+                                .font(AstralTypography.bodyMedium)
+                                .foregroundStyle(AstralColors.muted)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 16)
+                    } else if !chapters.isEmpty {
+                        if let nextChapter = nextUnreadChapter {
+                            Button {
+                                AstralLogger.info("Continue button tapped: ch \(nextChapter.chapterNumber)", context: "ComicDetail")
+                                selectedChapter = nextChapter
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: comic.lastReadChapterNumber == 0 ? "book.fill" : "arrow.right.circle.fill")
+                                    Text(comic.lastReadChapterNumber == 0
+                                         ? "Start Reading"
+                                         : "Continue — Ch. \(Int(nextChapter.chapterNumber))")
+                                        .font(AstralTypography.bodyMedium)
+                                }
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(AstralColors.gold)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+                        }
+                    }
+
+                    // MARK: Tab bar (Chapters / Bookmarks / Download)
+                    HStack(spacing: 0) {
+                        ForEach(DetailTab.allCases, id: \.self) { tab in
+                            Button {
+                                withAnimation(AstralAnimation.quick) { activeTab = tab }
+                            } label: {
+                                Text(tab.rawValue)
+                                    .font(AstralTypography.captionMedium)
+                                    .foregroundStyle(activeTab == tab ? AstralColors.gold : AstralColors.muted)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        // Download icon button
+                        Button {
+                            handleDownloadTap()
+                        } label: {
+                            Group {
+                                if isDownloading {
+                                    ProgressView()
+                                        .tint(AstralColors.gold)
+                                        .scaleEffect(0.7)
+                                } else {
+                                    let savedCount = chapters.filter { $0.localPagesPath != nil }.count
+                                    Image(systemName: savedCount == chapters.count && !chapters.isEmpty
+                                          ? "arrow.down.circle.fill" : "arrow.down.to.line")
+                                        .foregroundStyle(savedCount == chapters.count && !chapters.isEmpty
+                                                         ? AstralColors.success : AstralColors.muted)
+                                }
+                            }
+                            .frame(width: 44, height: 36)
+                        }
+                        .buttonStyle(.plain)
+
+                        // Archive icon button
+                        if !comic.isArchiving && !comic.isUnarchiving {
+                            Button {
+                                if comic.isArchived {
+                                    unarchiveComic()
+                                } else {
+                                    archiveComic()
+                                }
+                            } label: {
+                                Image(systemName: comic.isArchived ? "archivebox.fill" : "archivebox")
+                                    .foregroundStyle(comic.isArchived ? AstralColors.gold : AstralColors.muted)
+                                    .frame(width: 44, height: 36)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .background(AstralColors.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 4)
-                }
 
-                // MARK: Bookmarks section
-                if !bookmarks.isEmpty {
-                    BookmarksSection(bookmarks: bookmarks, onDelete: deleteBookmark)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 8)
-                }
-
-                // MARK: Chapter list
-                if chapters.isEmpty {
-                    EmptyStateView(
-                        icon: "book.closed",
-                        title: "No Chapters Yet",
-                        message: "Scrape this comic from the browser to load its chapters."
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 60)
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(chapters) { chapter in
-                            NavigationLink {
-                                ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
-                            } label: {
-                                ComicChapterRow(
-                                    chapter: chapter,
-                                    isLastRead: chapter.chapterNumber == Double(comic.lastReadChapterNumber),
-                                    isRead: chapter.chapterNumber < Double(comic.lastReadChapterNumber),
-                                    isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
-                                )
-                            }
-                            .buttonStyle(PressButtonStyle(scale: 0.98))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button {
-                                    withAnimation(AstralAnimation.bouncy) {
-                                        addBookmark(for: chapter)
+                    // MARK: Tab content
+                    switch activeTab {
+                    case .chapters:
+                        if chapters.isEmpty {
+                            EmptyStateView(
+                                icon: "book.closed",
+                                title: "No Chapters Yet",
+                                message: "Scrape this comic from the browser to load its chapters."
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                        } else {
+                            LazyVStack(spacing: 0) {
+                                ForEach(chapters) { chapter in
+                                    Button {
+                                        AstralLogger.info("Chapter tapped: \(chapter.chapterNumber) id=\(chapter.id)", context: "ComicDetail")
+                                        selectedChapter = chapter
+                                    } label: {
+                                        ComicChapterRow(
+                                            chapter: chapter,
+                                            isLastRead: chapter.chapterNumber == Double(comic.lastReadChapterNumber),
+                                            isRead: chapter.chapterNumber < Double(comic.lastReadChapterNumber),
+                                            isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+                                        )
                                     }
-                                } label: {
-                                    Label("Bookmark", systemImage: "bookmark")
-                                }
-                                .tint(AstralColors.gold)
-                            }
+                                    .accessibilityIdentifier(AccessibilityID.chapterRow(Int(chapter.chapterNumber)))
+                                    .buttonStyle(.plain)
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button {
+                                            withAnimation(AstralAnimation.bouncy) {
+                                                addBookmark(for: chapter)
+                                            }
+                                        } label: {
+                                            Label("Bookmark", systemImage: "bookmark")
+                                        }
+                                        .tint(AstralColors.gold)
+                                    }
 
-                            Divider()
-                                .background(AstralColors.elevated)
-                                .padding(.leading, 16)
+                                    Divider()
+                                        .background(AstralColors.elevated)
+                                        .padding(.leading, 16)
+                                }
+                            }
+                            .padding(.bottom, 100)
+                        }
+
+                    case .bookmarks:
+                        if bookmarks.isEmpty {
+                            EmptyStateView(
+                                icon: "bookmark",
+                                title: "No Bookmarks",
+                                message: "Swipe a chapter or long-press a page to bookmark it."
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                        } else {
+                            LazyVStack(spacing: 0) {
+                                ForEach(bookmarks) { bookmark in
+                                    Button {
+                                        // Jump to bookmarked chapter/page
+                                        if let chapter = chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
+                                            selectedChapter = chapter
+                                        }
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "bookmark.fill")
+                                                .font(.caption)
+                                                .foregroundStyle(AstralColors.gold)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(bookmark.displayLabel)
+                                                    .font(AstralTypography.body)
+                                                    .foregroundStyle(AstralColors.white)
+                                                if let note = bookmark.note {
+                                                    Text(note)
+                                                        .font(AstralTypography.caption)
+                                                        .foregroundStyle(AstralColors.muted)
+                                                        .lineLimit(1)
+                                                }
+                                            }
+                                            Spacer()
+                                            Text(bookmark.createdAt.formatted(.dateTime.month(.abbreviated).day()))
+                                                .font(AstralTypography.caption)
+                                                .foregroundStyle(AstralColors.muted)
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 10)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            deleteBookmark(bookmark)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
+
+                                    Divider()
+                                        .background(AstralColors.elevated)
+                                        .padding(.leading, 16)
+                                }
+                            }
+                            .padding(.bottom, 100)
                         }
                     }
-                    .padding(.bottom, 100)
                 }
+                // Track scroll offset via a background GeometryReader in the scroll coordinate space
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear
+                            .preference(
+                                key: ScrollOffsetKey.self,
+                                value: proxy.frame(in: .named("scroll")).minY
+                            )
+                    }
+                )
+            }
+            .coordinateSpace(name: "scroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { value in
+                scrollOffset = value
             }
         }
         .background(AstralColors.background)
         .navigationTitle(comic.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showDeleteAlert = true
+                    } label: {
+                        Label("Delete permanently", systemImage: "trash.slash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(AstralColors.gold)
+                }
+            }
+        }
+        .deletePermanentlyAlert(
+            isPresented: $showDeleteAlert,
+            storyTitle: comic.title,
+            onConfirm: {
+                let chaptersSnapshot = Array(chapters)
+                dismiss()
+                Task {
+                    await StoryDeletionService.shared.permanentlyDelete(
+                        comic: comic,
+                        modelContext: modelContext,
+                        deleteFiles: {
+                            ChapterDownloadService.shared.deleteAllChapters(
+                                comic: comic,
+                                chapters: chaptersSnapshot,
+                                modelContext: modelContext
+                            )
+                        }
+                    )
+                }
+            }
+        )
+        .fullScreenCover(item: $selectedChapter) { chapter in
+            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
+        }
         .onAppear {
             comic.seenTotalChapters = comic.totalChapters
             comic.lastReadAt = .now
             try? modelContext.save()
         }
+        .task { await syncChapters() }
+    }
+
+    private func syncChapters() async {
+        do {
+            let response: ComicResponse = try await APIClient.shared.request(
+                .comicDetail(id: comic.id)
+            )
+            guard let dtoChapters = response.chapters else { return }
+            let comicID = comic.id
+            let chapterIDs = Set(dtoChapters.map(\.id))
+            let descriptor = FetchDescriptor<LocalComicChapter>(
+                predicate: #Predicate<LocalComicChapter> { $0.comicId == comicID }
+            )
+            let existing = (try? modelContext.fetch(descriptor)) ?? []
+            let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+
+            for old in existing where !chapterIDs.contains(old.id) {
+                modelContext.delete(old)
+            }
+            for dto in dtoChapters {
+                if let ch = existingByID[dto.id] {
+                    ch.chapterNumber = dto.chapterNumber
+                    ch.title = dto.title
+                    ch.totalPages = dto.totalPages
+                    ch.scrapeStatus = dto.scrapeStatus
+                } else {
+                    let ch = LocalComicChapter(
+                        id: dto.id, comicId: comicID,
+                        chapterNumber: dto.chapterNumber, title: dto.title,
+                        totalPages: dto.totalPages, scrapeStatus: dto.scrapeStatus
+                    )
+                    ch.comic = comic
+                    modelContext.insert(ch)
+                }
+            }
+            try? modelContext.save()
+        } catch {
+            AstralLogger.error("syncChapters failed: \(error)", context: "ComicDetail")
+        }
+    }
+
+    // MARK: - Hero thumbnail
+
+    @ViewBuilder
+    private var heroThumbnail: some View {
+        if let path = comic.thumbnailPath, let url = thumbnailURL(path) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    thumbnailPlaceholder
+                }
+            }
+        } else {
+            thumbnailPlaceholder
+        }
+    }
+
+    private var thumbnailPlaceholder: some View {
+        Rectangle()
+            .fill(AstralColors.elevated)
+            .overlay {
+                Image(systemName: "book.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(AstralColors.muted)
+            }
+    }
+
+    // MARK: - Metadata helpers
+
+    /// A labelled row with horizontally-wrapping badge chips inside a FlowLayout-style HStack.
+    @ViewBuilder
+    private func metadataRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(AstralTypography.captionMedium)
+                .foregroundStyle(AstralColors.muted)
+                .textCase(.uppercase)
+                .tracking(0.8)
+
+            HStack(spacing: 6) {
+                content()
+            }
+        }
+    }
+
+    /// A small two-line stat cell (label above, value below).
+    private func infoCell(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(AstralTypography.captionMedium)
+                .foregroundStyle(AstralColors.muted)
+                .textCase(.uppercase)
+                .tracking(0.8)
+            Text(value)
+                .font(AstralTypography.bodyMedium)
+                .foregroundStyle(AstralColors.white)
+        }
+    }
+
+    // MARK: - Private helpers
+
+    private var nextUnreadChapter: LocalComicChapter? {
+        if comic.lastReadChapterNumber == 0 { return chapters.first }
+        // Resume the current chapter at saved page position (reader restores via lastReadPageNumber)
+        if let current = chapters.first(where: { Int($0.chapterNumber) == comic.lastReadChapterNumber }) {
+            return current
+        }
+        return chapters.first(where: { $0.chapterNumber > Double(comic.lastReadChapterNumber) }) ?? chapters.first
     }
 
     private func thumbnailURL(_ path: String) -> URL? {
         if path.hasPrefix("http") { return URL(string: path) }
         return URL(string: AppConfig.staticBaseURL + path)
+    }
+
+    private func handleDownloadTap() {
+        let savedCount = chapters.filter { $0.localPagesPath != nil }.count
+        let allSaved = savedCount == chapters.count && !chapters.isEmpty
+        if allSaved {
+            ChapterDownloadService.shared.deleteAllChapters(
+                comic: comic, chapters: chapters, modelContext: modelContext
+            )
+        } else {
+            isDownloading = true
+            Task {
+                await ChapterDownloadService.shared.downloadAllChapters(
+                    comic: comic, chapters: chapters,
+                    modelContext: modelContext
+                ) { done, total in
+                    downloadProgress = (done, total)
+                }
+                isDownloading = false
+            }
+        }
     }
 
     private func addBookmark(for chapter: LocalComicChapter) {
@@ -244,9 +617,34 @@ struct ComicDetailView: View {
         try? modelContext.save()
     }
 
+    private func archiveComic() {
+        comic.archiveStatus = "archiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.archiveComic(id: comic.id))
+        }
+    }
+
+    private func unarchiveComic() {
+        comic.archiveStatus = "unarchiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.unarchiveComic(id: comic.id))
+        }
+    }
+
     private func deleteBookmark(_ bookmark: LocalBookmark) {
         modelContext.delete(bookmark)
         try? modelContext.save()
+    }
+}
+
+// MARK: - Scroll offset preference key
+
+private struct ScrollOffsetKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -375,7 +773,9 @@ private struct ComicChapterRow: View {
                             .font(AstralTypography.caption)
                             .foregroundStyle(AstralColors.muted)
                     }
-                    if chapter.isDownloaded {
+                    if chapter.localPagesPath != nil {
+                        StatusBadge.savedToDevice()
+                    } else if chapter.isDownloaded {
                         StatusBadge.downloaded()
                     }
                 }
@@ -383,11 +783,32 @@ private struct ComicChapterRow: View {
 
             Spacer()
 
+            downloadStatusIcon(for: chapter)
+
             statusIcon(for: chapter.scrapeStatus)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func downloadStatusIcon(for chapter: LocalComicChapter) -> some View {
+        switch chapter.downloadStatus {
+        case .complete:
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(AstralColors.success)
+        case .downloading, .queued:
+            ProgressView()
+                .scaleEffect(0.6)
+        case .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(AstralColors.error)
+        case .none:
+            EmptyView()
+        }
     }
 
     @ViewBuilder
@@ -433,6 +854,10 @@ private struct ContinueReadingButton<Destination: View>: View {
         if lastReadChapterNumber == 0 {
             return .start(firstChapter)
         }
+        // Resume the current chapter (reader restores page position)
+        if let current = chapters.first(where: { Int($0.chapterNumber) == lastReadChapterNumber }) {
+            return .continueReading(current)
+        }
         if let next = chapters.first(where: { $0.chapterNumber > Double(lastReadChapterNumber) }) {
             return .continueReading(next)
         }
@@ -455,7 +880,7 @@ private struct ContinueReadingButton<Destination: View>: View {
                 .background(backgroundColor(for: state))
                 .clipShape(Capsule())
             }
-            .buttonStyle(PressButtonStyle(scale: 0.97))
+            .buttonStyle(.plain)
         }
     }
 

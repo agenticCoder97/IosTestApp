@@ -95,10 +95,35 @@ Update docs when these change:
 - major routes or surface behavior
 - scratchpad process
 
+## Knowledge Graph Wiki
+
+The `wiki/` directory contains a structured knowledge graph of the entire codebase, inspired by [Karpathy's LLM Knowledge Bases](https://x.com/karpathy/status/2039805659525644595).
+
+- Start with `wiki/INDEX.md` for a complete entity map.
+- Read `wiki/SCHEMA.md` for rules on maintaining the wiki.
+- When adding new features, models, endpoints, or scrapers, update the relevant wiki pages.
+- Entity pages in `wiki/entities/` trace a single entity across all layers (ORM → Schema → DTO → @Model → View).
+
 ## Branch and Git Rules
 
-- The god branch is `release-1`. All feature and fix branches must be branched from `release-1` and merged back via PR.
-- Never push directly to `release-1`.
-- Use the assigned feature branch.
+```
+main                    ← production releases (god branch, protected)
+└── production          ← release candidates, tested and stable
+    └── release-1       ← current sprint integration
+        └── development ← daily work, feature branches merge here via PR
+```
+
+- `main` is the god branch. Protected — only merged from `production`.
+- `production` ← merged from `release-1` at end of sprint.
+- `release-1` ← merged from `development` when features are stable.
+- `development` ← all feature/fix branches branch from here and merge back via PR.
+- Never push directly to `main`, `production`, or `release-1`.
+- Feature branches: `feature/{name}`, `fix/{description}`, `chore/{task}`
 - Do not force-push without explicit approval.
 - Do not commit `.env` files or secrets.
+
+### Device targeting (no separate branches needed)
+- **Simulator**: `#if targetEnvironment(simulator)` → `localhost:8000`
+- **Physical device (debug)**: `#else` in DEBUG → Mac's WiFi IP (`192.168.0.108:8000`)
+- **Production (release)**: `#else` → `astral-reader.duckdns.org`
+- Change the device IP in `AppConfig.swift` if your Mac's IP changes.

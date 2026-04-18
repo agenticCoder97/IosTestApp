@@ -40,6 +40,8 @@ class ComicResponse(BaseModel):
     language: Optional[str] = None
     status: str
     category: Optional[str] = None
+    archive_status: str = "none"
+    archived_at: Optional[datetime] = None
     authors: Optional[list[AuthorResponse]] = None
     tags: Optional[list[TagResponse]] = None
     chapters: Optional[list[ComicChapterResponse]] = None

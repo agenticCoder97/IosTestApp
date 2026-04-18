@@ -10,8 +10,19 @@ public final class LocalComicChapter {
     public var totalPages: Int
     public var isDownloaded: Bool
     public var scrapeStatus: String
+    /// Local directory path for downloaded page images (Documents directory)
+    public var localPagesPath: String?
+    public var downloadState: String = "none"
+    public var downloadedAt: Date?
+    public var downloadSizeBytes: Int64?
+    public var downloadError: String?
 
     public var comic: LocalComic?
+
+    public var downloadStatus: DownloadState {
+        get { DownloadState(rawValue: downloadState) ?? .none }
+        set { downloadState = newValue.rawValue }
+    }
 
     public init(
         id: UUID,

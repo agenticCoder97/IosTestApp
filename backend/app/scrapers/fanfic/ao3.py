@@ -1,7 +1,10 @@
+import logging
 import re
 from bs4 import BeautifulSoup
 from app.scrapers.base import BaseScraper, StoryMetadata, ChapterInfo, PageInfo
 from app.core.constants import SourceKey
+
+logger = logging.getLogger(__name__)
 
 
 def _work_id(url: str) -> str:
@@ -61,6 +64,40 @@ class AO3Scraper(BaseScraper):
         # Freeform tags
         free_tags = soup.select("dd.freeform.tags a")
         tag_list = [{"name": a.get_text(strip=True), "tag_type": "freeform"} for a in free_tags]
+        freeform_tags = ", ".join(a.get_text(strip=True) for a in free_tags) or None
+
+        # Stats (hits, kudos, comments, bookmarks)
+        hits_dd = soup.select_one("dd.hits")
+        hits = None
+        if hits_dd:
+            try:
+                hits = int(hits_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        kudos_dd = soup.select_one("dd.kudos")
+        kudos = None
+        if kudos_dd:
+            try:
+                kudos = int(kudos_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        comments_dd = soup.select_one("dd.comments")
+        comments_count = None
+        if comments_dd:
+            try:
+                comments_count = int(comments_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        bookmarks_dd = soup.select_one("dd.bookmarks")
+        bookmarks_count = None
+        if bookmarks_dd:
+            try:
+                bookmarks_count = int(bookmarks_dd.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
 
         # Word count
         words_dd = soup.select_one("dd.words")
@@ -114,6 +151,11 @@ class AO3Scraper(BaseScraper):
             completion_status=completion_status,
             published_at=published_at,
             updated_at_source=updated_at_source,
+            freeform_tags=freeform_tags,
+            hits=hits,
+            kudos=kudos,
+            comments_count=comments_count,
+            bookmarks_count=bookmarks_count,
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:
@@ -166,5 +208,68 @@ class AO3Scraper(BaseScraper):
         for notes in content_div.select(".end-notes"):
             notes.decompose()
 
-        paragraphs = [p.get_text(separator="\n", strip=True) for p in content_div.find_all("p")]
+        paragraphs = [p.get_text(separator=" ", strip=True) for p in content_div.find_all("p")]
         return "\n\n".join(p for p in paragraphs if p)
+
+    async def get_all_chapters_bulk(self, story_url: str) -> dict[float, str]:
+        """
+        Fetch ALL chapters in a single request via ?view_full_work=true.
+        Returns {chapter_number: text_content}. Falls back to empty dict on failure.
+
+        This is 10-50x faster than per-chapter fetching:
+        - 50 chapters: 1 request (~3s) vs 52 requests (~110s)
+        """
+        work_id = _work_id(story_url)
+        url = f"https://archiveofourown.org/works/{work_id}?view_full_work=true&view_adult=true"
+
+        logger.info("get_all_chapters_bulk fetching full work | work_id=%s", work_id)
+        try:
+            html = await self._fetch(url)
+        except Exception as e:
+            logger.warning("get_all_chapters_bulk fetch failed, will fall back to per-chapter | error=%s", e)
+            return {}
+
+        soup = BeautifulSoup(html, "lxml")
+        chapters: dict[float, str] = {}
+
+        # Multi-chapter: each chapter is in div#chapter-N
+        chapter_divs = soup.select("div[id^='chapter-']")
+        if chapter_divs:
+            for div in chapter_divs:
+                ch_id = div.get("id", "")
+                m = re.search(r"chapter-(\d+)", ch_id)
+                if not m:
+                    continue
+                chapter_num = float(m.group(1))
+
+                content = div.select_one(".userstuff")
+                if not content:
+                    continue
+
+                for h in content.select("h3.landmark"):
+                    h.decompose()
+                for n in content.select(".end-notes"):
+                    n.decompose()
+
+                paragraphs = [p.get_text(separator=" ", strip=True) for p in content.find_all("p")]
+                text = "\n\n".join(p for p in paragraphs if p)
+                if text:
+                    chapters[chapter_num] = text
+
+            logger.info("get_all_chapters_bulk parsed %d chapters from full work view", len(chapters))
+            return chapters
+
+        # Single-chapter: no chapter-N divs, just .userstuff
+        content = soup.select_one("#chapters .userstuff") or soup.select_one(".userstuff")
+        if content:
+            for h in content.select("h3.landmark"):
+                h.decompose()
+            for n in content.select(".end-notes"):
+                n.decompose()
+            paragraphs = [p.get_text(separator="\n", strip=True) for p in content.find_all("p")]
+            text = "\n\n".join(p for p in paragraphs if p)
+            if text:
+                chapters[1.0] = text
+                logger.info("get_all_chapters_bulk parsed single-chapter work")
+
+        return chapters

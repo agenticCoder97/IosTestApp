@@ -2,8 +2,10 @@ import SwiftUI
 import SwiftData
 import Core
 import DesignSystem
+import Networking
 
 struct ComicLibraryView: View {
+    @Binding var searchText: String
     var filterFavourites: Bool
 
     @State private var viewModel = ComicLibraryViewModel()
@@ -22,11 +24,23 @@ struct ComicLibraryView: View {
         GridItem(.flexible(), spacing: 12),
     ]
 
+    @State private var pendingDeletion: LocalComic?
+
     private var displayedComics: [LocalComic] {
         let filter = comicNavigation?.filterState
         var ready = allComics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
 
         if filterFavourites { ready = ready.filter { $0.isFavorite } }
+
+        if !searchText.isEmpty {
+            ready = ready.filter {
+                $0.title.localizedCaseInsensitiveContains(searchText) ||
+                ($0.comicDescription ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.category ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.tagsJSON ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.authorsJSON ?? "").localizedCaseInsensitiveContains(searchText)
+            }
+        }
 
         if !(filter?.showArchived ?? false) {
             ready = ready.filter { !$0.isArchived }
@@ -69,7 +83,7 @@ struct ComicLibraryView: View {
 
     private var inProgressComics: [LocalComic] {
         allComics
-            .filter { $0.progressPercent > 0 && $0.progressPercent < 1.0 }
+            .filter { $0.progressPercent > 0 && $0.progressPercent < 1.0 && !$0.isArchived }
             .sorted { ($0.lastReadAt ?? $0.addedAt) > ($1.lastReadAt ?? $1.addedAt) }
             .prefix(5)
             .map { $0 }
@@ -78,6 +92,24 @@ struct ComicLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                // Backend error banner
+                if let error = viewModel.errorMessage {
+                    BackendStatusBanner(error) {
+                        Task { await viewModel.fetchComics(modelContext: modelContext) }
+                    }
+                }
+
+                if let latestSync = displayedComics.compactMap(\.lastSyncedAt).max() {
+                    HStack {
+                        Spacer()
+                        Text("Updated \(latestSync, format: .relative(presentation: .named))")
+                            .font(AstralTypography.caption)
+                            .foregroundStyle(AstralColors.muted)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                }
+
                 if !filterFavourites && !inProgressComics.isEmpty {
                     ContinueReadingStrip(comics: inProgressComics)
                         .padding(.top, 8)
@@ -85,11 +117,13 @@ struct ComicLibraryView: View {
 
                 if displayedComics.isEmpty {
                     EmptyStateView(
-                        icon: filterFavourites ? "heart" : "book.closed",
-                        title: filterFavourites ? "No Favourites Yet" : "No Comics Yet",
+                        icon: filterFavourites ? "heart" : (viewModel.errorMessage != nil ? "wifi.slash" : "book.closed"),
+                        title: filterFavourites ? "No Favourites Yet" : (viewModel.errorMessage != nil ? "Offline" : "No Comics Yet"),
                         message: filterFavourites
                             ? "Tap the heart on any comic to add it here."
-                            : "Browse a source and scrape your first comic to get started."
+                            : (viewModel.errorMessage != nil
+                                ? "Backend unreachable. Previously synced comics will appear here."
+                                : "Browse a source and scrape your first comic to get started.")
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.top, 80)
@@ -101,8 +135,29 @@ struct ComicLibraryView: View {
                             } label: {
                                 ComicCardView(comic: comic)
                             }
+                            .accessibilityIdentifier(AccessibilityID.storyCard(comic.id))
                             .buttonStyle(PressButtonStyle())
                             .staggeredAppear(index: index)
+                            .contextMenu {
+                                if comic.isArchived {
+                                    Button {
+                                        unarchiveComic(comic)
+                                    } label: {
+                                        Label("Unarchive", systemImage: "arrow.uturn.left.circle")
+                                    }
+                                } else if !comic.isArchiving && !comic.isUnarchiving {
+                                    Button {
+                                        archiveComic(comic)
+                                    } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
+                                }
+                                Button(role: .destructive) {
+                                    pendingDeletion = comic
+                                } label: {
+                                    Label("Delete permanently", systemImage: "trash.slash")
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -113,6 +168,53 @@ struct ComicLibraryView: View {
         }
         .background(AstralColors.background)
         .task { await viewModel.fetchComics(modelContext: modelContext) }
+        .refreshable { await viewModel.fetchComics(modelContext: modelContext, force: true) }
+        .deletePermanentlyAlert(
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            storyTitle: pendingDeletion?.title ?? "",
+            onConfirm: {
+                if let comic = pendingDeletion {
+                    let id = comic.id
+                    Task {
+                        let descriptor = FetchDescriptor<LocalComicChapter>(
+                            predicate: #Predicate<LocalComicChapter> { $0.comicId == id }
+                        )
+                        let chapters = (try? modelContext.fetch(descriptor)) ?? []
+                        await StoryDeletionService.shared.permanentlyDelete(
+                            comic: comic,
+                            modelContext: modelContext,
+                            deleteFiles: {
+                                ChapterDownloadService.shared.deleteAllChapters(
+                                    comic: comic,
+                                    chapters: chapters,
+                                    modelContext: modelContext
+                                )
+                            }
+                        )
+                    }
+                }
+                pendingDeletion = nil
+            }
+        )
+    }
+
+    private func archiveComic(_ comic: LocalComic) {
+        comic.archiveStatus = "archiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.archiveComic(id: comic.id))
+        }
+    }
+
+    private func unarchiveComic(_ comic: LocalComic) {
+        comic.archiveStatus = "unarchiving"
+        try? modelContext.save()
+        Task {
+            let _: ComicResponse? = try? await APIClient.shared.request(.unarchiveComic(id: comic.id))
+        }
     }
 }
 
@@ -162,18 +264,10 @@ private struct ContinueReadingCardLink: View {
     }
 
     var body: some View {
-        if let chapter = nextChapter, !chapters.isEmpty {
-            NavigationLink {
-                ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
-            } label: {
-                ContinueReadingCard(comic: comic)
-            }
-        } else {
-            NavigationLink {
-                ComicDetailView(comic: comic)
-            } label: {
-                ContinueReadingCard(comic: comic)
-            }
+        NavigationLink {
+            ComicDetailView(comic: comic)
+        } label: {
+            ContinueReadingCard(comic: comic)
         }
     }
 }
@@ -183,13 +277,7 @@ private struct ContinueReadingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(AstralColors.elevated)
-                Image(systemName: "book.fill")
-                    .foregroundStyle(AstralColors.muted)
-            }
-            .frame(width: 100, height: 70)
+            StoryThumbnail(path: comic.thumbnailPath, title: comic.title, icon: "book.fill", width: 100, height: 70, baseURL: AppConfig.staticBaseURL)
 
             Text(comic.title)
                 .font(AstralTypography.caption)
@@ -210,7 +298,7 @@ private struct ContinueReadingCard: View {
 
 #Preview("Library") {
     NavigationStack {
-        ComicLibraryView(filterFavourites: false)
+        ComicLibraryView(searchText: .constant(""), filterFavourites: false)
             .modelContainer(.previewContainer(
                 comics: PreviewMocks.sampleComics,
                 comicChapters: PreviewMocks.comic1Chapters
@@ -220,12 +308,12 @@ private struct ContinueReadingCard: View {
 
 #Preview("Favourites") {
     NavigationStack {
-        ComicLibraryView(filterFavourites: true)
+        ComicLibraryView(searchText: .constant(""), filterFavourites: true)
             .modelContainer(.previewContainer(comics: PreviewMocks.sampleComics))
     }
 }
 
 #Preview("Empty State") {
-    ComicLibraryView(filterFavourites: false)
+    ComicLibraryView(searchText: .constant(""), filterFavourites: false)
         .modelContainer(for: LocalComic.self, inMemory: true)
 }

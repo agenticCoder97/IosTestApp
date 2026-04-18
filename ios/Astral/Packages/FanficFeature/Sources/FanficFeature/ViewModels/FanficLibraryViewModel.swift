@@ -7,15 +7,23 @@ import Networking
 final class FanficLibraryViewModel {
     var isLoading = false
     var errorMessage: String?
+    private var lastSyncTime: Date?
+    private static let syncInterval: TimeInterval = 120
 
     func fetchFanfics(
         modelContext: ModelContext,
         fandom: String? = nil,
         rating: String? = nil,
         completionStatus: String? = nil,
-        sort: String? = nil
+        sort: String? = nil,
+        force: Bool = false
     ) async {
+        if !force, let last = lastSyncTime, Date().timeIntervalSince(last) < Self.syncInterval {
+            AstralLogger.info("fetchFanfics skipped — last sync \(Int(Date().timeIntervalSince(last)))s ago", context: "FanficLibraryVM")
+            return
+        }
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         AstralLogger.info("fetchFanfics started (fandom=\(fandom ?? "nil") rating=\(rating ?? "nil"))", context: "FanficLibraryVM")
 
@@ -38,6 +46,7 @@ final class FanficLibraryViewModel {
                 if let existing = try? modelContext.fetch(descriptor).first {
                     // Update server-owned fields; preserve user fields
                     existing.title = dto.title
+                    existing.sourceUrl = dto.sourceUrl
                     existing.summary = dto.summary
                     existing.fandom = dto.fandom
                     existing.rating = dto.rating
@@ -50,6 +59,14 @@ final class FanficLibraryViewModel {
                     existing.warnings = dto.warnings
                     existing.publishedAt = dto.publishedAt
                     existing.updatedAtSource = dto.updatedAtSource
+                    existing.freeformTags = dto.freeformTags
+                    existing.hits = dto.hits
+                    existing.kudos = dto.kudos
+                    existing.commentsCount = dto.commentsCount
+                    existing.bookmarksCount = dto.bookmarksCount
+                    if let authors = dto.authors, !authors.isEmpty {
+                        existing.authorsText = authors.map(\.name).joined(separator: ", ")
+                    }
                     localFanfic = existing
                 } else {
                     let fanfic = LocalFanfic(
@@ -64,12 +81,21 @@ final class FanficLibraryViewModel {
                         totalChapters: dto.totalChapters,
                         seenTotalChapters: dto.totalChapters
                     )
+                    fanfic.sourceUrl = dto.sourceUrl
                     fanfic.thumbnailPath = dto.thumbnailPath
                     fanfic.characters = dto.characters
                     fanfic.pairing = dto.relationship
                     fanfic.warnings = dto.warnings
                     fanfic.publishedAt = dto.publishedAt
                     fanfic.updatedAtSource = dto.updatedAtSource
+                    fanfic.freeformTags = dto.freeformTags
+                    fanfic.hits = dto.hits
+                    fanfic.kudos = dto.kudos
+                    fanfic.commentsCount = dto.commentsCount
+                    fanfic.bookmarksCount = dto.bookmarksCount
+                    if let authors = dto.authors, !authors.isEmpty {
+                        fanfic.authorsText = authors.map(\.name).joined(separator: ", ")
+                    }
                     modelContext.insert(fanfic)
                     localFanfic = fanfic
                 }
@@ -93,16 +119,40 @@ final class FanficLibraryViewModel {
             let allFanfics = (try? modelContext.fetch(allFanficsDescriptor)) ?? []
             for fanfic in allFanfics {
                 guard let progress = progressByStoryId[fanfic.id],
-                      progress.lastChapterNumber > fanfic.lastReadChapterNumber else { continue }
-                fanfic.lastReadChapterNumber = progress.lastChapterNumber
+                      Double(progress.lastChapterNumber) > (fanfic.lastReadChapterNumber ?? -1) else { continue }
+                fanfic.lastReadChapterNumber = Double(progress.lastChapterNumber)
                 fanfic.scrollOffsetPercent = progress.scrollOffsetPercent
                 if fanfic.totalChapters > 0 {
-                    fanfic.progressPercent = Double(progress.lastChapterNumber) / Double(fanfic.totalChapters)
+                    fanfic.progressPercent = (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
                 }
             }
+            for fanfic in allFanfics {
+                fanfic.lastSyncedAt = .now
+            }
             try modelContext.save()
+            lastSyncTime = .now
+
+            // AST-12: one-off migration — assign thumbnails to fanfics with nil paths (batch)
+            let nilThumbFanfics = allFanfics.filter { $0.thumbnailPath == nil }
+            if !nilThumbFanfics.isEmpty {
+                let count = min(nilThumbFanfics.count, 50)
+                AstralLogger.info("Migration: \(nilThumbFanfics.count) fanfics need thumbnails", context: "FanficLibraryVM")
+                if let batch: RandomThumbnailBatchResponse = try? await APIClient.shared.request(
+                    .randomFanficThumbnails(count: count)
+                ) {
+                    for (fanfic, path) in zip(nilThumbFanfics, batch.paths) {
+                        fanfic.thumbnailPath = path
+                    }
+                    // Fanfics beyond the 50-cap stay nil and are handled on the next library open
+                    try? modelContext.save()
+                    AstralLogger.info("Migration: thumbnail assignment complete", context: "FanficLibraryVM")
+                }
+            }
+        } catch is URLError {
+            errorMessage = "Backend unreachable — check Docker is running"
+            AstralLogger.error("fetchFanfics: backend unreachable", context: "FanficLibraryVM")
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Sync failed: \(error.localizedDescription)"
             AstralLogger.error("fetchFanfics failed: \(error)", context: "FanficLibraryVM")
         }
     }

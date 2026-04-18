@@ -13,7 +13,7 @@ router = APIRouter(prefix="/fanfic", tags=["fanfic"])
 @router.get("", response_model=PaginatedResponse[FanficResponse])
 async def list_fanfics(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=200),
     fandom: Optional[str] = Query(None),
     rating: Optional[str] = Query(None),
     completion_status: Optional[str] = Query(None),
@@ -51,3 +51,8 @@ async def delete_fanfic(fanfic_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     deleted = await fanfic_service.soft_delete_fanfic(db, fanfic_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Fanfic not found")
+
+
+@router.delete("/{fanfic_id}/permanent", status_code=204)
+async def permanent_delete_fanfic_route(fanfic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    await fanfic_service.permanent_delete_fanfic(db, fanfic_id)

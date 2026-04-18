@@ -56,7 +56,7 @@ public enum HTTPMethod: String, Sendable {
 // MARK: - Comic Endpoints
 
 public extension Endpoint {
-    static func comics(page: Int = 1, pageSize: Int = 20, sort: String? = nil) -> Endpoint {
+    static func comics(page: Int = 1, pageSize: Int = 200, sort: String? = nil) -> Endpoint {
         var items = [
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "page_size", value: "\(pageSize)"),
@@ -80,6 +80,18 @@ public extension Endpoint {
     static func deleteComic(id: UUID) -> Endpoint {
         Endpoint(method: .delete, path: "/comics/\(id)")
     }
+
+    static func permanentDeleteComic(id: UUID) -> Endpoint {
+        Endpoint(method: .delete, path: "/comics/\(id)/permanent")
+    }
+
+    static func archiveComic(id: UUID) -> Endpoint {
+        Endpoint(method: .post, path: "/comics/\(id)/archive")
+    }
+
+    static func unarchiveComic(id: UUID) -> Endpoint {
+        Endpoint(method: .post, path: "/comics/\(id)/unarchive")
+    }
 }
 
 // MARK: - Fanfic Endpoints
@@ -87,7 +99,7 @@ public extension Endpoint {
 public extension Endpoint {
     static func fanfics(
         page: Int = 1,
-        pageSize: Int = 20,
+        pageSize: Int = 200,
         fandom: String? = nil,
         rating: String? = nil,
         completionStatus: String? = nil,
@@ -114,6 +126,22 @@ public extension Endpoint {
 
     static func deleteFanfic(id: UUID) -> Endpoint {
         Endpoint(method: .delete, path: "/fanfic/\(id)")
+    }
+
+    static func permanentDeleteFanfic(id: UUID) -> Endpoint {
+        Endpoint(method: .delete, path: "/fanfic/\(id)/permanent")
+    }
+}
+
+// MARK: - Fanfic Thumbnail Endpoints
+
+public extension Endpoint {
+    static var randomFanficThumbnail: Endpoint {
+        Endpoint(path: "/fanfic-thumbnails/random")
+    }
+
+    static func randomFanficThumbnails(count: Int) -> Endpoint {
+        Endpoint(path: "/fanfic-thumbnails/random?count=\(count)")
     }
 }
 

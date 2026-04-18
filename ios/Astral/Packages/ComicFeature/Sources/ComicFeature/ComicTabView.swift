@@ -1,4 +1,5 @@
 import SwiftUI
+import Core
 import DesignSystem
 
 public struct ComicTabView: View {
@@ -17,22 +18,28 @@ public struct ComicTabView: View {
                 .ignoresSafeArea()
 
             NavigationStack {
-                Group {
-                    switch navigation.activeSection {
-                    case .library:
-                        ComicLibraryView(filterFavourites: false)
-                    case .favourites:
-                        ComicLibraryView(filterFavourites: true)
-                    case .read:
-                        ComicLibraryView(filterFavourites: false)
-                    case .browse:
-                        ComicBrowserView()
-                    case .scrapes:
-                        ComicScrapesView()
-                    case .search:
-                        ComicSearchView(searchText: $navigation.searchText)
-                    case .stats:
-                        StatsView()
+                VStack(spacing: 0) {
+                    // Search bar — slides in when active
+                    AstralSearchBar(
+                        text: $navigation.searchText,
+                        isActive: $navigation.isSearchActive,
+                        placeholder: "Title, tag, author, description..."
+                    )
+
+                    // Main content
+                    Group {
+                        switch navigation.activeSection {
+                        case .library:
+                            ComicLibraryView(searchText: $navigation.searchText, filterFavourites: false)
+                        case .favourites:
+                            ComicLibraryView(searchText: .constant(""), filterFavourites: true)
+                        case .browse:
+                            ComicBrowserView()
+                        case .scrapes:
+                            ComicScrapesView()
+                        case .stats:
+                            StatsView()
+                        }
                     }
                 }
                 .toolbar {
@@ -51,20 +58,34 @@ public struct ComicTabView: View {
                                 Label("Fan Fiction", systemImage: "scroll.fill")
                             }
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 8) {
                                 Image(systemName: "book.fill")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 16, weight: .semibold))
                                 Text("Comics")
-                                    .font(AstralTypography.titleSmall)
+                                    .font(AstralTypography.title)
                                 Image(systemName: "chevron.down")
-                                    .font(.caption2.weight(.semibold))
+                                    .font(.caption.weight(.bold))
                                     .foregroundStyle(AstralColors.muted)
                             }
                         }
                         .tint(AstralColors.gold)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 16) {
+                        HStack(spacing: 14) {
+                            // Search toggle
+                            Button {
+                                withAnimation(AstralAnimation.quick) {
+                                    navigation.isSearchActive.toggle()
+                                    if !navigation.isSearchActive {
+                                        navigation.searchText = ""
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: navigation.isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
+                                    .foregroundStyle(navigation.isSearchActive ? AstralColors.gold : AstralColors.body)
+                            }
+
+                            // Filter
                             Button {
                                 showFilter = true
                             } label: {
@@ -75,6 +96,7 @@ public struct ComicTabView: View {
                             }
                             .buttonStyle(PressButtonStyle(scale: 0.88))
 
+                            // Sidebar
                             Button {
                                 withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
                                     navigation.isSidebarOpen.toggle()
@@ -83,6 +105,7 @@ public struct ComicTabView: View {
                                 Image(systemName: "line.3.horizontal")
                                     .foregroundStyle(AstralColors.body)
                             }
+                            .accessibilityIdentifier(AccessibilityID.sidebarToggle)
                         }
                     }
                 }
@@ -104,7 +127,6 @@ public struct ComicTabView: View {
                     .presentationDetents([.medium, .large])
             }
 
-            // Sidebar overlay
             ComicSidebarView(
                 isOpen: $navigation.isSidebarOpen,
                 activeSection: $navigation.activeSection
@@ -125,11 +147,13 @@ final class ComicNavigation {
     var activeSection: ComicSection = .library
     var isSidebarOpen = false
     var searchText = ""
+    var isSearchActive = false
     var filterState = ComicFilterState()
 
     func searchFor(_ term: String) {
         searchText = term
-        activeSection = .search
+        isSearchActive = true
+        activeSection = .library
     }
 }
 
@@ -147,20 +171,16 @@ extension EnvironmentValues {
 enum ComicSection: String, CaseIterable {
     case library = "Library"
     case favourites = "Favourites"
-    case read = "Continue Reading"
     case browse = "Browse"
     case scrapes = "Scrapes"
-    case search = "Search"
     case stats = "Stats"
 
     var icon: String {
         switch self {
         case .library: "books.vertical"
         case .favourites: "heart.fill"
-        case .read: "book"
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
-        case .search: "magnifyingglass"
         case .stats: "chart.bar"
         }
     }

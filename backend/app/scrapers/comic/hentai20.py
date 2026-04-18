@@ -31,7 +31,7 @@ class Hentai20Scraper(BaseScraper):
     content_type = "comic"
     # Images and chapter list are in the raw HTML — no JS engine needed
     requires_browser = False
-    request_delay_seconds = 2.0
+    request_delay_seconds = 0.3
     max_retries = 3
 
     async def get_story_metadata(self, url: str) -> StoryMetadata:
@@ -44,18 +44,52 @@ class Hentai20Scraper(BaseScraper):
         desc_tag = soup.select_one(".summary__content, .entry-content > p, .description")
         description = desc_tag.get_text(strip=True) if desc_tag else None
 
-        thumb_tag = soup.select_one(".summary_image img, .tab-thumb img, .post-title img")
+        # Thumbnail — og:image meta is most reliable on WordPress/Madara
         thumbnail_url = None
-        if thumb_tag:
-            thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
+        og_img = soup.select_one('meta[property="og:image"]')
+        if og_img:
+            thumbnail_url = (og_img.get("content") or "").strip() or None
+        if not thumbnail_url:
+            thumb_tag = soup.select_one("article img, .summary_image img")
+            if thumb_tag:
+                thumbnail_url = (thumb_tag.get("data-src") or thumb_tag.get("src") or "").strip() or None
 
-        # Author (Madara theme — same selector as toongod)
-        author_tag = soup.select_one(".author-content a")
-        authors = [author_tag.get_text(strip=True)] if author_tag else []
+        # Author — hentai20 uses schema.org itemprop markup inside an infotable
+        authors = []
+        author_el = soup.select_one('i[itemprop="name"]')
+        if author_el:
+            name = author_el.get_text(strip=True)
+            if name:
+                authors = [name]
+        if not authors:
+            # Fallback: Madara .author-content or infotable links
+            author_tags = soup.select(".author-content a")
+            if not author_tags:
+                for row in soup.select(".infotable tr, .post-content_item"):
+                    text = row.get_text(strip=True).lower()
+                    if "author" in text or "artist" in text:
+                        links = row.select("a")
+                        author_tags = links if links else []
+                        if not links:
+                            # Plain text author
+                            cells = row.select("td")
+                            if len(cells) >= 2:
+                                name = cells[1].get_text(strip=True)
+                                if name:
+                                    authors = [name]
+                        break
+            if not authors and author_tags:
+                authors = [a.get_text(strip=True) for a in author_tags if a.get_text(strip=True)]
 
-        # Genre tags (Madara theme)
-        genre_tags = soup.select(".genres-content a")
-        tags = [{"name": a.get_text(strip=True), "tag_type": "genre"} for a in genre_tags]
+        # Tags/genres — hentai20 uses <a rel="tag"> for genre links in the infotable
+        genre_tags = soup.select('.genres-content a, a[rel="tag"]')
+        seen_tags = set()
+        tags = []
+        for a in genre_tags:
+            name = a.get_text(strip=True)
+            if name and name not in seen_tags:
+                seen_tags.add(name)
+                tags.append({"name": name, "tag_type": "genre"})
 
         slug = _slug(url)
         chapter_links = soup.find_all(

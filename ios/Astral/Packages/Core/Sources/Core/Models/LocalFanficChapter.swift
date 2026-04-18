@@ -14,8 +14,16 @@ public final class LocalFanficChapter {
     /// Local file path for downloaded chapter text (Documents directory)
     public var localTextPath: String?
     public var scrapeStatus: String
+    public var downloadState: String = "none"
+    public var downloadedAt: Date?
+    public var downloadError: String?
 
     public var fanfic: LocalFanfic?
+
+    public var downloadStatus: DownloadState {
+        get { DownloadState(rawValue: downloadState) ?? .none }
+        set { downloadState = newValue.rawValue }
+    }
 
     public init(
         id: UUID,

@@ -62,6 +62,26 @@ def get_image_dimensions(file_path: str | Path) -> Optional[tuple[int, int]]:
         return None
 
 
+WEBP_MAX_DIMENSION = 16383
+
+
+def convert_to_webp(src_path: str | Path, dest_path: str | Path, quality: int = 30) -> bool:
+    """Convert an image to lossy WebP. Downscales if exceeding WebP's 16383px limit."""
+    try:
+        dest_path = Path(dest_path)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(src_path) as img:
+            w, h = img.size
+            if w > WEBP_MAX_DIMENSION or h > WEBP_MAX_DIMENSION:
+                ratio = min(WEBP_MAX_DIMENSION / w, WEBP_MAX_DIMENSION / h)
+                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+            img.save(dest_path, "WEBP", quality=quality, method=4)
+        return True
+    except Exception as e:
+        logger.error("convert_to_webp failed | src=%s error=%s", src_path, e)
+        return False
+
+
 def generate_thumbnail(src_path: str | Path, dest_path: str | Path, size: tuple[int, int] = (300, 400)) -> bool:
     """Generate a thumbnail. Returns True on success."""
     logger.info("generate_thumbnail starting | src=%s dest=%s size=%s", src_path, dest_path, size)

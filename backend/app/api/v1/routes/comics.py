@@ -13,7 +13,7 @@ router = APIRouter(prefix="/comics", tags=["comics"])
 @router.get("", response_model=PaginatedResponse[ComicResponse])
 async def list_comics(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=200),
     sort: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -49,8 +49,30 @@ async def update_comic(
     return comic
 
 
+@router.post("/{comic_id}/archive", response_model=ComicResponse, status_code=202)
+async def archive_comic(comic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    result = await comic_service.archive_comic(db, comic_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Comic not found")
+    return result
+
+
+@router.post("/{comic_id}/unarchive", response_model=ComicResponse, status_code=202)
+async def unarchive_comic(comic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    result = await comic_service.unarchive_comic(db, comic_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Comic not found")
+    return result
+
+
 @router.delete("/{comic_id}", status_code=204)
 async def delete_comic(comic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     deleted = await comic_service.soft_delete_comic(db, comic_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Comic not found")
+
+
+@router.delete("/{comic_id}/permanent", status_code=204)
+async def permanent_delete_comic_route(comic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    await comic_service.permanent_delete_comic(db, comic_id)
+    # Idempotent: always 204, even for unknown ids

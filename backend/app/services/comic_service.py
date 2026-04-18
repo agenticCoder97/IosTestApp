@@ -1,16 +1,23 @@
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from math import ceil
-from sqlalchemy import select, func
+import redis.asyncio as aioredis
+from arq.connections import ArqRedis
+from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models.comic import Comic, ComicChapter, Page, ComicAuthor, ComicTag
 from app.models.author import Author
 from app.models.scrape import ScrapeJob
+from app.models.progress import ReadingProgress
 from app.schemas.comic import ComicResponse, ComicChapterResponse, PageResponse, ComicUpdateRequest
 from app.schemas.shared import PaginatedResponse, AuthorResponse, TagResponse
+from app.core.constants import ArchiveStatus
+from app.core.config import settings
+from app.cache import redis_cache
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +62,8 @@ def _comic_to_schema(comic: Comic, include_chapters: bool = False) -> ComicRespo
         language=comic.language,
         status=comic.status,
         category=comic.category,
+        archive_status=comic.archive_status,
+        archived_at=comic.archived_at,
         authors=authors if authors else None,
         tags=tags if tags else None,
         chapters=chapters,
@@ -69,12 +78,17 @@ async def list_comics(
     page_size: int,
     sort: Optional[str] = None,
 ) -> PaginatedResponse[ComicResponse]:
+    cache_key = f"comics:list:{page}:{page_size}:{sort or 'default'}"
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("list_comics cache hit | key=%s", cache_key)
+        return PaginatedResponse[ComicResponse](**json.loads(cached))
+
     logger.info("list_comics called | page=%d page_size=%d sort=%s", page, page_size, sort or "default")
     base_query = select(Comic).where(Comic.deleted_at.is_(None))
 
     count_result = await db.execute(select(func.count()).select_from(Comic).where(Comic.deleted_at.is_(None)))
     total = count_result.scalar_one()
-    logger.info("list_comics total count=%d", total)
 
     if sort == "title":
         base_query = base_query.order_by(Comic.title)
@@ -86,25 +100,32 @@ async def list_comics(
     base_query = base_query.options(
         selectinload(Comic.comic_authors).selectinload(ComicAuthor.author),
         selectinload(Comic.comic_tags).selectinload(ComicTag.tag),
-        selectinload(Comic.chapters),
     ).offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(base_query)
     comics = result.scalars().all()
 
-    logger.info("list_comics returning %d items for page %d", len(comics), page)
     total_pages = ceil(total / page_size) if total > 0 else 1
-    return PaginatedResponse(
-        items=[_comic_to_schema(c, include_chapters=True) for c in comics],
+    response = PaginatedResponse(
+        items=[_comic_to_schema(c, include_chapters=False) for c in comics],
         total=total,
         page=page,
         page_size=page_size,
         total_pages=total_pages,
         has_next=page < total_pages,
     )
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    logger.info("list_comics returning %d items (cached) | page=%d", len(comics), page)
+    return response
 
 
 async def get_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResponse]:
+    cache_key = f"comic:detail:{comic_id}"
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("get_comic cache hit | comic_id=%s", comic_id)
+        return ComicResponse(**json.loads(cached))
+
     logger.info("get_comic called | comic_id=%s", comic_id)
     result = await db.execute(
         select(Comic)
@@ -117,10 +138,10 @@ async def get_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResp
     )
     comic = result.scalar_one_or_none()
     if not comic:
-        logger.warning("get_comic not found | comic_id=%s", comic_id)
         return None
-    logger.info("get_comic found | comic_id=%s title=%s", comic_id, comic.title)
-    return _comic_to_schema(comic, include_chapters=True)
+    response = _comic_to_schema(comic, include_chapters=True)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    return response
 
 
 async def get_chapter_pages(
@@ -128,6 +149,12 @@ async def get_chapter_pages(
     comic_id: uuid.UUID,
     chapter_id: uuid.UUID,
 ) -> list[PageResponse]:
+    cache_key = f"chapter_pages:{comic_id}:{chapter_id}"
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("get_chapter_pages cache hit | key=%s", cache_key)
+        return [PageResponse(**p) for p in json.loads(cached)]
+
     logger.info("get_chapter_pages called | comic_id=%s chapter_id=%s", comic_id, chapter_id)
     result = await db.execute(
         select(Page)
@@ -140,8 +167,7 @@ async def get_chapter_pages(
         .order_by(Page.page_number)
     )
     pages = result.scalars().all()
-    logger.info("get_chapter_pages returning %d pages | comic_id=%s chapter_id=%s", len(pages), comic_id, chapter_id)
-    return [
+    response = [
         PageResponse(
             id=p.id,
             page_number=p.page_number,
@@ -152,6 +178,8 @@ async def get_chapter_pages(
         )
         for p in pages
     ]
+    await redis_cache.set(cache_key, json.dumps([r.model_dump(mode="json") for r in response]), ttl=86400)
+    return response
 
 
 async def update_comic(
@@ -179,7 +207,72 @@ async def update_comic(
     logger.info("update_comic applying changes | comic_id=%s fields=%s", comic_id, changed_fields)
     await db.commit()
     await db.refresh(comic)
-    logger.info("update_comic committed | comic_id=%s", comic_id)
+    await redis_cache.invalidate_comics(str(comic_id))
+    return _comic_to_schema(comic)
+
+
+async def _load_comic_with_relations(db: AsyncSession, comic_id: uuid.UUID) -> Optional[Comic]:
+    result = await db.execute(
+        select(Comic)
+        .where(Comic.id == comic_id, Comic.deleted_at.is_(None))
+        .options(
+            selectinload(Comic.comic_authors).selectinload(ComicAuthor.author),
+            selectinload(Comic.comic_tags).selectinload(ComicTag.tag),
+            selectinload(Comic.chapters),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def archive_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResponse]:
+    """Set archive_status=archiving and enqueue the archive ARQ task."""
+    logger.info("archive_comic called | comic_id=%s", comic_id)
+    comic = await _load_comic_with_relations(db, comic_id)
+    if not comic:
+        return None
+
+    if comic.archive_status not in (ArchiveStatus.NONE, "none"):
+        logger.warning("archive_comic invalid state | comic_id=%s archive_status=%s", comic_id, comic.archive_status)
+        return _comic_to_schema(comic)
+
+    comic.archive_status = ArchiveStatus.ARCHIVING
+    await db.commit()
+    await redis_cache.invalidate_comics(str(comic_id))
+
+    try:
+        r = await aioredis.from_url(settings.redis_url)
+        arq_redis = ArqRedis(r.connection_pool)
+        await arq_redis.enqueue_job("comic_archive_task", str(comic_id))
+        await arq_redis.aclose()
+    except Exception as e:
+        logger.warning("archive_comic ARQ enqueue failed | comic_id=%s error=%s", comic_id, e)
+
+    return _comic_to_schema(comic)
+
+
+async def unarchive_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResponse]:
+    """Set archive_status=unarchiving and enqueue the unarchive ARQ task."""
+    logger.info("unarchive_comic called | comic_id=%s", comic_id)
+    comic = await _load_comic_with_relations(db, comic_id)
+    if not comic:
+        return None
+
+    if comic.archive_status != ArchiveStatus.ARCHIVED:
+        logger.warning("unarchive_comic invalid state | comic_id=%s archive_status=%s", comic_id, comic.archive_status)
+        return _comic_to_schema(comic)
+
+    comic.archive_status = ArchiveStatus.UNARCHIVING
+    await db.commit()
+    await redis_cache.invalidate_comics(str(comic_id))
+
+    try:
+        r = await aioredis.from_url(settings.redis_url)
+        arq_redis = ArqRedis(r.connection_pool)
+        await arq_redis.enqueue_job("comic_unarchive_task", str(comic_id))
+        await arq_redis.aclose()
+    except Exception as e:
+        logger.warning("unarchive_comic ARQ enqueue failed | comic_id=%s error=%s", comic_id, e)
+
     return _comic_to_schema(comic)
 
 
@@ -194,5 +287,68 @@ async def soft_delete_comic(db: AsyncSession, comic_id: uuid.UUID) -> bool:
         return False
     comic.deleted_at = datetime.now(timezone.utc)
     await db.commit()
-    logger.info("soft_delete_comic completed | comic_id=%s title=%s", comic_id, comic.title)
+    await redis_cache.invalidate_comics(str(comic_id))
+    return True
+
+
+async def permanent_delete_comic(db: AsyncSession, comic_id: uuid.UUID) -> bool:
+    """Hard-delete a comic and every dependent row.
+
+    FK-safe order:
+      pages -> comic_chapters -> comic_authors -> comic_tags
+        -> reading_progress (polymorphic) -> comics
+        -> scrape_jobs (polymorphic; FK is comics.scrape_job_id,
+           so scrape_jobs must be deleted AFTER comics).
+
+    Enqueues a best-effort `comic_media_wipe_task` ARQ job to rmtree
+    both live and archive media directories. Idempotent: returns
+    True even when no comic row exists (iOS retry queue safety).
+    """
+    logger.info("permanent_delete_comic called | comic_id=%s", comic_id)
+
+    await db.execute(
+        delete(Page).where(
+            Page.chapter_id.in_(
+                select(ComicChapter.id).where(ComicChapter.comic_id == comic_id)
+            )
+        )
+    )
+    await db.execute(delete(ComicChapter).where(ComicChapter.comic_id == comic_id))
+    await db.execute(delete(ComicAuthor).where(ComicAuthor.comic_id == comic_id))
+    await db.execute(delete(ComicTag).where(ComicTag.comic_id == comic_id))
+    await db.execute(
+        delete(ReadingProgress).where(
+            and_(
+                ReadingProgress.content_type == "comic",
+                ReadingProgress.story_id == comic_id,
+            )
+        )
+    )
+    await db.execute(delete(Comic).where(Comic.id == comic_id))
+    await db.execute(
+        delete(ScrapeJob).where(
+            and_(
+                ScrapeJob.content_type == "comic",
+                ScrapeJob.story_id == comic_id,
+            )
+        )
+    )
+    await db.commit()
+
+    await redis_cache.invalidate_comics(str(comic_id))
+
+    # Best-effort media wipe — mirrors archive_comic enqueue pattern.
+    try:
+        r = await aioredis.from_url(settings.redis_url)
+        arq_redis = ArqRedis(r.connection_pool)
+        await arq_redis.enqueue_job("comic_media_wipe_task", str(comic_id))
+        await arq_redis.aclose()
+    except Exception as e:
+        logger.warning(
+            "permanent_delete_comic ARQ enqueue failed | comic_id=%s error=%s",
+            comic_id,
+            e,
+        )
+
+    logger.info("permanent_delete_comic done | comic_id=%s", comic_id)
     return True

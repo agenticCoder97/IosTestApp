@@ -6,6 +6,7 @@ public final class LocalFanfic {
     @Attribute(.unique) public var id: UUID
     public var title: String
     public var sourceKey: String
+    public var sourceUrl: String?
     public var summary: String?
     public var fandom: String?
     public var rating: String?
@@ -13,7 +14,7 @@ public final class LocalFanfic {
     public var wordCount: Int?
     public var totalChapters: Int
     public var isDownloaded: Bool
-    public var lastReadChapterNumber: Int
+    public var lastReadChapterNumber: Double?
     /// Fanfic-only: 0.0 to 1.0 scroll position within the current chapter
     public var scrollOffsetPercent: Double?
     public var progressPercent: Double
@@ -42,6 +43,19 @@ public final class LocalFanfic {
     public var updatedAtSource: Date?
     /// JSON-encoded array of tag dicts from API
     public var tagsJSON: String?
+    /// Comma-separated freeform tags from AO3
+    public var freeformTags: String?
+    /// Comma-separated author names
+    public var authorsText: String?
+    /// AO3 engagement stats
+    public var hits: Int?
+    public var kudos: Int?
+    public var commentsCount: Int?
+    public var bookmarksCount: Int?
+    /// Date when the user first completed this fanfic (progressPercent reached 1.0)
+    public var completedAt: Date?
+    /// Last time the fanfic metadata was synced from the backend
+    public var lastSyncedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalFanficChapter.fanfic)
     public var chapters: [LocalFanficChapter]?
@@ -57,7 +71,7 @@ public final class LocalFanfic {
         wordCount: Int? = nil,
         totalChapters: Int = 0,
         isDownloaded: Bool = false,
-        lastReadChapterNumber: Int = 0,
+        lastReadChapterNumber: Double? = nil,
         scrollOffsetPercent: Double? = nil,
         progressPercent: Double = 0.0,
         addedAt: Date = .now,
@@ -93,5 +107,10 @@ public final class LocalFanfic {
     public var estimatedWordsRead: Int {
         guard let wc = wordCount, totalChapters > 0 else { return 0 }
         return Int(Double(wc) * progressPercent)
+    }
+
+    public var isFullyDownloaded: Bool {
+        guard let chs = chapters, !chs.isEmpty else { return false }
+        return chs.allSatisfy { $0.downloadStatus == .complete }
     }
 }

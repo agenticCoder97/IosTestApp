@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.core.logging_config import configure_logging
 from app.db.database import engine, Base
 from app.models import *  # noqa: F401, F403 — import all models so Base.metadata is populated
-from app.api.v1.routes import comics, fanfic, scrape, authors, progress, health, stats
+from app.api.v1.routes import comics, fanfic, scrape, authors, progress, health, stats, fanfic_thumbnails
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -61,5 +61,6 @@ app.include_router(scrape.router, prefix="/api/v1")
 app.include_router(authors.router, prefix="/api/v1")
 app.include_router(progress.router, prefix="/api/v1")
 app.include_router(stats.router, prefix="/api/v1")
+app.include_router(fanfic_thumbnails.router, prefix="/api/v1")
 
 logger.info("Astral API routes registered")

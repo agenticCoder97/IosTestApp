@@ -7,9 +7,16 @@ import Networking
 final class ComicLibraryViewModel {
     var isLoading = false
     var errorMessage: String?
+    private var lastSyncTime: Date?
+    private static let syncInterval: TimeInterval = 120 // 2 minutes
 
-    func fetchComics(modelContext: ModelContext) async {
+    func fetchComics(modelContext: ModelContext, force: Bool = false) async {
+        if !force, let last = lastSyncTime, Date().timeIntervalSince(last) < Self.syncInterval {
+            AstralLogger.info("fetchComics skipped — last sync \(Int(Date().timeIntervalSince(last)))s ago", context: "ComicLibraryVM")
+            return
+        }
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         AstralLogger.info("fetchComics started", context: "ComicLibraryVM")
 
@@ -32,6 +39,8 @@ final class ComicLibraryViewModel {
                     existing.totalChapters = dto.totalChapters
                     existing.status = dto.status
                     existing.category = dto.category
+                    existing.archiveStatus = dto.archiveStatus
+                    existing.archivedAt = dto.archivedAt
                     existing.tagsJSON = Self.encodeTagsJSON(dto.tags)
                     existing.authorsJSON = Self.encodeAuthorsJSON(dto.authors)
                     localComic = existing
@@ -48,6 +57,8 @@ final class ComicLibraryViewModel {
                         seenTotalChapters: dto.totalChapters
                     )
                     comic.category = dto.category
+                    comic.archiveStatus = dto.archiveStatus
+                    comic.archivedAt = dto.archivedAt
                     comic.tagsJSON = Self.encodeTagsJSON(dto.tags)
                     comic.authorsJSON = Self.encodeAuthorsJSON(dto.authors)
                     modelContext.insert(comic)
@@ -75,12 +86,19 @@ final class ComicLibraryViewModel {
                     comic.progressPercent = Double(progress.lastChapterNumber) / Double(comic.totalChapters)
                 }
             }
+            for comic in allComics {
+                comic.lastSyncedAt = .now
+            }
             try modelContext.save()
+            lastSyncTime = .now
         } catch let error as APIError where error == .cookieRefreshNeeded {
             errorMessage = "Browser refresh needed"
             AstralLogger.warning("fetchComics: cookie refresh needed", context: "ComicLibraryVM")
+        } catch is URLError {
+            errorMessage = "Backend unreachable — check Docker is running"
+            AstralLogger.error("fetchComics: backend unreachable", context: "ComicLibraryVM")
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Sync failed: \(error.localizedDescription)"
             AstralLogger.error("fetchComics failed: \(error)", context: "ComicLibraryVM")
         }
     }

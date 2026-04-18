@@ -38,6 +38,16 @@ public final class LocalComic {
     public var authorsJSON: String?
     /// Number of initial pages to skip per chapter (e.g. credit pages in webtoons)
     public var skipFirstNPages: Int
+    /// Page number within the current chapter (1-based) — for resume-at-page
+    public var lastReadPageNumber: Int
+    /// Date when the user first completed this comic (progressPercent reached 1.0)
+    public var completedAt: Date?
+    /// Archive status: none, archiving, archived, unarchiving
+    public var archiveStatus: String?
+    /// When the comic was archived
+    public var archivedAt: Date?
+    /// Last time the comic metadata was synced from the backend
+    public var lastSyncedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalComicChapter.comic)
     public var chapters: [LocalComicChapter]?
@@ -74,10 +84,20 @@ public final class LocalComic {
         self.seenTotalChapters = seenTotalChapters
         self.lastReadAt = lastReadAt
         self.skipFirstNPages = skipFirstNPages
+        self.lastReadPageNumber = 0
     }
 
     /// Number of chapters added since the user last viewed the detail screen.
     public var newChapterCount: Int {
         max(0, totalChapters - seenTotalChapters)
+    }
+
+    public var isArchived: Bool { archiveStatus == "archived" }
+    public var isArchiving: Bool { archiveStatus == "archiving" }
+    public var isUnarchiving: Bool { archiveStatus == "unarchiving" }
+
+    public var isFullyDownloaded: Bool {
+        guard let chs = chapters, !chs.isEmpty else { return false }
+        return chs.allSatisfy { $0.downloadStatus == .complete }
     }
 }

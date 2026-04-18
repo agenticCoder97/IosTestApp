@@ -13,7 +13,7 @@ struct LocalFanficTests {
         #expect(fanfic.completionStatus == "ongoing")
         #expect(fanfic.totalChapters == 0)
         #expect(fanfic.isDownloaded == false)
-        #expect(fanfic.lastReadChapterNumber == 0)
+        #expect(fanfic.lastReadChapterNumber == nil)
         #expect(fanfic.progressPercent == 0.0)
         #expect(fanfic.isFavorite == false)
         #expect(fanfic.seenTotalChapters == 0)

@@ -1,9 +1,22 @@
 import SwiftUI
 import SwiftData
 import Core
+import DesignSystem
+import Networking
+
+class AstralAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        BackgroundDownloadSession.shared.systemCompletionHandler = completionHandler
+    }
+}
 
 @main
 struct AstralApp: App {
+    @UIApplicationDelegateAdaptor(AstralAppDelegate.self) var appDelegate
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             LocalComic.self,
@@ -14,6 +27,8 @@ struct AstralApp: App {
             UserPreferences.self,
             LocalScrapeJob.self,
             LocalBookmark.self,
+            LocalReadingSession.self,
+            PendingRemoteDeletion.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -47,6 +62,12 @@ struct AstralApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .task { ContentBlocker.shared.precompile() }
+                .task {
+                    let context = sharedModelContainer.mainContext
+                    OrphanCleanupService.cleanOnLaunch(modelContext: context)
+                    PendingDeletionDrainService.drain(modelContext: context)
+                }
         }
         .modelContainer(sharedModelContainer)
     }

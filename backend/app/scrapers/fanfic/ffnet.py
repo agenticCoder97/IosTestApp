@@ -35,39 +35,46 @@ class FanfictionNetScraper(BaseScraper):
 
     async def _fetch(self, url: str) -> str:
         """Override: use httpx instead of curl_cffi for FFNet.
-        FFNet doesn't use Cloudflare but detects curl_cffi's TLS fingerprint."""
+        On 2nd 403, falls back to headless browser cookie refresh."""
         cookies_list, user_agent = await self._get_cookies()
         cookies = {c["name"]: c["value"] for c in cookies_list}
 
         await asyncio.sleep(self.request_delay_seconds)
 
+        headers = {
+            "User-Agent": user_agent or "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+        }
+        consecutive_403 = 0
         for attempt in range(self.max_retries):
             try:
-                headers = {
-                    "User-Agent": user_agent or "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Connection": "keep-alive",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                }
                 async with httpx.AsyncClient(
-                    follow_redirects=True,
-                    timeout=60,
-                    http2=True,
-                    headers=headers,
+                    follow_redirects=True, timeout=60, http2=True, headers=headers,
                 ) as client:
                     response = await client.get(url, cookies=cookies)
                 if response.status_code == 200:
                     logger.debug("_fetch(httpx) ok | url=%s bytes=%d", url, len(response.content))
                     return response.text
                 elif response.status_code == 403:
-                    raise ScraperError(f"403 from {url} — FFNet blocked the request")
+                    consecutive_403 += 1
+                    if consecutive_403 >= 2 and not self._browser_cookie_attempted:
+                        self._browser_cookie_attempted = True
+                        logger.info("_fetch(httpx) 403 x%d — fetching via headless browser | url=%s", consecutive_403, url)
+                        html = await self._fetch_via_browser(url)
+                        if html and len(html) > 500:
+                            return html
+                    if consecutive_403 >= self.max_retries:
+                        from app.scrapers.base import CookieExpiredError
+                        raise CookieExpiredError(f"403 from {url} — FFNet blocked even after browser attempt.")
+                    await asyncio.sleep((2 ** attempt) + 0.5)
                 else:
                     raise ScraperError(f"HTTP {response.status_code} from {url}")
-            except (ScraperError,):
+            except (ScraperError, CookieExpiredError):
                 raise
             except Exception as e:
                 if attempt == self.max_retries - 1:
@@ -99,8 +106,11 @@ class FanfictionNetScraper(BaseScraper):
         else:
             total_chapters = 1
 
-        # Parse the metadata line:
-        # "Rated: Fiction T - English - Adventure/Romance - Harry P., ... - Words: 184,603 ..."
+        # Parse the metadata line (pipe-separated by " - "):
+        # "Rated: Fiction M - English - Adventure/Romance - Harry P., Fleur D.
+        #   - Chapters: 24 - Words: 234,571 - Reviews: 5,157 - Favs: 15,287
+        #   - Follows: 7,375 - Updated: May 28, 2009 - Published: Feb 9, 2007
+        #   - Status: Complete - id: 3384712"
         rating = None
         language = None
         word_count = None
@@ -110,17 +120,20 @@ class FanfictionNetScraper(BaseScraper):
         completion_status = "ongoing"
         published_at = None
         updated_at_source = None
+        hits = None       # FFNet doesn't expose views/hits
+        kudos = None      # mapped from Favs
+        comments_count = None  # mapped from Reviews
+        bookmarks_count = None  # mapped from Follows
 
-        # Fandom from breadcrumb (e.g. "Harry Potter")
+        # Fandom from breadcrumb — last link for normal, first for crossovers
         breadcrumb_links = soup.select("#pre_story_links a")
-        if len(breadcrumb_links) >= 2:
+        if breadcrumb_links:
             fandom = breadcrumb_links[-1].get_text(strip=True)
 
-        # Metadata span — last span in #profile_top
+        # Metadata span — last xgray span in #profile_top
         meta_spans = soup.select("#profile_top span.xgray")
         meta_text = meta_spans[-1].get_text() if meta_spans else ""
         if not meta_text:
-            # Fallback: grab the full text of the container
             profile = soup.select_one("#profile_top")
             meta_text = profile.get_text() if profile else ""
 
@@ -129,47 +142,107 @@ class FanfictionNetScraper(BaseScraper):
         if m:
             rating = m.group(1)
 
-        # Language
-        m = re.search(r"Fiction\s+\S+\s+-\s+(\w+)\s+-", meta_text)
-        if m:
-            language = m.group(1)
+        # Split the metadata line on " - " to parse structured fields
+        # Format: Rated - Language - Genre - [Characters] - Chapters: N - Words: N - ...
+        segments = [s.strip() for s in meta_text.split(" - ")]
 
-        # Genre (between language and characters/chapters marker)
-        m = re.search(r"Fiction\s+\S+\s+-\s+\w+\s+-\s+([^-]+?)\s+-", meta_text)
-        if m:
-            genre_text = m.group(1).strip()
-            # Genres like "Adventure/Romance" or "Drama"
-            for g in genre_text.split("/"):
-                g = g.strip()
-                if g and not re.match(r"^(Chapters|Words|Reviews)", g):
+        # Language is the first plain-word segment after "Rated:"
+        for seg in segments:
+            if re.match(r"^[A-Z][a-z]+$", seg) and seg not in ("Complete",):
+                language = seg
+                break
+
+        # Genre: segment containing "/" or known genre words, after language
+        genre_words = {"Adventure", "Romance", "Drama", "Humor", "Angst", "Hurt",
+                       "Comfort", "Tragedy", "Mystery", "Horror", "Fantasy", "Sci-Fi",
+                       "Supernatural", "Suspense", "Crime", "Family", "Friendship",
+                       "Poetry", "Spiritual", "Parody", "Western", "General"}
+        compound_genres = {"Hurt/Comfort"}  # single genre name containing "/"
+        for seg in segments:
+            if seg in compound_genres:
+                tags.append({"name": seg, "tag_type": "genre"})
+                break
+            parts = [p.strip() for p in seg.split("/")]
+            if all(p in genre_words for p in parts) and parts:
+                for g in parts:
                     tags.append({"name": g, "tag_type": "genre"})
+                break
 
-        # Characters — text segment that contains character names before " - Chapters:"
-        m = re.search(r"-\s+([A-Z][\w. ]+(?:,\s*[A-Z][\w. ]+)*)\s+-\s*Chapters:", meta_text)
-        if m:
-            characters = m.group(1).strip()
+        # Characters: between genre and "Chapters:" — may have [brackets] or not
+        # Extract from the segment(s) that contain names but not key:value pairs
+        char_parts = []
+        for seg in segments:
+            # Skip key:value segments and known non-character segments
+            if re.match(r"^(Rated|Words|Chapters|Reviews|Favs|Follows|Updated|Published|Status|id):", seg):
+                continue
+            if seg == language or seg in genre_words or "/" in seg and all(p.strip() in genre_words for p in seg.split("/")):
+                continue
+            # Character segments contain names like "Harry P." or "[Harry P., Ginny W.]"
+            cleaned = re.sub(r"[\[\]]", "", seg).strip()
+            if cleaned and re.search(r"[A-Z][a-z]", cleaned) and not re.match(r"^(Rated|Fiction)", cleaned):
+                # Avoid picking up the description or title
+                if len(cleaned) < 200 and "," in cleaned or "." in cleaned:
+                    char_parts.append(cleaned)
+        if char_parts:
+            characters = ", ".join(char_parts)
 
-        # Words
-        m = re.search(r"Words:\s*([\d,]+)", meta_text)
-        if m:
-            try:
-                word_count = int(m.group(1).replace(",", ""))
-            except ValueError:
-                pass
+        # Structured key:value fields
+        for seg in segments:
+            km = re.match(r"^(\w+):\s*(.+)$", seg)
+            if not km:
+                continue
+            key, val = km.group(1), km.group(2).strip()
+            if key == "Words":
+                try:
+                    word_count = int(val.replace(",", ""))
+                except ValueError:
+                    pass
+            elif key == "Reviews":
+                try:
+                    comments_count = int(val.replace(",", ""))
+                except ValueError:
+                    pass
+            elif key == "Favs":
+                try:
+                    kudos = int(val.replace(",", ""))
+                except ValueError:
+                    pass
+            elif key == "Follows":
+                try:
+                    bookmarks_count = int(val.replace(",", ""))
+                except ValueError:
+                    pass
 
-        # Published
-        m = re.search(r"Published:\s*([A-Za-z]+ \d+,? \d{4})", meta_text)
-        if m:
-            published_at = m.group(1)
+        # Dates from <span data-xutime> (Unix epoch — reliable, no format ambiguity)
+        from datetime import datetime as _dt, timezone as _tz
+        meta_span_el = meta_spans[-1] if meta_spans else None
+        if meta_span_el:
+            date_spans = meta_span_el.select("span[data-xutime]")
+            # FFNet puts Updated first, Published second
+            if len(date_spans) >= 2:
+                try:
+                    ts = int(date_spans[0]["data-xutime"])
+                    updated_at_source = _dt.fromtimestamp(ts, tz=_tz.utc).strftime("%Y-%m-%d")
+                except (ValueError, KeyError):
+                    pass
+                try:
+                    ts = int(date_spans[1]["data-xutime"])
+                    published_at = _dt.fromtimestamp(ts, tz=_tz.utc).strftime("%Y-%m-%d")
+                except (ValueError, KeyError):
+                    pass
+            elif len(date_spans) == 1:
+                try:
+                    ts = int(date_spans[0]["data-xutime"])
+                    published_at = _dt.fromtimestamp(ts, tz=_tz.utc).strftime("%Y-%m-%d")
+                except (ValueError, KeyError):
+                    pass
 
-        # Updated
-        m = re.search(r"Updated:\s*([A-Za-z]+ \d+,? \d{4})", meta_text)
-        if m:
-            updated_at_source = m.group(1)
-
-        # Completion — FFNet shows "Status: Complete" in metadata
-        if "Status: Complete" in meta_text or "Complete" in meta_text:
+        # Completion
+        if "Status: Complete" in meta_text:
             completion_status = "complete"
+
+        # Build freeform_tags from extracted genres so they display on iOS
+        freeform_tags = ", ".join(t["name"] for t in tags) if tags else None
 
         return StoryMetadata(
             title=title,
@@ -188,6 +261,10 @@ class FanfictionNetScraper(BaseScraper):
             published_at=published_at,
             updated_at_source=updated_at_source,
             tags=tags,
+            freeform_tags=freeform_tags,
+            kudos=kudos,
+            comments_count=comments_count,
+            bookmarks_count=bookmarks_count,
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:
@@ -232,5 +309,5 @@ class FanfictionNetScraper(BaseScraper):
         if not content_div:
             return ""
 
-        paragraphs = [p.get_text(separator="\n", strip=True) for p in content_div.find_all("p")]
+        paragraphs = [p.get_text(separator=" ", strip=True) for p in content_div.find_all("p")]
         return "\n\n".join(p for p in paragraphs if p)

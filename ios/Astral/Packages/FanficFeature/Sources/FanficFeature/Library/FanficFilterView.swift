@@ -2,9 +2,11 @@ import SwiftUI
 import Core
 import DesignSystem
 
+// MARK: - Filter View (AO3-style)
+
 struct FanficFilterView: View {
-    @Environment(\.dismiss) private var dismiss
     @Bindable var filterState: FanficFilterState
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -107,7 +109,7 @@ struct FanficFilterView: View {
                 .padding(.vertical, 12)
             }
             .background(AstralColors.background)
-            .navigationTitle("Filter")
+            .navigationTitle("Filter & Sort")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
