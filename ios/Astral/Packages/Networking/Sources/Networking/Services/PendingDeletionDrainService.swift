@@ -19,15 +19,25 @@ public enum PendingDeletionDrainService {
                     case "comic":
                         try await APIClient.shared.requestVoid(.permanentDeleteComic(id: record.storyId))
                         modelContext.delete(record)
+                        try? modelContext.save()
                     case "fanfic":
                         try await APIClient.shared.requestVoid(.permanentDeleteFanfic(id: record.storyId))
                         modelContext.delete(record)
+                        try? modelContext.save()
                     default:
                         AstralLogger.warning("drain unknown contentType, discarding | \(record.contentType)", context: "PendingDelete")
                         modelContext.delete(record)
+                        try? modelContext.save()
                     }
                 } catch {
-                    AstralLogger.warning("drain failed, leaving in queue | storyId=\(record.storyId) error=\(error)", context: "PendingDelete")
+                    // Treat 404 as success — backend already has no such id.
+                    if let apiError = error as? APIError, case .notFound = apiError {
+                        AstralLogger.info("drain treating 404 as success | storyId=\(record.storyId)", context: "PendingDelete")
+                        modelContext.delete(record)
+                        try? modelContext.save()
+                    } else {
+                        AstralLogger.warning("drain failed, leaving in queue | storyId=\(record.storyId) error=\(error)", context: "PendingDelete")
+                    }
                 }
             }
             try? modelContext.save()

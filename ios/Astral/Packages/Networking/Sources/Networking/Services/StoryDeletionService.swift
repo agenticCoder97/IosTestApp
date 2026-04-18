@@ -13,7 +13,7 @@ public final class StoryDeletionService {
     public func permanentlyDelete(
         comic: LocalComic,
         modelContext: ModelContext,
-        deleteFiles: @escaping () -> Void
+        deleteFiles: @MainActor @escaping () -> Void
     ) async {
         let id = comic.id
         AstralLogger.info("permanentlyDelete comic | id=\(id)", context: "StoryDeletion")
@@ -36,7 +36,7 @@ public final class StoryDeletionService {
     public func permanentlyDelete(
         fanfic: LocalFanfic,
         modelContext: ModelContext,
-        deleteFiles: @escaping () -> Void
+        deleteFiles: @MainActor @escaping () -> Void
     ) async {
         let id = fanfic.id
         AstralLogger.info("permanentlyDelete fanfic | id=\(id)", context: "StoryDeletion")
