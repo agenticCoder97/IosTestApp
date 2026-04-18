@@ -28,6 +28,7 @@ struct AstralApp: App {
             LocalScrapeJob.self,
             LocalBookmark.self,
             LocalReadingSession.self,
+            PendingRemoteDeletion.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,

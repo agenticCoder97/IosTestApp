@@ -81,6 +81,10 @@ public extension Endpoint {
         Endpoint(method: .delete, path: "/comics/\(id)")
     }
 
+    static func permanentDeleteComic(id: UUID) -> Endpoint {
+        Endpoint(method: .delete, path: "/comics/\(id)/permanent")
+    }
+
     static func archiveComic(id: UUID) -> Endpoint {
         Endpoint(method: .post, path: "/comics/\(id)/archive")
     }
@@ -122,6 +126,10 @@ public extension Endpoint {
 
     static func deleteFanfic(id: UUID) -> Endpoint {
         Endpoint(method: .delete, path: "/fanfic/\(id)")
+    }
+
+    static func permanentDeleteFanfic(id: UUID) -> Endpoint {
+        Endpoint(method: .delete, path: "/fanfic/\(id)/permanent")
     }
 }
 
