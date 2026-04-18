@@ -4,6 +4,36 @@ import DesignSystem
 import ComicFeature
 import FanficFeature
 
+// Three-beat wobble cycle used by orbs during Phase 2 expansion.
+private enum WobbleBeat: CaseIterable {
+    case rest, left, right, settle
+    var angle: Double {
+        switch self {
+        case .rest: return 0
+        case .left: return -5
+        case .right: return 5
+        case .settle: return 0
+        }
+    }
+}
+
+/// Single source of truth for the landing animation's Phase 4 final state.
+/// Consumed by both `runPhase3()` and `applyReducedMotionState()` so the
+/// reduce-motion fallback cannot silently drift from the animated path.
+private enum LandingTerminalState {
+    static let orbSize: CGFloat = 120
+    static let goldOffset = CGSize(width: -80, height: 30)
+    static let blueOffset = CGSize(width: 80, height: 30)
+    static let cornerRadius: CGFloat = 28
+    static let glow: Double = 0.3
+    static let blobSkew: CGFloat = 1.0
+    static let rotation: Double = 0
+    static let contentSlide: CGFloat = -5
+    static let contentReveal: Double = 1.0
+    static let titleScale: CGFloat = 1.0
+    static let titleBlur: CGFloat = 0
+}
+
 struct RootView: View {
     @State private var appState = AppState()
     @State private var showLanding = !CommandLine.arguments.contains("--uitesting")
@@ -42,6 +72,7 @@ struct RootView: View {
 
 private struct MorphLandingView: View {
     let onSelect: (AppTab) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Phase tracking
     @State private var phase = 0 // 0=blank, 1=blobAppear, 2=expand, 3=morph, 4=ready
@@ -64,11 +95,9 @@ private struct MorphLandingView: View {
     @State private var blueCornerRadius: CGFloat = 100
     @State private var blueGlow: Double = 0
 
-    // Screen-relative offsets calculated from geometry
-    @State private var screenSize: CGSize = .zero
-
     // Content inside orbs
-    @State private var contentReveal: Double = 0
+    @State private var contentRevealGold: Double = 0
+    @State private var contentRevealBlue: Double = 0
     @State private var contentSlide: CGFloat = 20 // internal content slides up
 
     // Title + labels
@@ -76,6 +105,10 @@ private struct MorphLandingView: View {
     @State private var titleOpacity: Double = 0
     @State private var subtitleOpacity: Double = 0
     @State private var labelOpacity: Double = 0
+    @State private var titleBlur: CGFloat = 8
+
+    // Cancellation guard for phase completion chain
+    @State private var animationToken = UUID()
 
     // Ambient
     @State private var ambientShift: Bool = false
@@ -106,6 +139,7 @@ private struct MorphLandingView: View {
                 Text("Astral")
                     .font(.system(size: 42, weight: .heavy, design: .rounded))
                     .foregroundStyle(AstralColors.white)
+                    .blur(radius: titleBlur)
                     .scaleEffect(titleScale)
                     .opacity(titleOpacity)
 
@@ -145,24 +179,36 @@ private struct MorphLandingView: View {
             // Tap zones — only active in phase 4
             if phase >= 4 {
                 HStack(spacing: 0) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { onSelect(.comic) }
-                        .accessibilityIdentifier(AccessibilityID.landingComicOrb)
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { onSelect(.fanfic) }
-                        .accessibilityIdentifier(AccessibilityID.landingFanficOrb)
+                    Button {
+                        onSelect(.comic)
+                    } label: {
+                        Color.clear
+                            .contentShape(Rectangle())
+                    }
+                    .pressEffect()
+                    .accessibilityIdentifier(AccessibilityID.landingComicOrb)
+
+                    Button {
+                        onSelect(.fanfic)
+                    } label: {
+                        Color.clear
+                            .contentShape(Rectangle())
+                    }
+                    .pressEffect()
+                    .accessibilityIdentifier(AccessibilityID.landingFanficOrb)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .onAppear {
-            screenSize = geo.size
+            let size = geo.size
             // Start orbs at absolute screen corners
-            goldOffset = CGSize(width: -(geo.size.width / 2 - 20), height: -(geo.size.height / 3))
-            blueOffset = CGSize(width: geo.size.width / 2 - 20, height: geo.size.height / 3)
-            runAnimation()
+            goldOffset = CGSize(width: -(size.width / 2 - 20), height: -(size.height / 3))
+            blueOffset = CGSize(width: size.width / 2 - 20, height: size.height / 3)
+            runAnimation(in: size)
+        }
+        .onDisappear {
+            animationToken = UUID()
         }
         } // GeometryReader
     }
@@ -170,6 +216,21 @@ private struct MorphLandingView: View {
     // MARK: - Gold Orb (Comics)
 
     private var goldOrb: some View {
+        Group {
+            if phase == 2 {
+                PhaseAnimator(WobbleBeat.allCases) { beat in
+                    goldOrbBody
+                        .rotationEffect(.degrees(beat.angle))
+                } animation: { _ in
+                    .easeInOut(duration: 0.7)
+                }
+            } else {
+                goldOrbBody
+            }
+        }
+    }
+
+    private var goldOrbBody: some View {
         ZStack {
             // Glow halo
             RoundedRectangle(cornerRadius: goldCornerRadius)
@@ -214,7 +275,7 @@ private struct MorphLandingView: View {
                 }
             }
             .offset(y: contentSlide)
-            .opacity(contentReveal)
+            .opacity(contentRevealGold)
             .clipShape(RoundedRectangle(cornerRadius: goldCornerRadius))
         }
     }
@@ -222,6 +283,21 @@ private struct MorphLandingView: View {
     // MARK: - Blue Orb (Fanfic)
 
     private var blueOrb: some View {
+        Group {
+            if phase == 2 {
+                PhaseAnimator(WobbleBeat.allCases) { beat in
+                    blueOrbBody
+                        .rotationEffect(.degrees(beat.angle))
+                } animation: { _ in
+                    .easeInOut(duration: 0.7).delay(0.15)
+                }
+            } else {
+                blueOrbBody
+            }
+        }
+    }
+
+    private var blueOrbBody: some View {
         ZStack {
             // Glow halo
             RoundedRectangle(cornerRadius: blueCornerRadius)
@@ -259,28 +335,64 @@ private struct MorphLandingView: View {
                 }
             }
             .offset(y: contentSlide)
-            .opacity(contentReveal)
+            .opacity(contentRevealBlue)
             .clipShape(RoundedRectangle(cornerRadius: blueCornerRadius))
         }
     }
 
     // MARK: - Animation Sequence
 
-    private func runAnimation() {
+    private func runAnimation(in size: CGSize) {
+        if reduceMotion {
+            applyReducedMotionState()
+            return
+        }
+
         // Ambient background — continuous slow drift
         withAnimation(.easeInOut(duration: 5.0).repeatForever(autoreverses: true)) {
             ambientShift = true
         }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 1: Blob Appear (0.3s - 1.0s)
-        // Tiny organic shapes pop in far from center
-        // ═══════════════════════════════════════════════════════
+        runPhase1(in: size)
+    }
 
-        let halfW = screenSize.width / 2
-        let halfH = screenSize.height / 3
+    private func applyReducedMotionState() {
+        // Snap all state vars to Phase 4 final values (no motion).
+        goldSize = LandingTerminalState.orbSize
+        blueSize = LandingTerminalState.orbSize
+        goldOffset = LandingTerminalState.goldOffset
+        blueOffset = LandingTerminalState.blueOffset
+        goldRotation = LandingTerminalState.rotation
+        blueRotation = LandingTerminalState.rotation
+        goldBlobSkew = LandingTerminalState.blobSkew
+        blueBlobSkew = LandingTerminalState.blobSkew
+        goldCornerRadius = LandingTerminalState.cornerRadius
+        blueCornerRadius = LandingTerminalState.cornerRadius
+        goldGlow = LandingTerminalState.glow
+        blueGlow = LandingTerminalState.glow
+        contentRevealGold = LandingTerminalState.contentReveal
+        contentRevealBlue = LandingTerminalState.contentReveal
+        contentSlide = LandingTerminalState.contentSlide
+        titleScale = LandingTerminalState.titleScale
+        titleBlur = LandingTerminalState.titleBlur
 
-        // Gold appears first — tiny dot at top-left corner
+        // Single cross-fade for opacity values — no positional motion, no ambient drift.
+        withAnimation(.easeOut(duration: 0.3)) {
+            goldOpacity = 1
+            blueOpacity = 1
+            titleOpacity = 1
+            subtitleOpacity = 1
+            labelOpacity = 1
+        }
+        phase = 4
+    }
+
+    // PHASE 1: Blob Appear (0.3s–1.0s) — tiny shapes pop in far from center
+    private func runPhase1(in size: CGSize) {
+        let halfW = size.width / 2
+        let halfH = size.height / 3
+        let token = animationToken
+
         withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
             goldOpacity = 1
             goldSize = 30
@@ -288,7 +400,6 @@ private struct MorphLandingView: View {
             goldGlow = 0.5
         }
 
-        // Blue appears 0.2s after — tiny dot at bottom-right corner
         withAnimation(.easeOut(duration: 0.5).delay(0.5)) {
             blueOpacity = 1
             blueSize = 24
@@ -296,109 +407,111 @@ private struct MorphLandingView: View {
             blueGlow = 0.5
         }
 
-        // Both drift inward from corners while still small
-        withAnimation(.easeInOut(duration: 1.2).delay(0.5)) {
+        // Driver — longest (0.5 + 1.2 = 1.7s). Carries completion.
+        withAnimation(.easeInOut(duration: 1.2).delay(0.5),
+                      completionCriteria: .logicallyComplete) {
             goldOffset = CGSize(width: -(halfW * 0.45), height: -(halfH * 0.5))
             blueOffset = CGSize(width: halfW * 0.4, height: halfH * 0.45)
             goldRotation = -18
             blueRotation = 12
+        } completion: {
+            guard token == animationToken else { return }
+            runPhase2(in: size)
+        }
+    }
+
+    // PHASE 2: Expand + Drift (1.0s–2.8s) — orbs grow, content fades in
+    private func runPhase2(in size: CGSize) {
+        let halfW = size.width / 2
+        let halfH = size.height / 3
+        let token = animationToken
+        phase = 2
+
+        withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
+            goldSize = 140
+            blueSize = 135
+            goldBlobSkew = 1.0
+            blueBlobSkew = 1.0
+            goldGlow = 0.7
+            blueGlow = 0.7
         }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 2: Expand + Drift (1.0s - 2.8s)
-        // Orbs grow dramatically, content fades in, gentle float
-        // ═══════════════════════════════════════════════════════
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            phase = 2
-
-            // Dramatic expansion to full size
-            withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
-                goldSize = 140
-                blueSize = 135
-                goldBlobSkew = 1.0 // become circular
-                blueBlobSkew = 1.0
-                goldGlow = 0.7
-                blueGlow = 0.7
-            }
-
-            // Drift closer together but still spread wide
-            withAnimation(.easeInOut(duration: 1.5)) {
-                goldOffset = CGSize(width: -(halfW * 0.3), height: -(halfH * 0.2))
-                blueOffset = CGSize(width: halfW * 0.25, height: halfH * 0.2)
-                goldRotation = -8
-                blueRotation = 6
-            }
-
-            // Content fades in and slides up
-            withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
-                contentReveal = 0.85
-                contentSlide = 0
-            }
+        // Stagger: gold reveals first, blue 0.15s later.
+        withAnimation(.easeOut(duration: 1.0).delay(0.3)) {
+            contentRevealGold = 0.85
+            contentSlide = 0
+        }
+        withAnimation(.easeOut(duration: 1.0).delay(0.45)) {
+            contentRevealBlue = 0.85
         }
 
-        // Mid-drift — floating motion, pulling gradually closer
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-            withAnimation(.easeInOut(duration: 1.0)) {
-                goldOffset = CGSize(width: -(halfW * 0.2), height: -(halfH * 0.1))
-                blueOffset = CGSize(width: halfW * 0.15, height: halfH * 0.12)
-                goldRotation = -4
-                blueRotation = 3
-            }
+        // Positions kept wider — centers ≥148pt apart on a 390pt screen,
+        // clearing 140pt orbs. Replaces the old two-step drift that
+        // pulled orbs to ~68pt center distance (72pt visual overlap) (AST-2).
+        // Driver — longest (1.5s). Chains into Phase 3.
+        withAnimation(.easeInOut(duration: 1.5),
+                      completionCriteria: .logicallyComplete) {
+            goldOffset = CGSize(width: -(halfW * 0.38), height: -(halfH * 0.2))
+            blueOffset = CGSize(width: halfW * 0.38, height: halfH * 0.2)
+            goldRotation = -8
+            blueRotation = 6
+        } completion: {
+            guard token == animationToken else { return }
+            runPhase3(in: size)
+        }
+    }
+
+    // PHASE 3: Contract + Morph (2.8s–3.8s) — pull inward, shape morphs
+    private func runPhase3(in size: CGSize) {
+        let token = animationToken
+        phase = 3
+
+        withAnimation(.easeIn(duration: 0.4)) {
+            contentRevealGold = LandingTerminalState.contentReveal
+            contentRevealBlue = LandingTerminalState.contentReveal
+            contentSlide = LandingTerminalState.contentSlide
         }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 3: Contract + Morph (2.8s - 3.8s)
-        // Pull inward, shape morphs circle→roundedRect, content fades
-        // ═══════════════════════════════════════════════════════
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
-            phase = 3
-
-            // Content dissolves
-            withAnimation(.easeIn(duration: 0.4)) {
-                contentReveal = 1.0 // icon stays, decorative lines will be clipped
-                contentSlide = -5
-            }
-
-            // Shape morph + pull to final position with OVERSHOOT
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0.3)) {
-                goldSize = 120
-                blueSize = 120
-                goldCornerRadius = 28
-                blueCornerRadius = 28
-                // Final resting: spaced apart so 120pt orbs don't overlap
-                // Each needs to be at least 70pt from center (120/2 + gap)
-                goldOffset = CGSize(width: -80, height: 30)
-                blueOffset = CGSize(width: 80, height: 30)
-                goldRotation = 0
-                blueRotation = 0
-                goldGlow = 0.3
-                blueGlow = 0.3
-            }
-
-            // Title appears with scale spring
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
-                titleScale = 1.0
-                titleOpacity = 1
-            }
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.65).delay(0.2)) {
+            titleScale = LandingTerminalState.titleScale
+            titleOpacity = 1
+            titleBlur = LandingTerminalState.titleBlur
         }
 
-        // ═══════════════════════════════════════════════════════
-        // PHASE 4: Ready (3.8s - 4.5s)
-        // Labels appear, buttons become tappable
-        // ═══════════════════════════════════════════════════════
+        // Driver — morph spring. Carries completion into Phase 4.
+        withAnimation(.bouncy(duration: 0.5, extraBounce: 0.15),
+                      completionCriteria: .logicallyComplete) {
+            goldSize = LandingTerminalState.orbSize
+            blueSize = LandingTerminalState.orbSize
+            goldCornerRadius = LandingTerminalState.cornerRadius
+            blueCornerRadius = LandingTerminalState.cornerRadius
+            goldOffset = LandingTerminalState.goldOffset
+            blueOffset = LandingTerminalState.blueOffset
+            goldRotation = LandingTerminalState.rotation
+            blueRotation = LandingTerminalState.rotation
+            goldGlow = LandingTerminalState.glow
+            blueGlow = LandingTerminalState.glow
+        } completion: {
+            guard token == animationToken else { return }
+            runPhase4(in: size)
+        }
+    }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.8) {
-            withAnimation(.easeOut(duration: 0.5)) {
-                subtitleOpacity = 1
-            }
-            withAnimation(.easeOut(duration: 0.4).delay(0.15)) {
-                labelOpacity = 1
-            }
+    // PHASE 4: Ready (3.8s–4.5s) — labels appear, buttons tappable
+    private func runPhase4(in size: CGSize) {
+        let token = animationToken
+        _ = size // signature uniformity — runPhase4 does not currently need size
+
+        withAnimation(.easeOut(duration: 0.5)) {
+            subtitleOpacity = 1
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.2) {
+        // Driver — labels are last. Flips phase to 4 when done.
+        withAnimation(.easeOut(duration: 0.4).delay(0.15),
+                      completionCriteria: .logicallyComplete) {
+            labelOpacity = 1
+        } completion: {
+            guard token == animationToken else { return }
             phase = 4
         }
     }
