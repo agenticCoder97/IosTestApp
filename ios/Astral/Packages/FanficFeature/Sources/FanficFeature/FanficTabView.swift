@@ -1,4 +1,5 @@
 import SwiftUI
+import Core
 import DesignSystem
 
 public struct FanficTabView: View {

@@ -27,8 +27,6 @@ public final class LocalComic {
 
     /// Story completion status: "ongoing", "complete", or "abandoned". nil = unknown.
     public var completionStatus: String? = nil
-    /// Whether the comic has been archived (soft-hidden) by the user.
-    public var isArchived: Bool = false
 
     /// nhentai category (nullable)
     public var category: String?
