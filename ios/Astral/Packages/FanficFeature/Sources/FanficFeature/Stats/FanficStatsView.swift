@@ -98,7 +98,7 @@ struct FanficStatsView: View {
 
     private var totalChaptersRead: Int {
         comics.reduce(0) { $0 + $1.lastReadChapterNumber } +
-        fanfics.reduce(0) { $0 + $1.lastReadChapterNumber }
+        fanfics.reduce(0) { $0 + Int($1.lastReadChapterNumber ?? 0) }
     }
 
     // MARK: - Hero Section
@@ -382,15 +382,15 @@ struct FanficStatsView: View {
     }
 
     private var backlogTiers: [BacklogTier] {
-        let allStories: [(progress: Double, lastRead: Date?, totalChapters: Int, lastReadChapterNumber: Int)] =
-            comics.map { ($0.progressPercent, $0.lastReadAt, $0.totalChapters, $0.lastReadChapterNumber) } +
+        let allStories: [(progress: Double, lastRead: Date?, totalChapters: Int, lastReadChapterNumber: Double?)] =
+            comics.map { ($0.progressPercent, $0.lastReadAt, $0.totalChapters, Double($0.lastReadChapterNumber)) } +
             fanfics.map { ($0.progressPercent, $0.lastReadAt, $0.totalChapters, $0.lastReadChapterNumber) }
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
         var notStarted = 0, inProgress = 0, caughtUp = 0, completed = 0, stale = 0
         for s in allStories {
             if s.progress >= 1.0 { completed += 1 }
             else if s.progress == 0 { notStarted += 1 }
-            else if s.lastReadChapterNumber >= s.totalChapters && s.totalChapters > 0 { caughtUp += 1 }
+            else if Int(s.lastReadChapterNumber ?? 0) >= s.totalChapters && s.totalChapters > 0 { caughtUp += 1 }
             else if let lr = s.lastRead, lr < thirtyDaysAgo { stale += 1 }
             else { inProgress += 1 }
         }
@@ -415,7 +415,7 @@ struct FanficStatsView: View {
             .filter { $0.progressPercent > 0 && $0.progressPercent < 1.0 && $0.totalChapters > 0 }
             .sorted { $0.progressPercent > $1.progressPercent }
             .prefix(3)
-            .map { AlmostDoneItem(title: $0.title, remaining: "\($0.totalChapters - $0.lastReadChapterNumber) ch left", icon: "scroll.fill") }
+            .map { AlmostDoneItem(title: $0.title, remaining: "\($0.totalChapters - Int($0.lastReadChapterNumber ?? 0)) ch left", icon: "scroll.fill") }
         return (comicItems + fanficItems)
             .sorted { Int($0.remaining.prefix(while: { $0.isNumber })) ?? 999 < Int($1.remaining.prefix(while: { $0.isNumber })) ?? 999 }
             .prefix(3).map { $0 }

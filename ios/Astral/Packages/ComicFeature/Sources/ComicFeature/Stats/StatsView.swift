@@ -116,7 +116,7 @@ struct StatsView: View {
 
     private var totalChaptersRead: Int {
         comics.reduce(0) { $0 + $1.lastReadChapterNumber } +
-        fanfics.reduce(0) { $0 + $1.lastReadChapterNumber }
+        fanfics.reduce(0) { $0 + Int($1.lastReadChapterNumber ?? 0) }
     }
 
     // MARK: - Hero Section
@@ -502,7 +502,7 @@ struct StatsView: View {
                 lastRead: $0.lastReadAt,
                 totalChapters: $0.totalChapters,
                 completionStatus: $0.completionStatus,
-                lastReadChapterNumber: $0.lastReadChapterNumber
+                lastReadChapterNumber: Int($0.lastReadChapterNumber ?? 0)
             ) }
 
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
@@ -555,7 +555,7 @@ struct StatsView: View {
             .prefix(3)
             .map { AlmostDoneItem(
                 title: $0.title,
-                remaining: "\($0.totalChapters - $0.lastReadChapterNumber) ch left",
+                remaining: "\($0.totalChapters - Int($0.lastReadChapterNumber ?? 0)) ch left",
                 icon: "scroll.fill"
             )}
 

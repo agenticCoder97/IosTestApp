@@ -121,8 +121,8 @@ struct FanficDetailView: View {
                                 } label: {
                                     FanficChapterRow(
                                         chapter: chapter,
-                                        isLastRead: chapter.chapterNumber == Double(fanfic.lastReadChapterNumber),
-                                        isRead: chapter.chapterNumber < Double(fanfic.lastReadChapterNumber),
+                                        isLastRead: chapter.chapterNumber == (fanfic.lastReadChapterNumber ?? 0),
+                                        isRead: chapter.chapterNumber < (fanfic.lastReadChapterNumber ?? 0),
                                         isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
                                     )
                                 }
@@ -769,7 +769,7 @@ private struct FanficChapterRow: View {
 
 private struct FanficContinueReadingButton: View {
     let chapters: [LocalFanficChapter]
-    let lastReadChapterNumber: Int
+    let lastReadChapterNumber: Double?
     let onSelect: (LocalFanficChapter) -> Void
 
     private enum ReadingState {
@@ -780,14 +780,12 @@ private struct FanficContinueReadingButton: View {
 
     private var readingState: ReadingState? {
         guard let firstChapter = chapters.first else { return nil }
-        if lastReadChapterNumber == 0 {
-            return .start(firstChapter)
-        }
+        guard let lastRead = lastReadChapterNumber, lastRead > 0 else { return .start(firstChapter) }
         // Resume the current chapter at saved scroll position (reader restores via scrollOffsetPercent)
-        if let current = chapters.first(where: { Int($0.chapterNumber) == lastReadChapterNumber }) {
+        if let current = chapters.first(where: { $0.chapterNumber == lastRead }) {
             return .continueReading(current)
         }
-        if let next = chapters.first(where: { $0.chapterNumber > Double(lastReadChapterNumber) }) {
+        if let next = chapters.first(where: { $0.chapterNumber > lastRead }) {
             return .continueReading(next)
         }
         return .readAgain(firstChapter)

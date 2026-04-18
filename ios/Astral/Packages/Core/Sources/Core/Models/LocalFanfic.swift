@@ -14,7 +14,7 @@ public final class LocalFanfic {
     public var wordCount: Int?
     public var totalChapters: Int
     public var isDownloaded: Bool
-    public var lastReadChapterNumber: Int
+    public var lastReadChapterNumber: Double?
     /// Fanfic-only: 0.0 to 1.0 scroll position within the current chapter
     public var scrollOffsetPercent: Double?
     public var progressPercent: Double
@@ -71,7 +71,7 @@ public final class LocalFanfic {
         wordCount: Int? = nil,
         totalChapters: Int = 0,
         isDownloaded: Bool = false,
-        lastReadChapterNumber: Int = 0,
+        lastReadChapterNumber: Double? = nil,
         scrollOffsetPercent: Double? = nil,
         progressPercent: Double = 0.0,
         addedAt: Date = .now,

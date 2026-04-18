@@ -119,11 +119,11 @@ final class FanficLibraryViewModel {
             let allFanfics = (try? modelContext.fetch(allFanficsDescriptor)) ?? []
             for fanfic in allFanfics {
                 guard let progress = progressByStoryId[fanfic.id],
-                      progress.lastChapterNumber > fanfic.lastReadChapterNumber else { continue }
-                fanfic.lastReadChapterNumber = progress.lastChapterNumber
+                      Double(progress.lastChapterNumber) > (fanfic.lastReadChapterNumber ?? -1) else { continue }
+                fanfic.lastReadChapterNumber = Double(progress.lastChapterNumber)
                 fanfic.scrollOffsetPercent = progress.scrollOffsetPercent
                 if fanfic.totalChapters > 0 {
-                    fanfic.progressPercent = Double(progress.lastChapterNumber) / Double(fanfic.totalChapters)
+                    fanfic.progressPercent = (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
                 }
             }
             for fanfic in allFanfics {
