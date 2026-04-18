@@ -40,3 +40,11 @@ public struct FanficChapterResponse: Codable, Sendable, Identifiable {
     public let scrapeStatus: String
     public let createdAt: Date
 }
+
+public struct RandomThumbnailResponse: Codable, Sendable {
+    public let path: String
+}
+
+public struct RandomThumbnailBatchResponse: Codable, Sendable {
+    public let paths: [String]
+}

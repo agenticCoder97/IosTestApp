@@ -131,6 +131,23 @@ final class FanficLibraryViewModel {
             }
             try modelContext.save()
             lastSyncTime = .now
+
+            // AST-12: one-off migration — assign thumbnails to fanfics with nil paths (batch)
+            let nilThumbFanfics = allFanfics.filter { $0.thumbnailPath == nil }
+            if !nilThumbFanfics.isEmpty {
+                let count = min(nilThumbFanfics.count, 50)
+                AstralLogger.info("Migration: \(nilThumbFanfics.count) fanfics need thumbnails", context: "FanficLibraryVM")
+                if let batch: RandomThumbnailBatchResponse = try? await APIClient.shared.request(
+                    .randomFanficThumbnails(count: count)
+                ) {
+                    for (fanfic, path) in zip(nilThumbFanfics, batch.paths) {
+                        fanfic.thumbnailPath = path
+                    }
+                    // Fanfics beyond the 50-cap stay nil and are handled on the next library open
+                    try? modelContext.save()
+                    AstralLogger.info("Migration: thumbnail assignment complete", context: "FanficLibraryVM")
+                }
+            }
         } catch is URLError {
             errorMessage = "Backend unreachable — check Docker is running"
             AstralLogger.error("fetchFanfics: backend unreachable", context: "FanficLibraryVM")

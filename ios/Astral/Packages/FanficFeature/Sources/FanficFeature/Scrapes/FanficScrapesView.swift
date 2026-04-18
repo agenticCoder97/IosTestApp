@@ -145,6 +145,17 @@ struct FanficScrapesView: View {
                 }
             }
             try? modelContext.save()
+
+            // AST-12: assign fallback thumbnails for newly-completed fanfics with nil paths
+            for job in fanficJobs where job.status == "complete" || job.status == "partial" {
+                guard let fanfic = fanfics.first(where: { $0.id == job.storyId }),
+                      fanfic.thumbnailPath == nil else { continue }
+                if let dto: RandomThumbnailResponse = try? await APIClient.shared.request(.randomFanficThumbnail) {
+                    fanfic.thumbnailPath = dto.path
+                    AstralLogger.info("Assigned thumbnail \(dto.path) to fanfic \(fanfic.id)", context: "FanficScrapes")
+                }
+            }
+            try? modelContext.save()
         } catch {
             AstralLogger.error("syncActiveJobs failed: \(error)", context: "FanficScrapes")
         }

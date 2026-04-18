@@ -133,6 +133,18 @@ public extension Endpoint {
     }
 }
 
+// MARK: - Fanfic Thumbnail Endpoints
+
+public extension Endpoint {
+    static var randomFanficThumbnail: Endpoint {
+        Endpoint(path: "/fanfic-thumbnails/random")
+    }
+
+    static func randomFanficThumbnails(count: Int) -> Endpoint {
+        Endpoint(path: "/fanfic-thumbnails/random?count=\(count)")
+    }
+}
+
 // MARK: - Author Endpoints
 
 public extension Endpoint {
