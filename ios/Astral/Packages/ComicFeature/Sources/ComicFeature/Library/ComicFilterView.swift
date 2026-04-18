@@ -2,11 +2,9 @@ import SwiftUI
 import Core
 import DesignSystem
 
-// MARK: - Filter View (AO3-style)
-
-struct FanficFilterView: View {
-    @Bindable var filterState: FanficFilterState
+struct ComicFilterView: View {
     @Environment(\.dismiss) private var dismiss
+    @Bindable var filterState: ComicFilterState
 
     var body: some View {
         NavigationStack {
@@ -15,7 +13,7 @@ struct FanficFilterView: View {
                     // MARK: Sort
                     FilterSectionCard("Sort") {
                         FlowLayout(spacing: 8) {
-                            ForEach(FanficSortOption.allCases, id: \.self) { option in
+                            ForEach(ComicSortOption.allCases, id: \.self) { option in
                                 FilterStatusChip(
                                     option.rawValue,
                                     isSelected: filterState.sortBy == option
@@ -27,11 +25,16 @@ struct FanficFilterView: View {
                         FilterSortDirectionToggle(ascending: $filterState.sortAscending)
                     }
 
-                    // MARK: Work Info
-                    FilterSectionCard("Work Info") {
-                        FilterTextField("Fandom", placeholder: "e.g. Harry Potter", text: $filterState.fandom)
+                    // MARK: Status
+                    FilterSectionCard("Status") {
+                        FilterToggleChip(
+                            "Show Archived",
+                            isActive: filterState.showArchived
+                        ) {
+                            filterState.showArchived.toggle()
+                        }
 
-                        Text("Completion Status")
+                        Text("Completion")
                             .font(AstralTypography.caption)
                             .foregroundStyle(AstralColors.muted)
                         FlowLayout(spacing: 8) {
@@ -47,45 +50,19 @@ struct FanficFilterView: View {
                                 }
                             }
                         }
-
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading) {
-                                FilterTextField("Min Words", placeholder: "0", text: Binding(
-                                    get: { filterState.wordCountMin.map { String($0) } ?? "" },
-                                    set: { filterState.wordCountMin = Int($0) }
-                                ))
-                            }
-                            VStack(alignment: .leading) {
-                                FilterTextField("Max Words", placeholder: "any", text: Binding(
-                                    get: { filterState.wordCountMax.map { String($0) } ?? "" },
-                                    set: { filterState.wordCountMax = Int($0) }
-                                ))
-                            }
-                        }
                     }
 
                     // MARK: Tags
                     FilterSectionCard("Tags") {
-                        Text("Rating")
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.muted)
-                        FlowLayout(spacing: 8) {
-                            ForEach(FanficRating.allCases, id: \.self) { rating in
-                                FilterToggleChip(
-                                    ratingLabel(rating),
-                                    isActive: filterState.selectedRatings.contains(rating.rawValue)
-                                ) {
-                                    if filterState.selectedRatings.contains(rating.rawValue) {
-                                        filterState.selectedRatings.removeAll { $0 == rating.rawValue }
-                                    } else {
-                                        filterState.selectedRatings.append(rating.rawValue)
-                                    }
-                                }
-                            }
-                        }
+                        FilterTextField("Tags contain…", placeholder: "e.g. magic, romance", text: $filterState.tagsKeyword)
+                    }
 
-                        FilterTextField("Characters", placeholder: "e.g. Hermione", text: $filterState.characters)
-                        FilterTextField("Relationship", placeholder: "e.g. Harry/Ginny", text: $filterState.relationship)
+                    // MARK: Category
+                    FilterSectionCard("Category") {
+                        FilterTextField("Category", placeholder: "e.g. webtoon", text: Binding(
+                            get: { filterState.category ?? "" },
+                            set: { filterState.category = $0.isEmpty ? nil : $0 }
+                        ))
                     }
 
                     // MARK: Source
@@ -94,9 +71,9 @@ struct FanficFilterView: View {
                             FilterStatusChip("All", isSelected: filterState.sourceKey == nil) {
                                 filterState.sourceKey = nil
                             }
-                            ForEach(FanficSource.allCases, id: \.self) { source in
+                            ForEach(ComicSource.allCases, id: \.self) { source in
                                 FilterStatusChip(
-                                    source.rawValue.uppercased(),
+                                    source.rawValue,
                                     isSelected: filterState.sourceKey == source.rawValue
                                 ) {
                                     filterState.sourceKey = source.rawValue
@@ -109,7 +86,7 @@ struct FanficFilterView: View {
                 .padding(.vertical, 12)
             }
             .background(AstralColors.background)
-            .navigationTitle("Filter & Sort")
+            .navigationTitle("Filter")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -125,15 +102,6 @@ struct FanficFilterView: View {
                     .foregroundStyle(AstralColors.gold)
                 }
             }
-        }
-    }
-
-    private func ratingLabel(_ rating: FanficRating) -> String {
-        switch rating {
-        case .general: "G"
-        case .teen: "T"
-        case .mature: "M"
-        case .explicit: "E"
         }
     }
 }

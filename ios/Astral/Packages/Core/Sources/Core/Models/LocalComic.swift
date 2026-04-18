@@ -25,6 +25,9 @@ public final class LocalComic {
     /// Updated when the user opens the detail view; drives "Continue Reading" sort order.
     public var lastReadAt: Date?
 
+    /// Story completion status: "ongoing", "complete", or "abandoned". nil = unknown.
+    public var completionStatus: String? = nil
+
     /// nhentai category (nullable)
     public var category: String?
     /// JSON-encoded array of {name, tag_type} dicts from API

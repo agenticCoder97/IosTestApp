@@ -10,6 +10,7 @@ struct ComicLibraryView: View {
 
     @State private var viewModel = ComicLibraryViewModel()
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.comicNavigation) private var comicNavigation
 
     @Query(
         filter: #Predicate<LocalComic> { $0.status != "deleted" },
@@ -26,10 +27,11 @@ struct ComicLibraryView: View {
     @State private var pendingDeletion: LocalComic?
 
     private var displayedComics: [LocalComic] {
+        let filter = comicNavigation?.filterState
         var ready = allComics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
-        if filterFavourites {
-            ready = ready.filter { $0.isFavorite }
-        }
+
+        if filterFavourites { ready = ready.filter { $0.isFavorite } }
+
         if !searchText.isEmpty {
             ready = ready.filter {
                 $0.title.localizedCaseInsensitiveContains(searchText) ||
@@ -39,10 +41,43 @@ struct ComicLibraryView: View {
                 ($0.authorsJSON ?? "").localizedCaseInsensitiveContains(searchText)
             }
         }
-        // Sort archived comics to the bottom
-        return ready.sorted { lhs, rhs in
-            if lhs.isArchived != rhs.isArchived { return !lhs.isArchived }
-            return (lhs.lastReadAt ?? lhs.addedAt) > (rhs.lastReadAt ?? rhs.addedAt)
+
+        if !(filter?.showArchived ?? false) {
+            ready = ready.filter { !$0.isArchived }
+        }
+        if let status = filter?.completionStatus {
+            ready = ready.filter { $0.completionStatus == status }
+        }
+        if let keyword = filter?.tagsKeyword, !keyword.isEmpty {
+            ready = ready.filter {
+                ($0.tagsJSON ?? "").localizedCaseInsensitiveContains(keyword)
+            }
+        }
+        if let cat = filter?.category, !cat.isEmpty {
+            ready = ready.filter {
+                ($0.category ?? "").localizedCaseInsensitiveContains(cat)
+            }
+        }
+        if let src = filter?.sourceKey {
+            ready = ready.filter { $0.sourceKey == src }
+        }
+
+        let ascending = filter?.sortAscending ?? false
+        switch filter?.sortBy ?? .lastRead {
+        case .lastRead:
+            return ready.sorted { ascending
+                ? ($0.lastReadAt ?? .distantPast) < ($1.lastReadAt ?? .distantPast)
+                : ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast)
+            }
+        case .dateAdded:
+            return ready.sorted { ascending ? $0.addedAt < $1.addedAt : $0.addedAt > $1.addedAt }
+        case .title:
+            return ready.sorted { ascending ? $0.title < $1.title : $0.title > $1.title }
+        case .chapters:
+            return ready.sorted { ascending
+                ? $0.totalChapters < $1.totalChapters
+                : $0.totalChapters > $1.totalChapters
+            }
         }
     }
 

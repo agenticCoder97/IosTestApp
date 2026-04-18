@@ -1,8 +1,11 @@
 import SwiftUI
+import Core
 import DesignSystem
 
 public struct FanficTabView: View {
     @State private var navigation = FanficNavigation()
+    @State private var showFilter = false
+    @AppStorage("fanfic.filter.v1") private var filterPrefsJSON: String = ""
     var onSwitchTab: () -> Void
 
     public init(onSwitchTab: @escaping () -> Void = {}) {
@@ -27,9 +30,9 @@ public struct FanficTabView: View {
                     Group {
                         switch navigation.activeSection {
                         case .library:
-                            FanficLibraryView(searchText: $navigation.searchText, filterFavourites: false)
+                            FanficLibraryView(searchText: $navigation.searchText, filterFavourites: false, filterState: navigation.filterState)
                         case .favourites:
-                            FanficLibraryView(searchText: .constant(""), filterFavourites: true)
+                            FanficLibraryView(searchText: .constant(""), filterFavourites: true, filterState: navigation.filterState)
                         case .browse:
                             FanficBrowserView()
                         case .scrapes:
@@ -84,11 +87,14 @@ public struct FanficTabView: View {
 
                             // Filter
                             Button {
-                                navigation.showFilter = true
+                                showFilter = true
                             } label: {
-                                Image(systemName: "line.3.horizontal.decrease.circle")
-                                    .foregroundStyle(AstralColors.body)
+                                Image(systemName: navigation.filterState.isActive
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease.circle")
+                                    .foregroundStyle(navigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
                             }
+                            .buttonStyle(PressButtonStyle(scale: 0.88))
 
                             // Sidebar
                             Button {
@@ -99,16 +105,38 @@ public struct FanficTabView: View {
                                 Image(systemName: "line.3.horizontal")
                                     .foregroundStyle(AstralColors.body)
                             }
+                            .accessibilityIdentifier(AccessibilityID.sidebarToggle)
                         }
                     }
                 }
             }
             .environment(\.fanficNavigation, navigation)
+            .onAppear {
+                if let data = filterPrefsJSON.data(using: .utf8),
+                   let prefs = try? JSONDecoder().decode(FanficFilterPrefs.self, from: data) {
+                    navigation.filterState.load(from: prefs)
+                }
+            }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sortBy) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.fandom) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.completionStatus) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sourceKey) { _, _ in saveFilterPrefs() }
+            .sheet(isPresented: $showFilter) {
+                FanficFilterView(filterState: navigation.filterState)
+                    .presentationDetents([.medium, .large])
+            }
 
             FanficSidebarView(
                 isOpen: $navigation.isSidebarOpen,
                 activeSection: $navigation.activeSection
             )
+        }
+    }
+
+    private func saveFilterPrefs() {
+        if let data = try? JSONEncoder().encode(navigation.filterState.snapshotForPersistence),
+           let str = String(data: data, encoding: .utf8) {
+            filterPrefsJSON = str
         }
     }
 }
@@ -119,7 +147,7 @@ final class FanficNavigation {
     var isSidebarOpen = false
     var searchText = ""
     var isSearchActive = false
-    var showFilter = false
+    var filterState = FanficFilterState()
 
     func searchFor(_ term: String) {
         searchText = term

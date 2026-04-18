@@ -5,6 +5,7 @@ import DesignSystem
 public struct ComicTabView: View {
     @State private var navigation = ComicNavigation()
     @State private var showFilter = false
+    @AppStorage("comic.filter.v1") private var filterPrefsJSON: String = ""
     var onSwitchTab: () -> Void
 
     public init(onSwitchTab: @escaping () -> Void = {}) {
@@ -88,9 +89,12 @@ public struct ComicTabView: View {
                             Button {
                                 showFilter = true
                             } label: {
-                                Image(systemName: "line.3.horizontal.decrease.circle")
-                                    .foregroundStyle(AstralColors.body)
+                                Image(systemName: navigation.filterState.isActive
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease.circle")
+                                    .foregroundStyle(navigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
                             }
+                            .buttonStyle(PressButtonStyle(scale: 0.88))
 
                             // Sidebar
                             Button {
@@ -106,16 +110,34 @@ public struct ComicTabView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showFilter) {
-                ComicFilterSheet()
-                    .presentationDetents([.medium])
-            }
             .environment(\.comicNavigation, navigation)
+            .onAppear {
+                if let data = filterPrefsJSON.data(using: .utf8),
+                   let prefs = try? JSONDecoder().decode(ComicFilterPrefs.self, from: data) {
+                    navigation.filterState.load(from: prefs)
+                }
+            }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sortBy) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.showArchived) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.completionStatus) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.sourceKey) { _, _ in saveFilterPrefs() }
+            .onChange(of: navigation.filterState.snapshotForPersistence.tagsKeyword) { _, _ in saveFilterPrefs() }
+            .sheet(isPresented: $showFilter) {
+                ComicFilterView(filterState: navigation.filterState)
+                    .presentationDetents([.medium, .large])
+            }
 
             ComicSidebarView(
                 isOpen: $navigation.isSidebarOpen,
                 activeSection: $navigation.activeSection
             )
+        }
+    }
+
+    private func saveFilterPrefs() {
+        if let data = try? JSONEncoder().encode(navigation.filterState.snapshotForPersistence),
+           let str = String(data: data, encoding: .utf8) {
+            filterPrefsJSON = str
         }
     }
 }
@@ -126,6 +148,7 @@ final class ComicNavigation {
     var isSidebarOpen = false
     var searchText = ""
     var isSearchActive = false
+    var filterState = ComicFilterState()
 
     func searchFor(_ term: String) {
         searchText = term
@@ -159,34 +182,6 @@ enum ComicSection: String, CaseIterable {
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
         case .stats: "chart.bar"
-        }
-    }
-}
-
-// MARK: - Comic Filter Sheet
-
-private struct ComicFilterSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Comic filters coming soon.")
-                    .font(AstralTypography.body)
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 40)
-                Spacer()
-            }
-            .background(AstralColors.background)
-            .navigationTitle("Filter")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(AstralColors.gold)
-                }
-            }
         }
     }
 }

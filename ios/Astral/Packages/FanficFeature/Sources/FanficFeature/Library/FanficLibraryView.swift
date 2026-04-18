@@ -7,6 +7,7 @@ import Networking
 struct FanficLibraryView: View {
     @Binding var searchText: String
     var filterFavourites: Bool
+    var filterState: FanficFilterState
 
     @State private var viewModel = FanficLibraryViewModel()
     @Environment(\.modelContext) private var modelContext
@@ -19,8 +20,6 @@ struct FanficLibraryView: View {
     )
     private var allFanfics: [LocalFanfic]
 
-    @State private var showFilter = false
-    @State private var filterState = FanficFilterState()
     @State private var pendingDeletion: LocalFanfic?
 
     private var inProgressFanfics: [LocalFanfic] {
@@ -47,49 +46,44 @@ struct FanficLibraryView: View {
                 ($0.rating ?? "").localizedCaseInsensitiveContains(searchText)
             }
         }
-
-        // Apply filters from FanficFilterState
-        if !filterState.fandom.isEmpty {
-            result = result.filter { ($0.fandom ?? "").localizedCaseInsensitiveContains(filterState.fandom) }
+        if let fandom = filterState.fandom.isEmpty ? nil : filterState.fandom {
+            result = result.filter { ($0.fandom ?? "").localizedCaseInsensitiveContains(fandom) }
         }
         if let status = filterState.completionStatus {
-            result = result.filter { $0.completionStatus == status.rawValue }
+            result = result.filter { $0.completionStatus == status }
+        }
+        if let src = filterState.sourceKey {
+            result = result.filter { $0.sourceKey == src }
         }
         if !filterState.selectedRatings.isEmpty {
             result = result.filter { fanfic in
-                guard let rating = fanfic.rating else { return filterState.selectedRatings.contains("NR") }
-                // Match short codes (G, T, M, E) or full names
-                return filterState.selectedRatings.contains { code in
-                    rating == code || rating.localizedCaseInsensitiveContains(ratingFullName(code))
-                }
-            }
-        }
-        if !filterState.selectedWarnings.isEmpty {
-            result = result.filter { fanfic in
-                guard let warnings = fanfic.warnings else { return false }
-                return filterState.selectedWarnings.contains { warnings.localizedCaseInsensitiveContains($0) }
+                guard let rating = fanfic.rating else { return false }
+                return filterState.selectedRatings.contains(rating)
             }
         }
         if !filterState.characters.isEmpty {
-            result = result.filter { ($0.characters ?? "").localizedCaseInsensitiveContains(filterState.characters) }
+            result = result.filter {
+                ($0.characters ?? "").localizedCaseInsensitiveContains(filterState.characters)
+            }
         }
         if !filterState.relationship.isEmpty {
-            result = result.filter { ($0.pairing ?? "").localizedCaseInsensitiveContains(filterState.relationship) }
+            result = result.filter {
+                ($0.pairing ?? "").localizedCaseInsensitiveContains(filterState.relationship)
+            }
         }
-        if let min = filterState.wordCountMin {
-            result = result.filter { ($0.wordCount ?? 0) >= min }
+        if let minWC = filterState.wordCountMin {
+            result = result.filter { ($0.wordCount ?? 0) >= minWC }
         }
-        if let max = filterState.wordCountMax {
-            result = result.filter { ($0.wordCount ?? 0) <= max }
+        if let maxWC = filterState.wordCountMax {
+            result = result.filter { ($0.wordCount ?? Int.max) <= maxWC }
         }
 
-        // Sort
         let ascending = filterState.sortAscending
         switch filterState.sortBy {
-        case .lastActivity:
+        case .lastRead:
             return result.sorted { ascending
-                ? ($0.lastReadAt ?? $0.addedAt) < ($1.lastReadAt ?? $1.addedAt)
-                : ($0.lastReadAt ?? $0.addedAt) > ($1.lastReadAt ?? $1.addedAt)
+                ? ($0.lastReadAt ?? .distantPast) < ($1.lastReadAt ?? .distantPast)
+                : ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast)
             }
         case .dateAdded:
             return result.sorted { ascending ? $0.addedAt < $1.addedAt : $0.addedAt > $1.addedAt }
@@ -99,22 +93,17 @@ struct FanficLibraryView: View {
                 : ($0.updatedAtSource ?? $0.addedAt) > ($1.updatedAtSource ?? $1.addedAt)
             }
         case .wordCount:
-            return result.sorted { ascending ? ($0.wordCount ?? 0) < ($1.wordCount ?? 0) : ($0.wordCount ?? 0) > ($1.wordCount ?? 0) }
+            return result.sorted { ascending
+                ? ($0.wordCount ?? 0) < ($1.wordCount ?? 0)
+                : ($0.wordCount ?? 0) > ($1.wordCount ?? 0)
+            }
         case .title:
             return result.sorted { ascending ? $0.title < $1.title : $0.title > $1.title }
         case .chapters:
-            return result.sorted { ascending ? $0.totalChapters < $1.totalChapters : $0.totalChapters > $1.totalChapters }
-        }
-    }
-
-    private func ratingFullName(_ code: String) -> String {
-        switch code {
-        case "G": "General"
-        case "T": "Teen"
-        case "M": "Mature"
-        case "E": "Explicit"
-        case "NR": "Not Rated"
-        default: code
+            return result.sorted { ascending
+                ? $0.totalChapters < $1.totalChapters
+                : $0.totalChapters > $1.totalChapters
+            }
         }
     }
 
@@ -185,13 +174,6 @@ struct FanficLibraryView: View {
         .background(AstralColors.background)
         .task { await viewModel.fetchFanfics(modelContext: modelContext) }
         .refreshable { await viewModel.fetchFanfics(modelContext: modelContext, force: true) }
-        .sheet(isPresented: Binding(
-            get: { fanficNavigation?.showFilter ?? false },
-            set: { fanficNavigation?.showFilter = $0 }
-        )) {
-            FanficFilterView(filterState: filterState)
-                .presentationDetents([.medium, .large])
-        }
         .deletePermanentlyAlert(
             isPresented: Binding(
                 get: { pendingDeletion != nil },
@@ -306,7 +288,7 @@ private struct FanficContinueCard: View {
 
 #Preview("With Fanfics") {
     NavigationStack {
-        FanficLibraryView(searchText: .constant(""), filterFavourites: false)
+        FanficLibraryView(searchText: .constant(""), filterFavourites: false, filterState: FanficFilterState())
             .modelContainer(.previewContainer(fanfics: PreviewMocks.sampleFanfics))
             .navigationTitle("Fan Fiction")
     }
@@ -314,7 +296,7 @@ private struct FanficContinueCard: View {
 
 #Preview("Favourites") {
     NavigationStack {
-        FanficLibraryView(searchText: .constant(""), filterFavourites: true)
+        FanficLibraryView(searchText: .constant(""), filterFavourites: true, filterState: FanficFilterState())
             .modelContainer(.previewContainer(fanfics: PreviewMocks.sampleFanfics))
             .navigationTitle("Favourites")
     }
@@ -322,10 +304,21 @@ private struct FanficContinueCard: View {
 
 #Preview("Empty State") {
     NavigationStack {
-        FanficLibraryView(searchText: .constant(""), filterFavourites: false)
+        FanficLibraryView(searchText: .constant(""), filterFavourites: false, filterState: FanficFilterState())
             .modelContainer(for: LocalFanfic.self, inMemory: true)
             .navigationTitle("Fan Fiction")
     }
+}
+
+// MARK: - Sort Option
+
+enum FanficSortOption: String, CaseIterable {
+    case lastRead = "Last Read"
+    case dateAdded = "Date Added"
+    case dateUpdated = "Date Updated"
+    case wordCount = "Word Count"
+    case title = "Title"
+    case chapters = "Chapters"
 }
 
 // MARK: - Row View
