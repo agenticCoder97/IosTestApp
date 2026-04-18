@@ -85,6 +85,11 @@ struct FanficLibraryView: View {
         // Sort
         let ascending = filterState.sortAscending
         switch filterState.sortBy {
+        case .lastActivity:
+            return result.sorted { ascending
+                ? ($0.lastReadAt ?? $0.addedAt) < ($1.lastReadAt ?? $1.addedAt)
+                : ($0.lastReadAt ?? $0.addedAt) > ($1.lastReadAt ?? $1.addedAt)
+            }
         case .dateAdded:
             return result.sorted { ascending ? $0.addedAt < $1.addedAt : $0.addedAt > $1.addedAt }
         case .dateUpdated:

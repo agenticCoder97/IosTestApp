@@ -19,7 +19,7 @@ final class FanficFilterState {
     var relationship: String = ""
 
     // Sort
-    var sortBy: FanficSortOption = .dateAdded
+    var sortBy: FanficSortOption = .lastActivity
     var sortAscending: Bool = false
 
     var isActive: Bool {
@@ -36,7 +36,7 @@ final class FanficFilterState {
         selectedWarnings = []
         characters = ""
         relationship = ""
-        sortBy = .dateAdded
+        sortBy = .lastActivity
         sortAscending = false
     }
 }
@@ -44,6 +44,7 @@ final class FanficFilterState {
 // MARK: - Sort Option
 
 enum FanficSortOption: String, CaseIterable {
+    case lastActivity = "Last Activity"
     case dateAdded = "Date Added"
     case dateUpdated = "Date Updated"
     case wordCount = "Word Count"
