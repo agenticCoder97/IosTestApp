@@ -251,6 +251,7 @@ struct FanficDetailView: View {
             storyTitle: fanfic.title,
             onConfirm: {
                 let chaptersSnapshot = Array(chapters)
+                dismiss()
                 Task {
                     await StoryDeletionService.shared.permanentlyDelete(
                         fanfic: fanfic,
@@ -263,7 +264,6 @@ struct FanficDetailView: View {
                             )
                         }
                     )
-                    dismiss()
                 }
             }
         )
