@@ -51,3 +51,8 @@ async def delete_fanfic(fanfic_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     deleted = await fanfic_service.soft_delete_fanfic(db, fanfic_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Fanfic not found")
+
+
+@router.delete("/{fanfic_id}/permanent", status_code=204)
+async def permanent_delete_fanfic_route(fanfic_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    await fanfic_service.permanent_delete_fanfic(db, fanfic_id)

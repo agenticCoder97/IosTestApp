@@ -6,12 +6,13 @@ from typing import Optional
 from math import ceil
 import redis.asyncio as aioredis
 from arq.connections import ArqRedis
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models.comic import Comic, ComicChapter, Page, ComicAuthor, ComicTag
 from app.models.author import Author
 from app.models.scrape import ScrapeJob
+from app.models.progress import ReadingProgress
 from app.schemas.comic import ComicResponse, ComicChapterResponse, PageResponse, ComicUpdateRequest
 from app.schemas.shared import PaginatedResponse, AuthorResponse, TagResponse
 from app.core.constants import ArchiveStatus
@@ -287,4 +288,67 @@ async def soft_delete_comic(db: AsyncSession, comic_id: uuid.UUID) -> bool:
     comic.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     await redis_cache.invalidate_comics(str(comic_id))
+    return True
+
+
+async def permanent_delete_comic(db: AsyncSession, comic_id: uuid.UUID) -> bool:
+    """Hard-delete a comic and every dependent row.
+
+    FK-safe order:
+      pages -> comic_chapters -> comic_authors -> comic_tags
+        -> reading_progress (polymorphic) -> comics
+        -> scrape_jobs (polymorphic; FK is comics.scrape_job_id,
+           so scrape_jobs must be deleted AFTER comics).
+
+    Enqueues a best-effort `comic_media_wipe_task` ARQ job to rmtree
+    both live and archive media directories. Idempotent: returns
+    True even when no comic row exists (iOS retry queue safety).
+    """
+    logger.info("permanent_delete_comic called | comic_id=%s", comic_id)
+
+    await db.execute(
+        delete(Page).where(
+            Page.chapter_id.in_(
+                select(ComicChapter.id).where(ComicChapter.comic_id == comic_id)
+            )
+        )
+    )
+    await db.execute(delete(ComicChapter).where(ComicChapter.comic_id == comic_id))
+    await db.execute(delete(ComicAuthor).where(ComicAuthor.comic_id == comic_id))
+    await db.execute(delete(ComicTag).where(ComicTag.comic_id == comic_id))
+    await db.execute(
+        delete(ReadingProgress).where(
+            and_(
+                ReadingProgress.content_type == "comic",
+                ReadingProgress.story_id == comic_id,
+            )
+        )
+    )
+    await db.execute(delete(Comic).where(Comic.id == comic_id))
+    await db.execute(
+        delete(ScrapeJob).where(
+            and_(
+                ScrapeJob.content_type == "comic",
+                ScrapeJob.story_id == comic_id,
+            )
+        )
+    )
+    await db.commit()
+
+    await redis_cache.invalidate_comics(str(comic_id))
+
+    # Best-effort media wipe — mirrors archive_comic enqueue pattern.
+    try:
+        r = await aioredis.from_url(settings.redis_url)
+        arq_redis = ArqRedis(r.connection_pool)
+        await arq_redis.enqueue_job("comic_media_wipe_task", str(comic_id))
+        await arq_redis.aclose()
+    except Exception as e:
+        logger.warning(
+            "permanent_delete_comic ARQ enqueue failed | comic_id=%s error=%s",
+            comic_id,
+            e,
+        )
+
+    logger.info("permanent_delete_comic done | comic_id=%s", comic_id)
     return True
