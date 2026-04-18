@@ -66,6 +66,7 @@ struct AstralApp: App {
                 .task {
                     let context = sharedModelContainer.mainContext
                     OrphanCleanupService.cleanOnLaunch(modelContext: context)
+                    PendingDeletionDrainService.drain(modelContext: context)
                 }
         }
         .modelContainer(sharedModelContainer)
