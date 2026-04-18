@@ -147,15 +147,27 @@ final class ChapterDownloadService {
 
     /// Load locally saved page URLs for a chapter. Returns nil if not available.
     func localPageURLs(for chapter: LocalComicChapter) -> [URL]? {
-        guard let relativePath = chapter.localPagesPath else { return nil }
+        guard let relativePath = chapter.localPagesPath else {
+            AstralLogger.warning("localPageURLs: localPagesPath nil for chapter \(chapter.id) (isDownloaded=\(chapter.isDownloaded), downloadStatus=\(chapter.downloadStatus.rawValue))", context: "Download")
+            return nil
+        }
         let chapterDir = documentsDir.appendingPathComponent(relativePath)
-        guard let files = try? fileManager.contentsOfDirectory(at: chapterDir, includingPropertiesForKeys: nil) else {
+        let files: [URL]
+        do {
+            files = try fileManager.contentsOfDirectory(at: chapterDir, includingPropertiesForKeys: nil)
+        } catch {
+            AstralLogger.warning("localPageURLs: contentsOfDirectory failed at \(chapterDir.path): \(error)", context: "Download")
             return nil
         }
         let sorted = files
             .filter { $0.pathExtension == "jpg" || $0.pathExtension == "png" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        return sorted.isEmpty ? nil : sorted
+        if sorted.isEmpty {
+            let rawNames = files.map { $0.lastPathComponent }
+            AstralLogger.warning("localPageURLs: no .jpg/.png files after filter at \(chapterDir.path); raw files=\(rawNames)", context: "Download")
+            return nil
+        }
+        return sorted
     }
 
     // MARK: - Deletion

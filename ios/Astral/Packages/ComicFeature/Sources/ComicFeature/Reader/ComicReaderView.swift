@@ -98,7 +98,7 @@ struct ComicReaderView: View {
                 ProgressView()
                     .tint(AstralColors.gold)
                     .scaleEffect(1.2)
-            } else if pages.isEmpty {
+            } else if pages.isEmpty && (localPageURLs?.isEmpty ?? true) {
                 EmptyStateView(
                     icon: "photo.on.rectangle.angled",
                     title: "No Pages",
@@ -938,19 +938,22 @@ struct ComicReaderView: View {
         }
 
         // Try local files first (device-saved chapter)
+        AstralLogger.info("loadPages: chapter \(chapter.id) state — isDownloaded=\(chapter.isDownloaded), downloadStatus=\(chapter.downloadStatus.rawValue), totalPages=\(chapter.totalPages), localPagesPath=\(chapter.localPagesPath ?? "nil")", context: "ComicReader")
         if let urls = ChapterDownloadService.shared.localPageURLs(for: chapter) {
             if urls.count == chapter.totalPages || chapter.totalPages == 0 {
                 localPageURLs = urls
                 pages = []
-                AstralLogger.info("loadPages: using \(urls.count) local pages", context: "ComicReader")
+                AstralLogger.info("loadPages: using \(urls.count) local pages (first=\(urls.first?.lastPathComponent ?? "nil"))", context: "ComicReader")
                 isLoading = false
                 return
             } else {
                 // Page count mismatch — partial/corrupt download
                 chapter.downloadStatus = .failed
                 chapter.downloadError = "Expected \(chapter.totalPages) pages, found \(urls.count)"
-                AstralLogger.warning("loadPages: local page count mismatch (\(urls.count)/\(chapter.totalPages)), falling through to network", context: "ComicReader")
+                AstralLogger.warning("loadPages: local page count mismatch (urls=\(urls.count), totalPages=\(chapter.totalPages), first=\(urls.first?.lastPathComponent ?? "nil")), falling through to network", context: "ComicReader")
             }
+        } else {
+            AstralLogger.warning("loadPages: localPageURLs returned nil for chapter \(chapter.id)", context: "ComicReader")
         }
 
         localPageURLs = nil
