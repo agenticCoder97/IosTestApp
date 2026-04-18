@@ -9,6 +9,7 @@ struct ComicDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.comicNavigation) private var comicNavigation
+    @Environment(\.dismiss) private var dismiss
     @Query private var chapters: [LocalComicChapter]
     @Query private var bookmarks: [LocalBookmark]
     @State private var selectedChapter: LocalComicChapter?
@@ -16,6 +17,7 @@ struct ComicDetailView: View {
     @State private var isDownloading = false
     @State private var downloadProgress: (Int, Int) = (0, 0)
     @State private var activeTab: DetailTab = .chapters
+    @State private var showDeleteAlert = false
 
     private enum DetailTab: String, CaseIterable {
         case chapters = "Chapters"
@@ -421,6 +423,41 @@ struct ComicDetailView: View {
         .background(AstralColors.background)
         .navigationTitle(comic.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showDeleteAlert = true
+                    } label: {
+                        Label("Delete permanently", systemImage: "trash.slash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(AstralColors.gold)
+                }
+            }
+        }
+        .deletePermanentlyAlert(
+            isPresented: $showDeleteAlert,
+            storyTitle: comic.title,
+            onConfirm: {
+                let chaptersSnapshot = Array(chapters)
+                Task {
+                    await StoryDeletionService.shared.permanentlyDelete(
+                        comic: comic,
+                        modelContext: modelContext,
+                        deleteFiles: {
+                            ChapterDownloadService.shared.deleteAllChapters(
+                                comic: comic,
+                                chapters: chaptersSnapshot,
+                                modelContext: modelContext
+                            )
+                        }
+                    )
+                    dismiss()
+                }
+            }
+        )
         .fullScreenCover(item: $selectedChapter) { chapter in
             ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
         }
