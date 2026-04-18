@@ -21,6 +21,7 @@ struct FanficLibraryView: View {
 
     @State private var showFilter = false
     @State private var filterState = FanficFilterState()
+    @State private var pendingDeletion: LocalFanfic?
 
     private var inProgressFanfics: [LocalFanfic] {
         allFanfics
@@ -168,9 +169,9 @@ struct FanficLibraryView: View {
                             .staggeredAppear(index: index)
                             .contextMenu {
                                 Button(role: .destructive) {
-                                    deleteFanfic(fanfic)
+                                    pendingDeletion = fanfic
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Label("Delete permanently", systemImage: "trash.slash")
                                 }
                             }
                         }
@@ -191,12 +192,36 @@ struct FanficLibraryView: View {
             FanficFilterView(filterState: filterState)
                 .presentationDetents([.medium, .large])
         }
-    }
-
-    private func deleteFanfic(_ fanfic: LocalFanfic) {
-        Task { try? await APIClient.shared.requestVoid(.deleteFanfic(id: fanfic.id)) }
-        modelContext.delete(fanfic)
-        try? modelContext.save()
+        .deletePermanentlyAlert(
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            storyTitle: pendingDeletion?.title ?? "",
+            onConfirm: {
+                if let fanfic = pendingDeletion {
+                    let id = fanfic.id
+                    Task {
+                        let descriptor = FetchDescriptor<LocalFanficChapter>(
+                            predicate: #Predicate<LocalFanficChapter> { $0.fanficId == id }
+                        )
+                        let chapters = (try? modelContext.fetch(descriptor)) ?? []
+                        await StoryDeletionService.shared.permanentlyDelete(
+                            fanfic: fanfic,
+                            modelContext: modelContext,
+                            deleteFiles: {
+                                FanficDownloadService.shared.deleteAllChapters(
+                                    fanfic: fanfic,
+                                    chapters: chapters,
+                                    modelContext: modelContext
+                                )
+                            }
+                        )
+                    }
+                }
+                pendingDeletion = nil
+            }
+        )
     }
 }
 

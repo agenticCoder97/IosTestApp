@@ -32,6 +32,7 @@ struct FanficDetailView: View {
     @State private var downloadProgress: (Int, Int) = (0, 0)
     @State private var isRescraping = false
     @State private var selectedChapter: LocalFanficChapter?
+    @State private var showDeleteAlert = false
 
     private enum FanficDetailTab: String, CaseIterable {
         case chapters = "Chapters"
@@ -232,7 +233,40 @@ struct FanficDetailView: View {
                 }
                 .disabled(isRescraping)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showDeleteAlert = true
+                    } label: {
+                        Label("Delete permanently", systemImage: "trash.slash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(AstralColors.gold)
+                }
+            }
         }
+        .deletePermanentlyAlert(
+            isPresented: $showDeleteAlert,
+            storyTitle: fanfic.title,
+            onConfirm: {
+                let chaptersSnapshot = Array(chapters)
+                dismiss()
+                Task {
+                    await StoryDeletionService.shared.permanentlyDelete(
+                        fanfic: fanfic,
+                        modelContext: modelContext,
+                        deleteFiles: {
+                            FanficDownloadService.shared.deleteAllChapters(
+                                fanfic: fanfic,
+                                chapters: chaptersSnapshot,
+                                modelContext: modelContext
+                            )
+                        }
+                    )
+                }
+            }
+        )
         .onAppear {
             fanfic.seenTotalChapters = fanfic.totalChapters
             fanfic.lastReadAt = .now

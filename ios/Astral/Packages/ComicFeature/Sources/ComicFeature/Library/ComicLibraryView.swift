@@ -23,6 +23,8 @@ struct ComicLibraryView: View {
         GridItem(.flexible(), spacing: 12),
     ]
 
+    @State private var pendingDeletion: LocalComic?
+
     private var displayedComics: [LocalComic] {
         var ready = allComics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
         if filterFavourites {
@@ -116,9 +118,9 @@ struct ComicLibraryView: View {
                                     }
                                 }
                                 Button(role: .destructive) {
-                                    deleteComic(comic)
+                                    pendingDeletion = comic
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Label("Delete permanently", systemImage: "trash.slash")
                                 }
                             }
                         }
@@ -132,12 +134,36 @@ struct ComicLibraryView: View {
         .background(AstralColors.background)
         .task { await viewModel.fetchComics(modelContext: modelContext) }
         .refreshable { await viewModel.fetchComics(modelContext: modelContext, force: true) }
-    }
-
-    private func deleteComic(_ comic: LocalComic) {
-        Task { try? await APIClient.shared.requestVoid(.deleteComic(id: comic.id)) }
-        modelContext.delete(comic)
-        try? modelContext.save()
+        .deletePermanentlyAlert(
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            storyTitle: pendingDeletion?.title ?? "",
+            onConfirm: {
+                if let comic = pendingDeletion {
+                    let id = comic.id
+                    Task {
+                        let descriptor = FetchDescriptor<LocalComicChapter>(
+                            predicate: #Predicate<LocalComicChapter> { $0.comicId == id }
+                        )
+                        let chapters = (try? modelContext.fetch(descriptor)) ?? []
+                        await StoryDeletionService.shared.permanentlyDelete(
+                            comic: comic,
+                            modelContext: modelContext,
+                            deleteFiles: {
+                                ChapterDownloadService.shared.deleteAllChapters(
+                                    comic: comic,
+                                    chapters: chapters,
+                                    modelContext: modelContext
+                                )
+                            }
+                        )
+                    }
+                }
+                pendingDeletion = nil
+            }
+        )
     }
 
     private func archiveComic(_ comic: LocalComic) {
