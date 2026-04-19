@@ -244,6 +244,10 @@ class AO3Scraper(BaseScraper):
 
                 content = div.select_one(".userstuff")
                 if not content:
+                    logger.warning(
+                        "get_all_chapters_bulk no .userstuff in %s | container_chars=%d",
+                        ch_id, len(div.get_text(strip=True)),
+                    )
                     continue
 
                 for h in content.select("h3.landmark"):
@@ -253,6 +257,12 @@ class AO3Scraper(BaseScraper):
 
                 paragraphs = [p.get_text(separator=" ", strip=True) for p in content.find_all("p")]
                 text = "\n\n".join(p for p in paragraphs if p)
+                logger.info(
+                    "get_all_chapters_bulk parsed | chapter=%.1f selector=%s "
+                    "matched_tag=%s paragraphs=%d final_chars=%d final_words=%d",
+                    chapter_num, ".userstuff", content.name,
+                    len(paragraphs), len(text), len(text.split()),
+                )
                 if text:
                     chapters[chapter_num] = text
 
