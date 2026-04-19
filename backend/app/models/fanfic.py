@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Integer, Float, Text, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import String, Integer, Float, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
 
@@ -31,6 +31,7 @@ class Fanfic(Base):
     kudos: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     comments_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     bookmarks_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    allow_short_chapters: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     scrape_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("scrape_jobs.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

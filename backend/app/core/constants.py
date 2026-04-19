@@ -50,3 +50,9 @@ SOURCE_RATE_CONFIG: dict[str, dict] = {
 }
 
 COOKIE_CACHE_KEY_PREFIX = "cookies:"
+
+# Short-content guard (AST-20). Per-chapter validation in fanfic_scrape_task.
+# A chapter is rejected if its word_count is below RATIO * (fanfic.word_count /
+# fanfic.total_chapters), or below HARD_FLOOR regardless of metadata.
+SHORT_CHAPTER_RATIO_THRESHOLD = 0.30
+SHORT_CHAPTER_HARD_FLOOR = 50
