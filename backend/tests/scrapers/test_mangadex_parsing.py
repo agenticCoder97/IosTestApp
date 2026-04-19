@@ -62,3 +62,32 @@ async def test_get_story_metadata_builds_thumbnail_url(scraper):
 async def test_get_story_metadata_rejects_unparseable_url(scraper):
     with pytest.raises(ValueError):
         await scraper.get_story_metadata("https://mangadex.org/")
+
+
+@pytest.fixture
+def scraper_feed(monkeypatch):
+    s = MangadexScraper()
+    feed_calls = {"n": 0}
+
+    async def fake_get(url, *, params=None, at_home=False):
+        if "/feed" in url:
+            feed_calls["n"] += 1
+            return _load(f"feed_page{feed_calls['n']}.json")
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(s._http, "get_json", fake_get)
+    return s
+
+
+async def test_get_chapter_list_paginates_and_filters_external(scraper_feed):
+    chapters = await scraper_feed.get_chapter_list(
+        "https://mangadex.org/title/32d76d19-8a05-4db0-9fc2-e0b0648fe9d0"
+    )
+    # 5 chapters in fixtures, but ch-skip has externalUrl → filtered out → 4 returned.
+    assert len(chapters) == 4
+    numbers = [c.chapter_number for c in chapters]
+    assert numbers == [1.0, 2.0, 4.0, 5.0]
+    assert chapters[0].title == "Prologue"
+    assert chapters[3].title is None
+    # source_url is the canonical chapter URL.
+    assert chapters[0].source_url == "https://mangadex.org/chapter/ch-1"

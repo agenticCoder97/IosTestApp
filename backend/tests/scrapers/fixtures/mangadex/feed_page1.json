@@ -1,0 +1,38 @@
+{
+  "result": "ok",
+  "data": [
+    {
+      "id": "ch-1",
+      "type": "chapter",
+      "attributes": {
+        "chapter": "1",
+        "title": "Prologue",
+        "translatedLanguage": "en",
+        "externalUrl": null
+      }
+    },
+    {
+      "id": "ch-2",
+      "type": "chapter",
+      "attributes": {
+        "chapter": "2",
+        "title": "First Steps",
+        "translatedLanguage": "en",
+        "externalUrl": null
+      }
+    },
+    {
+      "id": "ch-skip",
+      "type": "chapter",
+      "attributes": {
+        "chapter": "3",
+        "title": "Hosted on MangaPlus",
+        "translatedLanguage": "en",
+        "externalUrl": "https://mangaplus.shueisha.co.jp/viewer/..."
+      }
+    }
+  ],
+  "limit": 3,
+  "offset": 0,
+  "total": 5
+}

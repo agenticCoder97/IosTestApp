@@ -107,7 +107,43 @@ class MangadexScraper(BaseScraper):
         )
 
     async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:
-        raise NotImplementedError("filled in Task 5")
+        manga_id = _extract_manga_id(story_url)
+        chapters: list[ChapterInfo] = []
+        offset = 0
+        limit = 500
+        while True:
+            body = await self._http.get_json(
+                f"{_API}/manga/{manga_id}/feed",
+                params={
+                    "translatedLanguage[]": ["en"],
+                    "order[chapter]": "asc",
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+            page = body.get("data", [])
+            for ch in page:
+                attrs = ch.get("attributes", {})
+                # Skip chapters hosted on external readers (MangaPlus etc.).
+                if attrs.get("externalUrl"):
+                    continue
+                num_str = attrs.get("chapter")
+                try:
+                    chapter_number = float(num_str) if num_str is not None else None
+                except (TypeError, ValueError):
+                    chapter_number = None
+                if chapter_number is None:
+                    continue
+                chapters.append(ChapterInfo(
+                    chapter_number=chapter_number,
+                    title=attrs.get("title") or None,
+                    source_url=f"https://mangadex.org/chapter/{ch['id']}",
+                ))
+            total = body.get("total", 0)
+            offset += body.get("limit", limit)
+            if offset >= total:
+                break
+        return chapters
 
     async def get_chapter_pages(self, chapter_url: str) -> list[PageInfo]:
         raise NotImplementedError("filled in Task 6")
