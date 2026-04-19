@@ -11,6 +11,7 @@ from app.models.scrape import ScrapeJob, ScrapeLog
 from app.utils.image_utils import ensure_fanfic_covers, random_fanfic_cover
 from app.core.constants import ScrapeStatus, JobStatus
 from app.scrapers.base import CookieExpiredError, ScraperError
+from app.scrapers.validation import validate_chapter_content
 from app.cache import redis_cache
 from app.scrapers.fanfic.ao3 import AO3Scraper
 from app.scrapers.fanfic.ffnet import FanfictionNetScraper
@@ -269,20 +270,45 @@ async def fanfic_scrape_task(ctx, job_id: str):
                         )
                         text = await scraper.get_chapter_text(chapter.source_url)
 
-                    chapter.content = text
-                    chapter.word_count = len(text.split())
-                    chapter.scrape_status = ScrapeStatus.SCRAPED
-                    job.chapters_scraped += 1
-                    dur = int((time.perf_counter() - ch_start) * 1000)
-                    _add_log(db, job_uuid, "info", ch_label,
-                             f"Scraped {chapter.word_count} words",
-                             duration_ms=dur, chapter_number=chapter.chapter_number)
-                    await db.commit()
-                    logger.info(
-                        "fanfic_scrape_task chapter ok | job_id=%s chapter=%.1f [%d/%d] words=%d elapsed_ms=%d",
-                        job_id, chapter.chapter_number, ch_idx, total_chapters,
-                        chapter.word_count, dur,
+                    word_count = len(text.split())
+                    accept, rejection_reason = validate_chapter_content(
+                        word_count=word_count,
+                        fanfic_word_count=fanfic.word_count if fanfic else None,
+                        fanfic_total_chapters=fanfic.total_chapters if fanfic else None,
+                        allow_short=fanfic.allow_short_chapters if fanfic else False,
                     )
+                    dur = int((time.perf_counter() - ch_start) * 1000)
+                    if accept:
+                        chapter.content = text
+                        chapter.word_count = word_count
+                        chapter.scrape_status = ScrapeStatus.SCRAPED
+                        job.chapters_scraped += 1
+                        _add_log(db, job_uuid, "info", ch_label,
+                                 f"Scraped {word_count} words",
+                                 duration_ms=dur, chapter_number=chapter.chapter_number)
+                        await db.commit()
+                        logger.info(
+                            "fanfic_scrape_task chapter ok | job_id=%s chapter=%.1f [%d/%d] words=%d elapsed_ms=%d",
+                            job_id, chapter.chapter_number, ch_idx, total_chapters,
+                            word_count, dur,
+                        )
+                    else:
+                        chapter.content = None
+                        chapter.word_count = None
+                        chapter.scrape_status = ScrapeStatus.FAILED
+                        job.chapters_failed += 1
+                        job.last_error_type = "ShortContent"
+                        job.error_message = rejection_reason
+                        _add_log(db, job_uuid, "error", ch_label,
+                                 f"Rejected short content: {rejection_reason}",
+                                 error_type="ShortContent",
+                                 duration_ms=dur, chapter_number=chapter.chapter_number)
+                        await db.commit()
+                        logger.warning(
+                            "fanfic_scrape_task chapter rejected | job_id=%s chapter=%.1f [%d/%d] reason=%s elapsed_ms=%d",
+                            job_id, chapter.chapter_number, ch_idx, total_chapters,
+                            rejection_reason, dur,
+                        )
 
                 except CookieExpiredError:
                     chapter.scrape_status = ScrapeStatus.FAILED
