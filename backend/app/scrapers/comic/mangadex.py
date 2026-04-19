@@ -207,4 +207,41 @@ class MangadexScraper(BaseScraper):
     async def search(
         self, *, title: str, content_ratings: list[str], limit: int = 10,
     ) -> list[dict]:
-        raise NotImplementedError("filled in Task 9")
+        """Return a flat list of {id, title, original_language, last_chapter,
+        tags, thumbnail_url} dicts."""
+        body = await self._http.get_json(
+            f"{_API}/manga",
+            params={
+                "title": title,
+                "limit": limit,
+                "contentRating[]": content_ratings,
+                "includes[]": ["cover_art"],
+                "order[relevance]": "desc",
+            },
+        )
+        out: list[dict] = []
+        for entry in body.get("data", []):
+            attrs = entry.get("attributes", {})
+            cover_filename = None
+            for rel in entry.get("relationships", []):
+                if rel.get("type") == "cover_art":
+                    cover_filename = (rel.get("attributes") or {}).get("fileName")
+            try:
+                last_chapter_int = int(float(attrs.get("lastChapter") or 0))
+            except (TypeError, ValueError):
+                last_chapter_int = 0
+            out.append({
+                "id": entry["id"],
+                "title": _english_title(attrs.get("title", {})),
+                "original_language": attrs.get("originalLanguage"),
+                "last_chapter": last_chapter_int,
+                "tags": [
+                    _english_title((t.get("attributes") or {}).get("name", {}))
+                    for t in attrs.get("tags", [])
+                ],
+                "thumbnail_url": (
+                    f"https://uploads.mangadex.org/covers/{entry['id']}/{cover_filename}.512.jpg"
+                    if cover_filename else None
+                ),
+            })
+        return out
