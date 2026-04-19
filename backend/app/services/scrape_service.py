@@ -78,9 +78,15 @@ async def initiate_scrape(db: AsyncSession, body: ScrapeRequest) -> ScrapeJobRes
                 title="Pending scrape...",
                 source_key=body.source_key,
                 source_url=body.url,
+                previous_source=body.previous_source,
+                previous_source_url=body.previous_source_url,
+                match_confidence=body.match_confidence,
             )
             db.add(comic)
-            logger.info("initiate_scrape new comic placeholder created | story_id=%s", story_id)
+            logger.info(
+                "initiate_scrape new comic placeholder created | story_id=%s prev=%s conf=%s",
+                story_id, body.previous_source, body.match_confidence,
+            )
     else:
         result = await db.execute(
             select(Fanfic).where(Fanfic.source_url == body.url, Fanfic.deleted_at.is_(None))
