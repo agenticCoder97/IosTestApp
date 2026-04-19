@@ -196,7 +196,10 @@ class AO3Scraper(BaseScraper):
         html = await self._fetch(_adult(chapter_url))
         soup = BeautifulSoup(html, "lxml")
 
-        content_div = soup.select_one("#chapters .userstuff") or soup.select_one(".userstuff")
+        content_div = (
+            soup.select_one("#chapters div.userstuff[role='article']")
+            or soup.select_one("div.userstuff[role='article']")
+        )
         if not content_div:
             return ""
 
@@ -242,10 +245,10 @@ class AO3Scraper(BaseScraper):
                     continue
                 chapter_num = float(m.group(1))
 
-                content = div.select_one(".userstuff")
+                content = div.select_one("div.userstuff[role='article']")
                 if not content:
                     logger.warning(
-                        "get_all_chapters_bulk no .userstuff in %s | container_chars=%d",
+                        "get_all_chapters_bulk no body div in %s | container_chars=%d",
                         ch_id, len(div.get_text(strip=True)),
                     )
                     continue
@@ -260,7 +263,7 @@ class AO3Scraper(BaseScraper):
                 logger.info(
                     "get_all_chapters_bulk parsed | chapter=%.1f selector=%s "
                     "matched_tag=%s paragraphs=%d final_chars=%d final_words=%d",
-                    chapter_num, ".userstuff", content.name,
+                    chapter_num, "div.userstuff[role='article']", content.name,
                     len(paragraphs), len(text), len(text.split()),
                 )
                 if text:
@@ -270,7 +273,10 @@ class AO3Scraper(BaseScraper):
             return chapters
 
         # Single-chapter: no chapter-N divs, just .userstuff
-        content = soup.select_one("#chapters .userstuff") or soup.select_one(".userstuff")
+        content = (
+            soup.select_one("#chapters div.userstuff[role='article']")
+            or soup.select_one("div.userstuff[role='article']")
+        )
         if content:
             for h in content.select("h3.landmark"):
                 h.decompose()
