@@ -122,6 +122,18 @@ main                    ← production releases (god branch, protected)
 - Do not force-push without explicit approval.
 - Do not commit `.env` files or secrets.
 
+### Linear integration
+
+- Linear team **Astral** (key `AST`) — issues look like `AST-123`.
+- Project: [Astral on Linear](https://linear.app/nnetraganti/project/astral-8efbeb753255).
+- **Branch naming**: `feature/ast-123-short-description`, `fix/ast-456-description`, `chore/ast-789-description` — the `ast-NNN` slug in the branch name auto-links the branch to the Linear issue.
+- **Commit messages**: include the issue ID, e.g. `[ios] AST-123 fix scroll bug in fanfic reader`. Linear backfills commits into the issue timeline.
+- **PR descriptions**: use a magic word + issue ID on its own line to auto-close the issue on merge:
+  - `Fixes AST-123`
+  - `Closes AST-123`
+  - `Resolves AST-123`
+- Multiple issues: one magic-word line per issue (`Fixes AST-123`, `Fixes AST-124`).
+
 ### Device targeting (no separate branches needed)
 - **Simulator**: `#if targetEnvironment(simulator)` → `localhost:8000`
 - **Physical device (debug)**: `#else` in DEBUG → Mac's WiFi IP (`192.168.0.108:8000`)
