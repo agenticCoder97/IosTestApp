@@ -168,16 +168,18 @@ class ScrapeRequest(BaseModel):
     match_confidence: float | None = None
 ```
 
-**Response branches:**
+**Response branches** (existing route already returns 202 for the happy job-create path):
 - `503` if `source == "mangadex"` and `MANGADEX_DISABLED`.
-- `202 { match }` if matcher returns a `MangaDexMatch` (eligible source + not `skip_match` + not disabled).
-- `200 { scrape_job_id, comic_id }` otherwise — the existing happy path.
+- `202 { match: { ... } }` if matcher returns a `MangaDexMatch` (eligible source + not `skip_match` + not disabled).
+- `202 { id, story_id, status, ... }` (existing `ScrapeJobResponse`) otherwise — the existing happy path.
+
+Both 2xx envelopes are returned as `202`; the iOS client distinguishes by body shape (tries `ScrapeMatchResponse` decode first, falls back to `ScrapeJobResponse`).
 
 **iOS flow:**
 1. iOS POSTs `{url: "toongod...", source: "toongod", page_title: "..."}`.
 2. Backend → `202 { match }` → iOS shows confirm dialog.
-3. **User accepts** → iOS POSTs `{url: "mangadex.org/title/...", source: "mangadex", previous_source: "toongod", previous_source_url: "toongod...", match_confidence: 0.91}` → `200 { scrape_job_id }`.
-4. **User declines** → iOS POSTs original payload again with `skip_match: true` → `200 { scrape_job_id }` against the original source.
+3. **User accepts** → iOS POSTs `{url: "mangadex.org/title/...", source: "mangadex", previous_source: "toongod", previous_source_url: "toongod...", match_confidence: 0.91}` → `202 { id, story_id, ... }`.
+4. **User declines** → iOS POSTs original payload again with `skip_match: true` → `202 { id, story_id, ... }` against the original source.
 
 ### Schema changes
 
