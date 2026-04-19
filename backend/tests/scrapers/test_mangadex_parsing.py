@@ -119,3 +119,54 @@ async def test_get_chapter_pages_builds_full_image_urls(scraper_at_home):
     assert pages[2].source_url == (
         "https://uploads.mangadex.org/data/abc123def/3-page-hash.jpg"
     )
+
+
+async def test_download_image_posts_success_report(monkeypatch, tmp_path):
+    s = MangadexScraper()
+    posts: list[dict] = []
+
+    async def fake_fetch(url, dest_path):
+        # Simulate a 50KB write.
+        return dest_path, 50_000
+
+    async def fake_post(url, *, json):
+        posts.append({"url": url, "json": json})
+
+    monkeypatch.setattr(s._http, "fetch_image_to_disk", fake_fetch)
+    monkeypatch.setattr(s._http, "post_json", fake_post)
+
+    result = await s.download_image(
+        "https://uploads.mangadex.org/data/abc/1.jpg",
+        "comics/story1/ch1/page_0001.jpg",
+    )
+    assert result == "comics/story1/ch1/page_0001.jpg"
+    assert len(posts) == 1
+    assert posts[0]["url"] == "https://api.mangadex.network/report"
+    assert posts[0]["json"]["url"] == "https://uploads.mangadex.org/data/abc/1.jpg"
+    assert posts[0]["json"]["success"] is True
+    assert posts[0]["json"]["bytes"] == 50_000
+    assert posts[0]["json"]["cached"] is False  # /data path → not cached
+    assert "duration" in posts[0]["json"]
+
+
+async def test_download_image_posts_failure_report_on_exception(monkeypatch):
+    s = MangadexScraper()
+    posts: list[dict] = []
+
+    async def fake_fetch(url, dest_path):
+        raise RuntimeError("simulated network failure")
+
+    async def fake_post(url, *, json):
+        posts.append({"url": url, "json": json})
+
+    monkeypatch.setattr(s._http, "fetch_image_to_disk", fake_fetch)
+    monkeypatch.setattr(s._http, "post_json", fake_post)
+
+    with pytest.raises(RuntimeError):
+        await s.download_image(
+            "https://uploads.mangadex.org/data/abc/1.jpg",
+            "comics/story1/ch1/page_0001.jpg",
+        )
+    assert len(posts) == 1
+    assert posts[0]["json"]["success"] is False
+    assert posts[0]["json"]["bytes"] == 0

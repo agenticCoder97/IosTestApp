@@ -10,6 +10,7 @@ MangaDex comic source adapter (AST-30).
 """
 import logging
 import re
+import time
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -170,6 +171,35 @@ class MangadexScraper(BaseScraper):
             )
             for i, fn in enumerate(filenames, start=1)
         ]
+
+    async def download_image(self, url: str, dest_path: str) -> str:
+        """
+        Override BaseScraper.download_image to (a) use httpx-based streaming
+        and (b) POST a MD@Home report on every fetch. Report failures must
+        never break a scrape — they are best-effort per ToS.
+        """
+        start = time.monotonic()
+        # /uploads/ paths are pre-warm CDN; /data/ and /data-saver/ are MD@Home.
+        cached = "/uploads/" in url
+        try:
+            rel_path, byte_count = await self._http.fetch_image_to_disk(url, dest_path)
+            await self._http.post_json(self._http.REPORT_URL, json={
+                "url": url,
+                "success": True,
+                "cached": cached,
+                "bytes": byte_count,
+                "duration": int((time.monotonic() - start) * 1000),
+            })
+            return rel_path
+        except Exception:
+            await self._http.post_json(self._http.REPORT_URL, json={
+                "url": url,
+                "success": False,
+                "cached": cached,
+                "bytes": 0,
+                "duration": int((time.monotonic() - start) * 1000),
+            })
+            raise
 
     async def get_chapter_text(self, chapter_url: str) -> str:
         raise NotImplementedError("MangaDex is a comic source — no text content")
