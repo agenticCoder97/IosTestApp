@@ -48,3 +48,8 @@ backend/wallet/
 
 # Scratchpad
 scratchpad/
+
+# Agent / tool artifacts
+.claude/
+.claire/
+.playwright-mcp/
