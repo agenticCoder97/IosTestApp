@@ -25,6 +25,7 @@ from app.scrapers.comic._mangadex_http import MangadexHTTPClient
 logger = logging.getLogger(__name__)
 
 _TITLE_URL_RE = re.compile(r"/title/([0-9a-f-]+)", re.I)
+_CHAPTER_URL_RE = re.compile(r"/chapter/([0-9a-f-]+)", re.I)
 _API = "https://api.mangadex.org"
 
 
@@ -32,6 +33,13 @@ def _extract_manga_id(url: str) -> str:
     m = _TITLE_URL_RE.search(urlparse(url).path)
     if not m:
         raise ValueError(f"Cannot extract MangaDex manga id from URL: {url}")
+    return m.group(1)
+
+
+def _extract_chapter_id(url: str) -> str:
+    m = _CHAPTER_URL_RE.search(urlparse(url).path)
+    if not m:
+        raise ValueError(f"Cannot extract MangaDex chapter id from URL: {url}")
     return m.group(1)
 
 
@@ -146,7 +154,22 @@ class MangadexScraper(BaseScraper):
         return chapters
 
     async def get_chapter_pages(self, chapter_url: str) -> list[PageInfo]:
-        raise NotImplementedError("filled in Task 6")
+        chapter_id = _extract_chapter_id(chapter_url)
+        body = await self._http.get_json(
+            f"{_API}/at-home/server/{chapter_id}",
+            at_home=True,
+        )
+        base_url = body["baseUrl"]
+        chapter = body["chapter"]
+        chapter_hash = chapter["hash"]
+        filenames = chapter.get("data", [])
+        return [
+            PageInfo(
+                page_number=i,
+                source_url=f"{base_url}/data/{chapter_hash}/{fn}",
+            )
+            for i, fn in enumerate(filenames, start=1)
+        ]
 
     async def get_chapter_text(self, chapter_url: str) -> str:
         raise NotImplementedError("MangaDex is a comic source — no text content")

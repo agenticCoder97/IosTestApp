@@ -91,3 +91,31 @@ async def test_get_chapter_list_paginates_and_filters_external(scraper_feed):
     assert chapters[3].title is None
     # source_url is the canonical chapter URL.
     assert chapters[0].source_url == "https://mangadex.org/chapter/ch-1"
+
+
+@pytest.fixture
+def scraper_at_home(monkeypatch):
+    s = MangadexScraper()
+
+    async def fake_get(url, *, params=None, at_home=False):
+        if "/at-home/server/" in url:
+            assert at_home is True, "must use the at_home limiter"
+            return _load("at_home_server.json")
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr(s._http, "get_json", fake_get)
+    return s
+
+
+async def test_get_chapter_pages_builds_full_image_urls(scraper_at_home):
+    pages = await scraper_at_home.get_chapter_pages(
+        "https://mangadex.org/chapter/ch-1"
+    )
+    assert len(pages) == 3
+    assert pages[0].page_number == 1
+    assert pages[0].source_url == (
+        "https://uploads.mangadex.org/data/abc123def/1-page-hash.jpg"
+    )
+    assert pages[2].source_url == (
+        "https://uploads.mangadex.org/data/abc123def/3-page-hash.jpg"
+    )
