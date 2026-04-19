@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     scrape_chapter_concurrency: int = 4   # how many chapters scraped at once
     scrape_page_concurrency: int = 8      # how many page images downloaded at once per chapter
 
+    # MangaDex (AST-30) — kill switch + matcher tuning
+    mangadex_disabled: bool = False
+    mangadex_title_match_threshold: float = 0.85
+    mangadex_auto_switch_source: bool = True
+
     @property
     def oracle_wallet_dir(self) -> Optional[Path]:
         if self.oracle_wallet_path:

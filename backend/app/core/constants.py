@@ -7,6 +7,7 @@ class SourceKey(str, Enum):
     HENTAI20 = "hentai20"
     AO3 = "ao3"
     FFNET = "ffnet"
+    MANGADEX = "mangadex"
 
 
 class ContentType(str, Enum):
@@ -47,6 +48,7 @@ SOURCE_RATE_CONFIG: dict[str, dict] = {
     SourceKey.HENTAI20: {"delay": 2.0, "max_retries": 3, "requires_browser": True},
     SourceKey.AO3:      {"delay": 2.0, "max_retries": 3, "requires_browser": False},
     SourceKey.FFNET:    {"delay": 1.5, "max_retries": 3, "requires_browser": False},
+    SourceKey.MANGADEX: {"delay": 0.0, "max_retries": 3, "requires_browser": False},
 }
 
 COOKIE_CACHE_KEY_PREFIX = "cookies:"
