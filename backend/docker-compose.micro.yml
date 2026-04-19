@@ -1,0 +1,115 @@
+# Lean stack for OCI E2.1.Micro (1GB RAM + 2GB swap).
+# No Playwright, minimal Postgres, single-worker ARQ.
+# Designed as a stopgap until A1 capacity opens up.
+
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://astral:astral@postgres:5432/astral
+      - REDIS_URL=redis://redis:6379/0
+      - BLOCK_VOLUME_PATH=/mnt/astral-media
+      - STATIC_BASE_URL=http://${PUBLIC_IP:-localhost}:8000/static
+      - ARQ_MAX_JOBS=2
+      - SOFT_DELETE_DAYS=5
+      - COOKIE_CACHE_TTL_SECS=86400
+      - LOG_LEVEL=INFO
+    volumes:
+      - astral_media:/mnt/astral-media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - astral_net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: astral
+      POSTGRES_PASSWORD: astral
+      POSTGRES_DB: astral
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Tune for low memory: 32MB shared_buffers, 64MB work_mem budget
+    command: >
+      postgres
+        -c shared_buffers=32MB
+        -c work_mem=4MB
+        -c effective_cache_size=128MB
+        -c max_connections=20
+        -c wal_buffers=1MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astral"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    networks:
+      - astral_net
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 48mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    networks:
+      - astral_net
+
+  arq_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile  # Same as API — no Playwright on Micro
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://astral:astral@postgres:5432/astral
+      - REDIS_URL=redis://redis:6379/0
+      - BLOCK_VOLUME_PATH=/mnt/astral-media
+      - STATIC_BASE_URL=http://${PUBLIC_IP:-localhost}:8000/static
+      - ARQ_MAX_JOBS=2
+      - SOFT_DELETE_DAYS=5
+      - COOKIE_CACHE_TTL_SECS=86400
+      - LOG_LEVEL=INFO
+      - SCRAPE_CHAPTER_CONCURRENCY=2
+      - SCRAPE_PAGE_CONCURRENCY=4
+    volumes:
+      - astral_media:/mnt/astral-media
+    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - astral_net
+
+volumes:
+  postgres_data:
+  astral_media:
+
+networks:
+  astral_net:
+    driver: bridge
