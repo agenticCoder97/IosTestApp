@@ -81,7 +81,7 @@ private struct MorphLandingView: View {
     @State private var ambientShift: Bool = false
 
     private let goldColor = AstralColors.gold
-    private let blueColor = Color(hex: 0x5C9DFF)
+    private let blueColor = AstralColors.blue
 
     var body: some View {
         GeometryReader { geo in
