@@ -121,14 +121,22 @@ async def find_mangadex_match(
     if source_scraper_cls is None:
         logger.warning("find_mangadex_match: no scraper registered for %s", source)
         return None
+    # Source-meta fetch may fail (Cloudflare 403 on the API thread, since the
+    # fastapi container lacks chromium for the headless fallback). Degrade
+    # gracefully to title+lang scoring instead of bailing entirely.
+    src_tags: set[str] = set()
+    src_chapter_count: int = 0
+    has_source_meta = False
     try:
         src_meta = await source_scraper_cls().get_story_metadata(source_url)
+        src_tags = {t.get("name", "") for t in (src_meta.tags or [])}
+        src_chapter_count = src_meta.total_chapters or 0
+        has_source_meta = True
     except Exception as e:
-        logger.warning("find_mangadex_match source meta fetch failed | err=%s", e)
-        return None
-
-    src_tags = {t.get("name", "") for t in (src_meta.tags or [])}
-    src_chapter_count = src_meta.total_chapters or 0
+        logger.warning(
+            "find_mangadex_match source meta unavailable; falling back to title+lang | err=%s",
+            e,
+        )
 
     md = MangadexScraper()
     try:
@@ -153,19 +161,35 @@ async def find_mangadex_match(
         if best is None or s > best[0]:
             best = (s, c)
 
-    if best is None or best[0] < settings.mangadex_title_match_threshold:
+    # Threshold: when source meta is missing, only title (0.55) + lang (0.15)
+    # signals contribute (max 0.70). Rescale the configured threshold so the
+    # same "≥X% of available evidence agrees" semantics apply.
+    if has_source_meta:
+        threshold = settings.mangadex_title_match_threshold
+    else:
+        threshold = settings.mangadex_title_match_threshold * 0.70
+
+    if best is None or best[0] < threshold:
         logger.info(
-            "find_mangadex_match no qualifying match | source=%s best=%.3f",
-            source, best[0] if best else 0.0,
+            "find_mangadex_match no qualifying match | source=%s best=%.3f threshold=%.3f has_meta=%s",
+            source, best[0] if best else 0.0, threshold, has_source_meta,
         )
         return None
 
     score, cand = best
+    # Display confidence rescaled to 0-1 in the title-only fallback so the user
+    # sees a comparable percentage in the dialog.
+    display_confidence = score / 0.70 if not has_source_meta else score
+    display_confidence = min(1.0, display_confidence)
+    logger.info(
+        "find_mangadex_match hit | source=%s candidate=%s raw=%.3f display=%.3f has_meta=%s",
+        source, cand["id"], score, display_confidence, has_source_meta,
+    )
     return MangaDexMatch(
         manga_id=cand["id"],
         mangadex_url=f"https://mangadex.org/title/{cand['id']}",
         title=cand["title"],
-        confidence=round(score, 3),
+        confidence=round(display_confidence, 3),
         thumbnail_url=cand.get("thumbnail_url"),
         chapter_count=cand.get("last_chapter", 0) or 0,
         source_chapter_count=src_chapter_count,
