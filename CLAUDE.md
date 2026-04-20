@@ -124,6 +124,7 @@ main                    ← production releases (god branch, protected)
 - `production` ← merged from `release-1` at end of sprint.
 - `release-1` ← merged from `development` when features are stable.
 - `development` ← all feature/fix branches branch from here and merge back via PR.
+- **ALWAYS branch new work from `development`. NEVER branch from `main`, `production`, or `release-1`.** `main` is eight merges behind `development` in practice; branching from it creates spurious diffs and merge conflicts.
 - Never push directly to `main`, `production`, or `release-1`.
 - Feature branches: `feature/{name}`, `fix/{description}`, `chore/{task}`
 - Do not force-push without explicit approval.
