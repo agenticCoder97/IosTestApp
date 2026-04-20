@@ -391,6 +391,17 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
                 viewModel.isLoading = webView.isLoading
             }
         }
+        // SPA support (AST-30): MangaDex uses client-side routing, so didFinish
+        // doesn't fire on /title/ navigation. Observe webView.url directly.
+        context.coordinator.urlObservation = webView.observe(\.url) { webView, _ in
+            Task { @MainActor in
+                let url = webView.url
+                viewModel.currentURL = url
+                viewModel.addressBarText = url?.absoluteString ?? ""
+                if let url { viewModel.savedURLs[viewModel.selectedSource] = url }
+                viewModel.evaluateCanScrape(url: url)
+            }
+        }
 
         return webView
     }
@@ -411,6 +422,7 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
         var loadedSource: ComicSource
         var progressObservation: NSKeyValueObservation?
         var loadingObservation: NSKeyValueObservation?
+        var urlObservation: NSKeyValueObservation?
 
         init(viewModel: ComicBrowserViewModel) {
             self.viewModel = viewModel
