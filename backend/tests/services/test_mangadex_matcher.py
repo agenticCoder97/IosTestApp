@@ -83,12 +83,21 @@ def patch_settings(monkeypatch):
 
 @pytest.fixture
 def patch_search(monkeypatch):
-    """Replace MangadexScraper.search with a fake that returns canned candidates."""
+    """Replace MangadexScraper.search with a fake that returns canned candidates.
+    Also stubs the EN-chapter verify call (matcher's final gate before proposing
+    a match) to report 1 EN chapter so the gate doesn't reject canned matches."""
     canned: list[dict] = []
     async def fake_search(self, *, title, content_ratings, limit=10):
         return canned
     from app.scrapers.comic.mangadex import MangadexScraper
+    from app.scrapers.comic._mangadex_http import MangadexHTTPClient
     monkeypatch.setattr(MangadexScraper, "search", fake_search)
+
+    async def fake_get_json(self, url, *, params=None, at_home=False):
+        if "/feed" in url:
+            return {"data": [], "limit": 1, "offset": 0, "total": 1}
+        raise AssertionError(f"unexpected get_json in test: {url}")
+    monkeypatch.setattr(MangadexHTTPClient, "get_json", fake_get_json)
     return canned
 
 

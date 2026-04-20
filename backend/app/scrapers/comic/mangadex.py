@@ -207,14 +207,17 @@ class MangadexScraper(BaseScraper):
     async def search(
         self, *, title: str, content_ratings: list[str], limit: int = 10,
     ) -> list[dict]:
-        """Return a flat list of {id, title, original_language, last_chapter,
-        tags, thumbnail_url} dicts."""
+        """Return a flat list of {id, title, alt_titles, original_language,
+        last_chapter, tags, thumbnail_url} dicts. Filters to manga that have
+        at least one English chapter — silently rejecting candidates we
+        couldn't read anyway."""
         body = await self._http.get_json(
             f"{_API}/manga",
             params={
                 "title": title,
                 "limit": limit,
                 "contentRating[]": content_ratings,
+                "availableTranslatedLanguage[]": ["en"],
                 "includes[]": ["cover_art"],
                 "order[relevance]": "desc",
             },
@@ -230,9 +233,18 @@ class MangadexScraper(BaseScraper):
                 last_chapter_int = int(float(attrs.get("lastChapter") or 0))
             except (TypeError, ValueError):
                 last_chapter_int = 0
+            # MangaDex altTitles is a list of single-key dicts: [{"en": "X"}, {"ko": "Y"}, ...].
+            # Flatten to a list of strings; matcher's title-sim takes max across these.
+            alt_titles: list[str] = []
+            for at in attrs.get("altTitles", []):
+                if isinstance(at, dict):
+                    for v in at.values():
+                        if v:
+                            alt_titles.append(v)
             out.append({
                 "id": entry["id"],
                 "title": _english_title(attrs.get("title", {})),
+                "alt_titles": alt_titles,
                 "original_language": attrs.get("originalLanguage"),
                 "last_chapter": last_chapter_int,
                 "tags": [

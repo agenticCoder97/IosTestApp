@@ -85,9 +85,16 @@ def _score(
     source_tags: set[str],
     source_chapter_count: int,
 ) -> float:
-    title_sim = (
-        fuzz.token_set_ratio(_normalize(source_title), _normalize(candidate["title"])) / 100.0
-    )
+    # Title sim against MAX of (main title + altTitles). Manhwa often live on
+    # MangaDex under their original-language title (e.g. "Na Honjaman Level-Up")
+    # with English in altTitles ("Solo Leveling") — without checking altTitles
+    # we'd pick a worse duplicate that happens to use English in its main title.
+    src_norm = _normalize(source_title)
+    candidates_to_check = [candidate.get("title", "")] + list(candidate.get("alt_titles", []))
+    title_sim = max(
+        (fuzz.token_set_ratio(src_norm, _normalize(t)) / 100.0)
+        for t in candidates_to_check if t
+    ) if candidates_to_check else 0.0
     lang_match = 1.0 if (
         expected_lang and candidate.get("original_language") == expected_lang
     ) else 0.0
@@ -213,13 +220,35 @@ async def find_mangadex_match(
         return None
 
     score, cand = best
+
+    # Final gate: verify the candidate ACTUALLY has English chapters today.
+    # MangaDex's availableTranslatedLanguage[] search filter uses stale metadata
+    # (set when fan translations existed but later DMCA'd). Without this check,
+    # we'd propose swaps that scrape 0 chapters — strictly worse than toongod.
+    try:
+        feed_check = await md._http.get_json(
+            f"https://api.mangadex.org/manga/{cand['id']}/feed",
+            params={"translatedLanguage[]": ["en"], "limit": 1},
+        )
+        en_chapter_count = int(feed_check.get("total", 0) or 0)
+    except Exception as e:
+        logger.warning("find_mangadex_match en-chapter verify failed | err=%s", e)
+        en_chapter_count = 0
+
+    if en_chapter_count == 0:
+        logger.info(
+            "find_mangadex_match rejected — no EN chapters | source=%s candidate=%s",
+            source, cand["id"],
+        )
+        return None
+
     # Display confidence rescaled to 0-1 in the title-only fallback so the user
     # sees a comparable percentage in the dialog.
     display_confidence = score / 0.70 if not has_source_meta else score
     display_confidence = min(1.0, display_confidence)
     logger.info(
-        "find_mangadex_match hit | source=%s candidate=%s raw=%.3f display=%.3f has_meta=%s",
-        source, cand["id"], score, display_confidence, has_source_meta,
+        "find_mangadex_match hit | source=%s candidate=%s raw=%.3f display=%.3f en_chapters=%d has_meta=%s",
+        source, cand["id"], score, display_confidence, en_chapter_count, has_source_meta,
     )
     return MangaDexMatch(
         manga_id=cand["id"],
@@ -227,6 +256,6 @@ async def find_mangadex_match(
         title=cand["title"],
         confidence=round(display_confidence, 3),
         thumbnail_url=cand.get("thumbnail_url"),
-        chapter_count=cand.get("last_chapter", 0) or 0,
+        chapter_count=en_chapter_count,
         source_chapter_count=src_chapter_count,
     )
