@@ -56,9 +56,21 @@ def _build_client() -> httpx.AsyncClient:
 
 async def fetch_story_meta(fic_url: str) -> FicHubMeta:
     """Resolve a fanfic URL through FicHub. Raises FicHubError on failure."""
-    async with _build_client() as client:
-        response = await client.get("/api/v0/epub", params={"q": fic_url})
+    response: httpx.Response | None = None
+    try:
+        async with _build_client() as client:
+            for attempt in range(2):  # original + one 5xx retry
+                response = await client.get("/api/v0/epub", params={"q": fic_url})
+                if 500 <= response.status_code < 600 and attempt == 0:
+                    logger.warning("FicHub 5xx (%d), retrying once | url=%s", response.status_code, fic_url)
+                    continue
+                break
+    except httpx.TimeoutException as e:
+        raise FicHubError(f"FicHub timed out for {fic_url}") from e
+    except httpx.HTTPError as e:
+        raise FicHubError(f"FicHub network error for {fic_url}: {e}") from e
 
+    assert response is not None  # loop always executes at least once
     if response.status_code != 200:
         raise FicHubError(f"FicHub HTTP {response.status_code} for {fic_url}")
 
