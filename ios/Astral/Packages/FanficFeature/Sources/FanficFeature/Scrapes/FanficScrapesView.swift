@@ -166,7 +166,7 @@ struct FanficScrapesView: View {
         }
         for job in missingStoryJobs {
             guard let dto: FanficResponse = try? await APIClient.shared.request(.fanficDetail(id: job.storyId)) else { continue }
-            guard dto.title != "Pending scrape..." else { continue }
+            guard dto.title != "Pending scrape..." && dto.title != "Unknown Title" else { continue }
             let fanfic = LocalFanfic(
                 id: dto.id,
                 title: dto.title,

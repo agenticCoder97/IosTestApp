@@ -58,6 +58,8 @@ class FanfictionNetScraper(BaseScraper):
 
         try:
             fh_meta = await _fichub.fetch_story_meta(url)
+            if not fh_meta.title or fh_meta.title.lower() in ("unknown title", "unknown"):
+                raise _fichub.FicHubError(f"FicHub returned invalid title for {url}: {fh_meta.title!r}")
             chapters = await _fichub.download_and_split_epub(fh_meta.epub_url)
             meta = StoryMetadata(
                 title=fh_meta.title,
