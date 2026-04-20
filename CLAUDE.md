@@ -57,6 +57,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `MANGADEX_TITLE_MATCH_THRESHOLD=0.85` — minimum confidence for the match-confirm dialog.
   - `MANGADEX_AUTO_SWITCH_SOURCE=true|false` — master toggle for the matcher.
   - OAuth2 personal-client login for the `pornographic` content rating is tracked in AST-35 (not in v1).
+- FFNet scraper (AST-29) — env vars:
+  - `FFNET_NEW_SCRAPER_DISABLED=true|false` — kill switch. Set to `true` to skip FanFicFare and serve all FFNet scrapes through FicHub (the fallback tier). Default `false`. Useful when FFF breaks on a future site change.
 
 ## SwiftData Gotchas
 

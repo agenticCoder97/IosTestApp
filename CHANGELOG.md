@@ -6,6 +6,10 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ## 2026-04-20
 
+### Backend
+
+- **AST-29** — FFNet scraper rewrite: replaced 313 lines of bespoke httpx + 403-retry + BeautifulSoup parsing with `FanFicFare` (primary) + `FicHub` (fallback). New `_fichub.py` shared client (reusable by AST-28) handles FicHub's REST + EPUB-split. New `_fanficfare_runner.py` bridges iOS-harvested cookies into FFF's session and wraps blocking calls in `asyncio.to_thread`. Kill switch `FFNET_NEW_SCRAPER_DISABLED=true` falls through to FicHub-only. Net -151 LOC; 16 unit tests + 3 live smoke tests. ([PR #TBD](https://github.com/agenticCoder97/IosTestApp/pull/TBD))
+
 ### iOS
 
 - **AST-39** — Backend unreachable on physical device: added `NSLocalNetworkUsageDescription` + `NSBonjourServices` (`_http._tcp`) to `Info.plist` so iOS shows the Local Network permission prompt and allows requests to `192.168.0.108:8000`. Without these keys iOS 14+ silently drops connections to private IPs. Simulator was unaffected (uses `localhost` loopback). ([PR #36](https://github.com/agenticCoder97/IosTestApp/pull/36))
