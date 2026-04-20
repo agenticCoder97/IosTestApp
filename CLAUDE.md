@@ -139,6 +139,10 @@ main                    ← production releases (god branch, protected)
   - `Resolves AST-123`
 - Multiple issues: one magic-word line per issue (`Fixes AST-123`, `Fixes AST-124`).
 
+### Release log
+
+- Add a brief entry to [CHANGELOG.md](CHANGELOG.md) at the repo root whenever you merge a feature/fix PR into `development`. Most recent first; the PR body has the detail, the changelog is the index.
+
 ### Device targeting (no separate branches needed)
 - **Simulator**: `#if targetEnvironment(simulator)` → `localhost:8000`
 - **Physical device (debug)**: `#else` in DEBUG → Mac's WiFi IP (`192.168.0.108:8000`)
