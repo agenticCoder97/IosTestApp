@@ -47,6 +47,15 @@ public final class LocalComic {
     /// Last time the comic metadata was synced from the backend
     public var lastSyncedAt: Date?
 
+    /// AST-30 — if this comic was added via the MangaDex matcher, the original
+    /// source key the user pasted from (e.g. "toongod"). Nil otherwise.
+    public var previousSource: String?
+    /// AST-30 — original source URL before the swap, kept for debugging /
+    /// re-scrape from the original if MangaDex coverage is incomplete.
+    public var previousSourceURL: String?
+    /// AST-30 — matcher confidence score that triggered the swap, e.g. 0.91.
+    public var matchConfidence: Double?
+
     @Relationship(deleteRule: .cascade, inverse: \LocalComicChapter.comic)
     public var chapters: [LocalComicChapter]?
 
