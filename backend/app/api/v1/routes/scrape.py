@@ -37,6 +37,12 @@ async def initiate_comic_scrape(body: ScrapeRequest, db: AsyncSession = Depends(
         and not body_with_type.skip_match
         and not settings.mangadex_disabled
     ):
+        # Prime the cookie cache BEFORE the matcher's source-meta fetch — without
+        # this, the source scraper reads stale Redis cookies and gets 403'd by
+        # Cloudflare. iOS just harvested fresh cookies in the request body.
+        await scrape_service.store_cookies(
+            body_with_type.source_key, body_with_type.cookies, body_with_type.user_agent,
+        )
         match = await find_mangadex_match(
             source=body_with_type.source_key,
             source_url=body_with_type.url,
