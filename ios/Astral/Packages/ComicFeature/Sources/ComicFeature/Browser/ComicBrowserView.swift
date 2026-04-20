@@ -156,6 +156,7 @@ final class ComicBrowserViewModel {
         case .nhentai: return ["nhentai.net", "nhentai.to"]
         case .toongod: return ["toongod.org", "toongod.com"]
         case .hentai20: return ["hentai20.io"]
+        case .mangadex: return ["mangadex.org"]
         }
     }
 
@@ -177,6 +178,7 @@ final class ComicBrowserViewModel {
         case .nhentai: return URL(string: "https://nhentai.net")!
         case .toongod: return URL(string: "https://www.toongod.org")!
         case .hentai20: return URL(string: "https://hentai20.io")!
+        case .mangadex: return URL(string: "https://mangadex.org")!
         }
     }
 
@@ -252,6 +254,8 @@ final class ComicBrowserViewModel {
             canScrape = path.contains("/manga/") || path.contains("/webtoon/")
         case .hentai20:
             canScrape = path.contains("/manga/")
+        case .mangadex:
+            canScrape = path.contains("/title/")
         }
     }
 
@@ -266,6 +270,7 @@ final class ComicBrowserViewModel {
         case .nhentai: homeURL = URL(string: "https://nhentai.net")!
         case .toongod: homeURL = URL(string: "https://www.toongod.org")!
         case .hentai20: homeURL = URL(string: "https://hentai20.io")!
+        case .mangadex: homeURL = URL(string: "https://mangadex.org")!
         }
         webView?.load(URLRequest(url: homeURL))
         addressBarText = homeURL.absoluteString
