@@ -68,6 +68,25 @@ struct RootView: View {
     }
 }
 
+/// Drift-target fractions used by `runPhase1()` and `runPhase2()` to position
+/// the gold/blue orbs relative to the screen's halfW/halfH. Extracted from
+/// inline literals in those functions (AST-27). Phase 3's terminal state
+/// lives in `LandingTerminalState` above. Pure rename — no math change.
+private enum PhaseGeometry {
+    /// Phase 1 — orbs drift from corners while still small. Asymmetric per the
+    /// existing animation: gold pulls slightly farther horizontally, blue
+    /// slightly farther vertically.
+    static let phase1GoldHFraction: CGFloat = 0.45
+    static let phase1GoldVFraction: CGFloat = 0.5
+    static let phase1BlueHFraction: CGFloat = 0.4
+    static let phase1BlueVFraction: CGFloat = 0.45
+
+    /// Phase 2 — symmetric. Widened from 0.25 to fix orb overlap (AST-2).
+    /// Centers stay ≥148pt apart on a 390pt screen, clearing 140pt orbs.
+    static let phase2HFraction: CGFloat = 0.38
+    static let phase2VFraction: CGFloat = 0.2
+}
+
 // MARK: - Morph Landing View
 
 private struct MorphLandingView: View {
@@ -410,8 +429,14 @@ private struct MorphLandingView: View {
         // Driver — longest (0.5 + 1.2 = 1.7s). Carries completion.
         withAnimation(.easeInOut(duration: 1.2).delay(0.5),
                       completionCriteria: .logicallyComplete) {
-            goldOffset = CGSize(width: -(halfW * 0.45), height: -(halfH * 0.5))
-            blueOffset = CGSize(width: halfW * 0.4, height: halfH * 0.45)
+            goldOffset = CGSize(
+                width: -(halfW * PhaseGeometry.phase1GoldHFraction),
+                height: -(halfH * PhaseGeometry.phase1GoldVFraction),
+            )
+            blueOffset = CGSize(
+                width: halfW * PhaseGeometry.phase1BlueHFraction,
+                height: halfH * PhaseGeometry.phase1BlueVFraction,
+            )
             goldRotation = -18
             blueRotation = 12
         } completion: {
@@ -451,8 +476,14 @@ private struct MorphLandingView: View {
         // Driver — longest (1.5s). Chains into Phase 3.
         withAnimation(.easeInOut(duration: 1.5),
                       completionCriteria: .logicallyComplete) {
-            goldOffset = CGSize(width: -(halfW * 0.38), height: -(halfH * 0.2))
-            blueOffset = CGSize(width: halfW * 0.38, height: halfH * 0.2)
+            goldOffset = CGSize(
+                width: -(halfW * PhaseGeometry.phase2HFraction),
+                height: -(halfH * PhaseGeometry.phase2VFraction),
+            )
+            blueOffset = CGSize(
+                width: halfW * PhaseGeometry.phase2HFraction,
+                height: halfH * PhaseGeometry.phase2VFraction,
+            )
             goldRotation = -8
             blueRotation = 6
         } completion: {
