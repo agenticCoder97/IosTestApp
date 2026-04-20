@@ -15,8 +15,8 @@ def _mock_redis_and_arq():
     mock_arq.enqueue_job = AsyncMock()
 
     patches = [
-        patch("app.services.scrape_service.aioredis.from_url", return_value=mock_redis),
-        patch("app.services.scrape_service.ArqRedis", return_value=mock_arq),
+        patch("app.services.scrape_service.get_cache_redis", return_value=mock_redis),
+        patch("app.services.scrape_service.get_arq", return_value=mock_arq),
     ]
     return patches
 
@@ -27,13 +27,13 @@ def _mock_redis_and_arq():
 
 @pytest.mark.asyncio
 async def test_initiate_comic_scrape(client):
-    with patch("app.services.scrape_service.aioredis.from_url") as mock_redis_fn:
+    with patch("app.services.scrape_service.get_cache_redis") as mock_redis_fn:
         mock_redis_conn = AsyncMock()
         mock_redis_conn.set = AsyncMock()
         mock_redis_conn.aclose = AsyncMock()
         mock_redis_fn.return_value = mock_redis_conn
 
-        with patch("app.services.scrape_service.ArqRedis") as mock_arq_cls:
+        with patch("app.services.scrape_service.get_arq") as mock_arq_cls:
             mock_arq = AsyncMock()
             mock_arq.enqueue_job = AsyncMock()
             mock_arq.aclose = AsyncMock()
@@ -59,13 +59,13 @@ async def test_initiate_comic_scrape(client):
 
 @pytest.mark.asyncio
 async def test_initiate_fanfic_scrape(client):
-    with patch("app.services.scrape_service.aioredis.from_url") as mock_redis_fn:
+    with patch("app.services.scrape_service.get_cache_redis") as mock_redis_fn:
         mock_redis_conn = AsyncMock()
         mock_redis_conn.set = AsyncMock()
         mock_redis_conn.aclose = AsyncMock()
         mock_redis_fn.return_value = mock_redis_conn
 
-        with patch("app.services.scrape_service.ArqRedis") as mock_arq_cls:
+        with patch("app.services.scrape_service.get_arq") as mock_arq_cls:
             mock_arq = AsyncMock()
             mock_arq.enqueue_job = AsyncMock()
             mock_arq.aclose = AsyncMock()
@@ -95,13 +95,13 @@ async def test_initiate_scrape_reuses_existing_story(client, db_session):
     db_session.add(existing_comic)
     await db_session.commit()
 
-    with patch("app.services.scrape_service.aioredis.from_url") as mock_redis_fn:
+    with patch("app.services.scrape_service.get_cache_redis") as mock_redis_fn:
         mock_redis_conn = AsyncMock()
         mock_redis_conn.set = AsyncMock()
         mock_redis_conn.aclose = AsyncMock()
         mock_redis_fn.return_value = mock_redis_conn
 
-        with patch("app.services.scrape_service.ArqRedis") as mock_arq_cls:
+        with patch("app.services.scrape_service.get_arq") as mock_arq_cls:
             mock_arq = AsyncMock()
             mock_arq.enqueue_job = AsyncMock()
             mock_arq.aclose = AsyncMock()
@@ -199,12 +199,12 @@ async def test_retry_scrape_job(client, db_session):
     db_session.add(job)
     await db_session.commit()
 
-    with patch("app.services.scrape_service.aioredis.from_url") as mock_redis_fn:
+    with patch("app.services.scrape_service.get_cache_redis") as mock_redis_fn:
         mock_redis_conn = AsyncMock()
         mock_redis_conn.aclose = AsyncMock()
         mock_redis_fn.return_value = mock_redis_conn
 
-        with patch("app.services.scrape_service.ArqRedis") as mock_arq_cls:
+        with patch("app.services.scrape_service.get_arq") as mock_arq_cls:
             mock_arq = AsyncMock()
             mock_arq.enqueue_job = AsyncMock()
             mock_arq.aclose = AsyncMock()
@@ -236,12 +236,12 @@ async def test_delta_update_comic(client, db_session):
     db_session.add(comic)
     await db_session.commit()
 
-    with patch("app.services.scrape_service.aioredis.from_url") as mock_redis_fn:
+    with patch("app.services.scrape_service.get_cache_redis") as mock_redis_fn:
         mock_redis_conn = AsyncMock()
         mock_redis_conn.aclose = AsyncMock()
         mock_redis_fn.return_value = mock_redis_conn
 
-        with patch("app.services.scrape_service.ArqRedis") as mock_arq_cls:
+        with patch("app.services.scrape_service.get_arq") as mock_arq_cls:
             mock_arq = AsyncMock()
             mock_arq.enqueue_job = AsyncMock()
             mock_arq.aclose = AsyncMock()
@@ -262,12 +262,12 @@ async def test_delta_update_fanfic(client, db_session):
     db_session.add(fanfic)
     await db_session.commit()
 
-    with patch("app.services.scrape_service.aioredis.from_url") as mock_redis_fn:
+    with patch("app.services.scrape_service.get_cache_redis") as mock_redis_fn:
         mock_redis_conn = AsyncMock()
         mock_redis_conn.aclose = AsyncMock()
         mock_redis_fn.return_value = mock_redis_conn
 
-        with patch("app.services.scrape_service.ArqRedis") as mock_arq_cls:
+        with patch("app.services.scrape_service.get_arq") as mock_arq_cls:
             mock_arq = AsyncMock()
             mock_arq.enqueue_job = AsyncMock()
             mock_arq.aclose = AsyncMock()
@@ -283,7 +283,7 @@ async def test_delta_update_fanfic(client, db_session):
 
 @pytest.mark.asyncio
 async def test_delta_update_unknown_story_returns_404(client):
-    with patch("app.services.scrape_service.aioredis.from_url"):
-        with patch("app.services.scrape_service.ArqRedis"):
+    with patch("app.services.scrape_service.get_cache_redis"):
+        with patch("app.services.scrape_service.get_arq"):
             response = await client.post(f"/scrape/{uuid.uuid4()}/update")
     assert response.status_code == 404

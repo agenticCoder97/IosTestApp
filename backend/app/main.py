@@ -9,6 +9,7 @@ from app.core.logging_config import configure_logging
 from app.db.database import engine, Base
 from app.models import *  # noqa: F401, F403 — import all models so Base.metadata is populated
 from app.api.v1.routes import comics, fanfic, scrape, authors, progress, health, stats, fanfic_thumbnails
+from app.cache.redis_pool import init_pools, close_pools
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -22,8 +23,10 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables ensured")
+    await init_pools()
     yield
     logger.info("Astral API shutting down")
+    await close_pools()
     await engine.dispose()
     logger.info("Database engine disposed")
 

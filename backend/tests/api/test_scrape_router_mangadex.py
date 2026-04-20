@@ -34,8 +34,8 @@ def _mock_redis_and_arq():
     mock_arq.enqueue_job = AsyncMock()
     mock_arq.aclose = AsyncMock()
     return [
-        patch("app.services.scrape_service.aioredis.from_url", mock_from_url),
-        patch("arq.connections.ArqRedis", return_value=mock_arq),
+        patch("app.services.scrape_service.get_cache_redis", mock_from_url),
+        patch("app.services.scrape_service.get_arq", return_value=mock_arq),
     ]
 
 

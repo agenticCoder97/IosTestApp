@@ -2,33 +2,22 @@
 
 Every operation is wrapped in try/except — if Redis is down, the caller
 gets None (cache miss) and the app falls through to Postgres as usual.
+
+The underlying connection is the process-wide singleton from
+``app.cache.redis_pool`` — never opens its own pool.
 """
 import logging
 from typing import Optional
-import redis.asyncio as aioredis
-from app.core.config import settings
+
+from app.cache.redis_pool import get_cache_redis
 
 logger = logging.getLogger(__name__)
-
-_pool: Optional[aioredis.Redis] = None
-
-
-async def _get_redis() -> aioredis.Redis:
-    global _pool
-    if _pool is None:
-        _pool = await aioredis.from_url(
-            settings.redis_url,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-    return _pool
 
 
 async def get(key: str) -> Optional[str]:
     """Return cached value or None on miss/error."""
     try:
-        r = await _get_redis()
+        r = get_cache_redis()
         return await r.get(key)
     except Exception as e:
         logger.debug("cache get failed | key=%s error=%s", key, e)
@@ -38,7 +27,7 @@ async def get(key: str) -> Optional[str]:
 async def set(key: str, value: str, ttl: int = 300) -> None:
     """Set a cached value with TTL in seconds. Fire-and-forget."""
     try:
-        r = await _get_redis()
+        r = get_cache_redis()
         await r.set(key, value, ex=ttl)
     except Exception as e:
         logger.debug("cache set failed | key=%s error=%s", key, e)
@@ -49,7 +38,7 @@ async def delete(*keys: str) -> None:
     if not keys:
         return
     try:
-        r = await _get_redis()
+        r = get_cache_redis()
         await r.delete(*keys)
     except Exception as e:
         logger.debug("cache delete failed | keys=%s error=%s", keys, e)
@@ -58,7 +47,7 @@ async def delete(*keys: str) -> None:
 async def delete_pattern(pattern: str) -> None:
     """Delete all keys matching a glob pattern (e.g. 'comics:*'). Fire-and-forget."""
     try:
-        r = await _get_redis()
+        r = get_cache_redis()
         cursor = 0
         while True:
             cursor, keys = await r.scan(cursor=cursor, match=pattern, count=100)
