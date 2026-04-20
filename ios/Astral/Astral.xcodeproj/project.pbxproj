@@ -9,32 +9,71 @@
 /* Begin PBXBuildFile section */
 		0717D40BDD17F1207A7FEC9F /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = AE83D6AFC37B1ED8884559BF /* Core */; };
 		0872CC5F985B0B63D745E28C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3B70F80A9958DB60E0CC1ADD /* Assets.xcassets */; };
+		188CB73BE86E4BB6CF581CB9 /* BaseTestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D2EA498C68C0ADB95E55D9 /* BaseTestCase.swift */; };
 		1C53583CAD489ECD10851901 /* FanficFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 13B6F97E08792FF3BDE19FDD /* FanficFeature */; };
 		1D3BD5534AFDE8062DA22BF3 /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F1FB3B022D3DF01BA116DF /* TabBarView.swift */; };
 		20FC55E6BDBDE7264D62E402 /* OpenSans-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 360FB630357D9A69C8036FEB /* OpenSans-Regular.ttf */; };
 		2452D9A496582966C7DE09DA /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E1BFB0DBB90882EAF9AF59 /* RootView.swift */; };
 		26FF3C55A6880040D67FAD76 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 868B8DE2AAD42BE1F729820E /* AppState.swift */; };
 		33315E18654B8FF56D4E3A6E /* ComicFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 6D9749317CC8233110F45F47 /* ComicFeature */; };
+		3C29F82A1CDD5E08CA0A0AE6 /* NavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05B1DF98688D60271CD07DC2 /* NavigationTests.swift */; };
+		3CB455225BF8C9AF80289440 /* ComicLibraryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86BC07974FFBBA68DCFF118B /* ComicLibraryScreen.swift */; };
+		43DE652EF78AADBB6CA1D865 /* ComicReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECEDF7679173DB687147CC2 /* ComicReaderScreen.swift */; };
 		45FED79846E5A5DF276F19B6 /* OpenSans-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F66676BDF50527DA5AF921EE /* OpenSans-Bold.ttf */; };
+		56346491A41AF8CA209382EF /* XCUIElement+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3182A02E1B20D874EA2108DD /* XCUIElement+Helpers.swift */; };
+		6D7F4C967A0CE9BF967C5435 /* SidebarScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F15D0041CEC0A989E42C6E5 /* SidebarScreen.swift */; };
 		74BF227C092A8D97EDB25439 /* AstralApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4925D1B665DC328FF0C616FB /* AstralApp.swift */; };
+		75319CC0230909F7F13431B2 /* LaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB26BC1CEC7E1A06EB558E62 /* LaunchTests.swift */; };
+		775AD685B7F5397232E91D22 /* LandingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFE686D75A1802B88C9CF274 /* LandingScreen.swift */; };
+		838B1A7AA3BDC4262658A739 /* FanficLibraryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A48CD87A8882390C8FE6453B /* FanficLibraryScreen.swift */; };
 		A1CFECAF33631BA95950D7F6 /* Networking in Frameworks */ = {isa = PBXBuildFile; productRef = 44A7F09682C4C82F50384774 /* Networking */; };
+		AFAEF1AB9BB7910D0CA855BD /* ReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA804E8499D683F08FB41EA /* ReaderTests.swift */; };
+		C17F732A78D1D12121773AB0 /* FanficReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E3A14C9108CE5AA0A2ED6DF /* FanficReaderScreen.swift */; };
+		C1830F56320FA40D93D2A111 /* ComicFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0C8C1134223389ECCCBC27 /* ComicFlowTests.swift */; };
+		CBC9691F126F55476C19D347 /* FanficFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314DF25DE88BCEFBBD46A1F7 /* FanficFlowTests.swift */; };
 		F29A2C3FBD45843DE4934DA4 /* DesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = FB412116496700BFAB654B8B /* DesignSystem */; };
+		F54C547AC5E61E3683F88797 /* StoryDetailScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4400B756F8D7CC1AA3660088 /* StoryDetailScreen.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		D61B93B1C837FBBA604A028C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AC0D1982AAF84754F635B79D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9194C73EF0A1946FB57A8273;
+			remoteInfo = Astral;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		360FB630357D9A69C8036FEB /* OpenSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OpenSans-Regular.ttf"; sourceTree = "<group>"; };
+		05B1DF98688D60271CD07DC2 /* NavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationTests.swift; sourceTree = "<group>"; };
+		314DF25DE88BCEFBBD46A1F7 /* FanficFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanficFlowTests.swift; sourceTree = "<group>"; };
+		3182A02E1B20D874EA2108DD /* XCUIElement+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XCUIElement+Helpers.swift"; sourceTree = "<group>"; };
+		360FB630357D9A69C8036FEB /* OpenSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "OpenSans-Regular.ttf"; sourceTree = "<group>"; };
 		3B70F80A9958DB60E0CC1ADD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4400B756F8D7CC1AA3660088 /* StoryDetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryDetailScreen.swift; sourceTree = "<group>"; };
+		48D2EA498C68C0ADB95E55D9 /* BaseTestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseTestCase.swift; sourceTree = "<group>"; };
 		4925D1B665DC328FF0C616FB /* AstralApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstralApp.swift; sourceTree = "<group>"; };
 		49F1FB3B022D3DF01BA116DF /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
+		5E3A14C9108CE5AA0A2ED6DF /* FanficReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanficReaderScreen.swift; sourceTree = "<group>"; };
 		6DB180592EF785D58D54D45E /* FanficFeature */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FanficFeature; path = Packages/FanficFeature; sourceTree = SOURCE_ROOT; };
+		6F15D0041CEC0A989E42C6E5 /* SidebarScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarScreen.swift; sourceTree = "<group>"; };
+		7BA804E8499D683F08FB41EA /* ReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTests.swift; sourceTree = "<group>"; };
 		868B8DE2AAD42BE1F729820E /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		86BC07974FFBBA68DCFF118B /* ComicLibraryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicLibraryScreen.swift; sourceTree = "<group>"; };
 		8A161ECF4EB1460F88D172C3 /* ComicFeature */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ComicFeature; path = Packages/ComicFeature; sourceTree = SOURCE_ROOT; };
+		8E0C8C1134223389ECCCBC27 /* ComicFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicFlowTests.swift; sourceTree = "<group>"; };
+		A0E9550C943D7193A4A6FFC1 /* AstralUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AstralUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1E1BFB0DBB90882EAF9AF59 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		A48CD87A8882390C8FE6453B /* FanficLibraryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanficLibraryScreen.swift; sourceTree = "<group>"; };
 		A57BD5599808F2BDABDAC55B /* DesignSystem */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignSystem; path = Packages/DesignSystem; sourceTree = SOURCE_ROOT; };
-		B302B201A103DA8D4B1475D9 /* Astral.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Astral.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB26BC1CEC7E1A06EB558E62 /* LaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchTests.swift; sourceTree = "<group>"; };
+		B302B201A103DA8D4B1475D9 /* Astral.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Astral.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D20E1B3D30BEF623E81D0CDF /* Core */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Core; path = Packages/Core; sourceTree = SOURCE_ROOT; };
-		F66676BDF50527DA5AF921EE /* OpenSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OpenSans-Bold.ttf"; sourceTree = "<group>"; };
+		F66676BDF50527DA5AF921EE /* OpenSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "OpenSans-Bold.ttf"; sourceTree = "<group>"; };
 		F9BCC98FD654510C722BD4D0 /* Networking */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Networking; path = Packages/Networking; sourceTree = SOURCE_ROOT; };
+		FECEDF7679173DB687147CC2 /* ComicReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicReaderScreen.swift; sourceTree = "<group>"; };
+		FFE686D75A1802B88C9CF274 /* LandingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingScreen.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +92,43 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		13D97FF2D428FB1E8EFFA935 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				8E0C8C1134223389ECCCBC27 /* ComicFlowTests.swift */,
+				314DF25DE88BCEFBBD46A1F7 /* FanficFlowTests.swift */,
+				AB26BC1CEC7E1A06EB558E62 /* LaunchTests.swift */,
+				05B1DF98688D60271CD07DC2 /* NavigationTests.swift */,
+				7BA804E8499D683F08FB41EA /* ReaderTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		1BA6D6BB3B1F5AED29E5B366 /* AstralUITests */ = {
+			isa = PBXGroup;
+			children = (
+				9C8066AF89A06AC3415225B3 /* Helpers */,
+				80A6C63FA226CB2FBBCDE80E /* Infrastructure */,
+				2E0206964386BDD9D4533018 /* Screens */,
+				13D97FF2D428FB1E8EFFA935 /* Tests */,
+			);
+			path = AstralUITests;
+			sourceTree = "<group>";
+		};
+		2E0206964386BDD9D4533018 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				86BC07974FFBBA68DCFF118B /* ComicLibraryScreen.swift */,
+				FECEDF7679173DB687147CC2 /* ComicReaderScreen.swift */,
+				A48CD87A8882390C8FE6453B /* FanficLibraryScreen.swift */,
+				5E3A14C9108CE5AA0A2ED6DF /* FanficReaderScreen.swift */,
+				FFE686D75A1802B88C9CF274 /* LandingScreen.swift */,
+				6F15D0041CEC0A989E42C6E5 /* SidebarScreen.swift */,
+				4400B756F8D7CC1AA3660088 /* StoryDetailScreen.swift */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
 		43E90BFB9EAEDCB1991E18D8 /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -81,6 +157,14 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		80A6C63FA226CB2FBBCDE80E /* Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				48D2EA498C68C0ADB95E55D9 /* BaseTestCase.swift */,
+			);
+			path = Infrastructure;
+			sourceTree = "<group>";
+		};
 		82C015C0FEE3B85F9EEB6FBE /* Packages */ = {
 			isa = PBXGroup;
 			children = (
@@ -97,14 +181,24 @@
 			isa = PBXGroup;
 			children = (
 				B302B201A103DA8D4B1475D9 /* Astral.app */,
+				A0E9550C943D7193A4A6FFC1 /* AstralUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		9C8066AF89A06AC3415225B3 /* Helpers */ = {
+			isa = PBXGroup;
+			children = (
+				3182A02E1B20D874EA2108DD /* XCUIElement+Helpers.swift */,
+			);
+			path = Helpers;
 			sourceTree = "<group>";
 		};
 		B0FCF12705126E864BB693E3 = {
 			isa = PBXGroup;
 			children = (
 				43E90BFB9EAEDCB1991E18D8 /* App */,
+				1BA6D6BB3B1F5AED29E5B366 /* AstralUITests */,
 				82C015C0FEE3B85F9EEB6FBE /* Packages */,
 				4F387A64F5EF69ACF2744C76 /* Resources */,
 				4925D1B665DC328FF0C616FB /* AstralApp.swift */,
@@ -115,6 +209,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1BCA240FD425364C8285EDC0 /* AstralUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2BEBEDEDD946B4EF43CC816A /* Build configuration list for PBXNativeTarget "AstralUITests" */;
+			buildPhases = (
+				4643CDEF047BE50FA0FC3512 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				002801FD2C9B01289358E7C2 /* PBXTargetDependency */,
+			);
+			name = AstralUITests;
+			packageProductDependencies = (
+			);
+			productName = AstralUITests;
+			productReference = A0E9550C943D7193A4A6FFC1 /* AstralUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		9194C73EF0A1946FB57A8273 /* Astral */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FB1A37F08E5633A2044D0606 /* Build configuration list for PBXNativeTarget "Astral" */;
@@ -148,7 +260,13 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					1BCA240FD425364C8285EDC0 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+						TestTargetID = 9194C73EF0A1946FB57A8273;
+					};
 					9194C73EF0A1946FB57A8273 = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -175,6 +293,7 @@
 			projectRoot = "";
 			targets = (
 				9194C73EF0A1946FB57A8273 /* Astral */,
+				1BCA240FD425364C8285EDC0 /* AstralUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -193,6 +312,27 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4643CDEF047BE50FA0FC3512 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				188CB73BE86E4BB6CF581CB9 /* BaseTestCase.swift in Sources */,
+				C1830F56320FA40D93D2A111 /* ComicFlowTests.swift in Sources */,
+				3CB455225BF8C9AF80289440 /* ComicLibraryScreen.swift in Sources */,
+				43DE652EF78AADBB6CA1D865 /* ComicReaderScreen.swift in Sources */,
+				CBC9691F126F55476C19D347 /* FanficFlowTests.swift in Sources */,
+				838B1A7AA3BDC4262658A739 /* FanficLibraryScreen.swift in Sources */,
+				C17F732A78D1D12121773AB0 /* FanficReaderScreen.swift in Sources */,
+				775AD685B7F5397232E91D22 /* LandingScreen.swift in Sources */,
+				75319CC0230909F7F13431B2 /* LaunchTests.swift in Sources */,
+				3C29F82A1CDD5E08CA0A0AE6 /* NavigationTests.swift in Sources */,
+				AFAEF1AB9BB7910D0CA855BD /* ReaderTests.swift in Sources */,
+				6D7F4C967A0CE9BF967C5435 /* SidebarScreen.swift in Sources */,
+				F54C547AC5E61E3683F88797 /* StoryDetailScreen.swift in Sources */,
+				56346491A41AF8CA209382EF /* XCUIElement+Helpers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		911565AC84BD3189BD9251CF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -206,7 +346,33 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		002801FD2C9B01289358E7C2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9194C73EF0A1946FB57A8273 /* Astral */;
+			targetProxy = D61B93B1C837FBBA604A028C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		47D5A296FD28B9ECD1ADF023 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.astral.AstralUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Astral;
+			};
+			name = Debug;
+		};
 		57EF4CF5B3ECD506BD292550 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -278,7 +444,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9H4RA8RRJ8;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -299,7 +464,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9H4RA8RRJ8;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.2;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -372,9 +536,36 @@
 			};
 			name = Release;
 		};
+		DC25267D8A15E82A90B73B7A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.astral.AstralUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Astral;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		2BEBEDEDD946B4EF43CC816A /* Build configuration list for PBXNativeTarget "AstralUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				47D5A296FD28B9ECD1ADF023 /* Debug */,
+				DC25267D8A15E82A90B73B7A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		DC1FAF9D28ED404237ADC96A /* Build configuration list for PBXProject "Astral" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
