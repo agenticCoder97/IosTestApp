@@ -16,6 +16,7 @@ from app.cache import redis_cache
 from app.scrapers.comic.nhentai import NhentaiScraper
 from app.scrapers.comic.toongod import ToongodScraper
 from app.scrapers.comic.hentai20 import Hentai20Scraper
+from app.scrapers.comic.mangadex import MangadexScraper  # AST-30
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ SCRAPER_REGISTRY = {
     "nhentai": NhentaiScraper,
     "toongod": ToongodScraper,
     "hentai20": Hentai20Scraper,
+    "mangadex": MangadexScraper,
 }
 
 
