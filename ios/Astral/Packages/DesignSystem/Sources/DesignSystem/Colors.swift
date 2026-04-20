@@ -19,6 +19,13 @@ public enum AstralColors {
     // MARK: - Accent
     public static let gold = Color(hex: 0xC9A84C)
 
+    // MARK: - Blue Accent (fanfic theme)
+    public static let blue = Color(hex: 0x5C9DFF)
+
+    // MARK: - Gold Scale (icon gradient + logo fill)
+    public static let goldLight = Color(hex: 0xE8C96A)
+    public static let goldDark  = Color(hex: 0x8A6A28)
+
     // MARK: - Reader Backgrounds
     public static let readerDark = Color(hex: 0x0A0A0B)
     public static let readerSepia = Color(hex: 0x2C1810)
