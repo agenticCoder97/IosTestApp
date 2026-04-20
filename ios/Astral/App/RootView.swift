@@ -227,6 +227,9 @@ private struct MorphLandingView: View {
             runAnimation(in: size)
         }
         .onDisappear {
+            // Rotate token so any in-flight completion closures from the
+            // previous animation chain bail out. withAnimation writes are
+            // already committed; this only guards runPhaseN() chain re-entry.
             animationToken = UUID()
         }
         } // GeometryReader
@@ -509,7 +512,10 @@ private struct MorphLandingView: View {
             titleBlur = LandingTerminalState.titleBlur
         }
 
-        // Driver — morph spring. Carries completion into Phase 4.
+        // DRIVER: shortest of this phase's three withAnimations. Title spring
+        // (~0.8s) intentionally overlaps into Phase 4's label fade; this makes
+        // the sequence feel tighter. Do not swap drivers without updating this
+        // comment. Chains completion into Phase 4.
         withAnimation(.bouncy(duration: 0.5, extraBounce: 0.15),
                       completionCriteria: .logicallyComplete) {
             goldSize = LandingTerminalState.orbSize
