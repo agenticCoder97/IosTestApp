@@ -107,7 +107,8 @@ async def fanfic_scrape_task(ctx, job_id: str):
             result = await db.execute(select(Fanfic).where(Fanfic.id == job.story_id))
             fanfic = result.scalar_one_or_none()
             if fanfic:
-                fanfic.title = metadata.title
+                if metadata.title and metadata.title.lower() not in ("unknown title", "unknown"):
+                    fanfic.title = metadata.title
                 if metadata.description is not None:
                     fanfic.summary = metadata.description
                 if metadata.language is not None:
