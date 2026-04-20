@@ -94,3 +94,47 @@ async def test_fetch_via_fanficfare_wraps_library_errors(monkeypatch):
         await _fanficfare_runner.fetch_via_fanficfare(
             "https://www.fanfiction.net/s/123", cookies=[], user_agent="iOS/1",
         )
+
+
+def test_fetch_sync_returns_plain_text_chapters(monkeypatch):
+    """AST-41: _fetch_sync returns ChapterText.html as plain-text
+    paragraphs (helper applied), regardless of the HTML fragment FFF's
+    adapter.getChapterText returns."""
+    from app.scrapers.fanfic import _fanficfare_runner
+
+    class _FakeStory:
+        def getMetadata(self, key, default=None):
+            return {
+                "title": "Test Story",
+                "author": "A",
+                "storyId": "1",
+                "numChapters": 1,
+                "numWords": 10,
+                "status": "Complete",
+            }.get(key, default)
+
+        def getChapters(self):
+            return [["chap-url-1", "Chapter 1"]]
+
+    class _FakeAdapter:
+        story = _FakeStory()
+
+        def getStoryMetadataOnly(self):
+            return None
+
+        def getChapterText(self, url):
+            return "<h2>Chapter 1</h2><div><p>Hello.</p><p>World.</p></div>"
+
+    monkeypatch.setattr(
+        _fanficfare_runner, "_get_adapter",
+        lambda url, cookies, ua: _FakeAdapter(),
+    )
+
+    meta, chapters = _fanficfare_runner._fetch_sync(
+        "https://m.fanfiction.net/s/1/1/Story", [], "ua",
+    )
+    assert meta.title == "Test Story"
+    assert len(chapters) == 1
+    assert chapters[0].html == "Hello.\n\nWorld."
+    assert "<p>" not in chapters[0].html
+    assert "<h2>" not in chapters[0].html
