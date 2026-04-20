@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## 2026-04-20
+
+### iOS
+
+- **AST-39** — Backend unreachable on physical device: added `NSLocalNetworkUsageDescription` + `NSBonjourServices` (`_http._tcp`) to `Info.plist` so iOS shows the Local Network permission prompt and allows requests to `192.168.0.108:8000`. Without these keys iOS 14+ silently drops connections to private IPs. Simulator was unaffected (uses `localhost` loopback). ([PR #36](https://github.com/agenticCoder97/IosTestApp/pull/36))
+
 ## 2026-04-19
 
 ### iOS
