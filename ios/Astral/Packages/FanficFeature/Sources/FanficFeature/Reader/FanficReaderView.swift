@@ -76,7 +76,7 @@ struct FanficReaderView: View {
                             ScrollView {
                                 VStack(alignment: .leading, spacing: paragraphSpacing) {
                                     // Chapter header
-                                    VStack(alignment: .leading, spacing: 6) {
+                                    VStack(alignment: .leading, spacing: 4) {
                                         Text("Chapter \(currentChapter.chapterNumber, specifier: "%.0f")")
                                             .font(fontFamily.font(size: fontSize * 0.75))
                                             .tracking(1.5)
@@ -85,20 +85,13 @@ struct FanficReaderView: View {
 
                                         if let title = currentChapter.title {
                                             Text(title)
-                                                .font(fontFamily.boldFont(size: fontSize * 1.4))
+                                                .font(fontFamily.boldFont(size: fontSize * 1.2))
                                                 .foregroundStyle(textColor)
                                         }
 
-                                        // Reading time estimate
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "clock")
-                                                .font(.system(size: fontSize * 0.65))
-                                            Text(readingTimeLabel)
-                                                .font(fontFamily.font(size: fontSize * 0.75))
-                                        }
-                                        .foregroundStyle(AstralColors.muted.opacity(0.8))
+
                                     }
-                                    .padding(.bottom, 8)
+                                    .padding(.bottom, 4)
 
                                     // Divider between header and content
                                     HStack(spacing: 8) {
@@ -148,7 +141,7 @@ struct FanficReaderView: View {
                                     chapterNavigationFooter
                                 }
                                 .padding(.horizontal, horizontalMargin)
-                                .padding(.vertical, 20)
+                                .padding(.vertical, 10)
                                 .animation(AstralAnimation.quick, value: fontSize)
                                 .animation(AstralAnimation.quick, value: lineHeight)
                                 .animation(AstralAnimation.quick, value: horizontalMargin)
@@ -339,15 +332,6 @@ struct FanficReaderView: View {
         case .sepia: Color(hex: 0xD4C5A9)
         case .paper: Color(hex: 0x2C2C2C)
         }
-    }
-
-    private var readingTimeLabel: String {
-        let wordCount = chapterContent.split(separator: " ").count
-        let minutes = max(1, wordCount / 238)
-        let wordStr = wordCount > 1000
-            ? String(format: "%.1fk words", Double(wordCount) / 1000.0)
-            : "\(wordCount) words"
-        return "\(wordStr) · \(minutes) min read"
     }
 
     private var chapterFavOverlay: some View {
