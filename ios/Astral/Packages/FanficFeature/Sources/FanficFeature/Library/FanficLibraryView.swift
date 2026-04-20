@@ -31,7 +31,7 @@ struct FanficLibraryView: View {
     }
 
     private var filteredFanfics: [LocalFanfic] {
-        var result = allFanfics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." }
+        var result = allFanfics.filter { $0.totalChapters > 0 && $0.title != "Pending scrape..." && $0.title != "Unknown Title" }
         if filterFavourites {
             result = result.filter { $0.isFavorite }
         }

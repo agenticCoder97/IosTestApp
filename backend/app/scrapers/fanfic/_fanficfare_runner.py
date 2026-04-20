@@ -112,6 +112,8 @@ def _fetch_sync(url: str, cookies: list[dict], user_agent: str
     adapter = _get_adapter(url, cookies, user_agent)
     adapter.getStoryMetadataOnly()
     meta = _to_story_metadata(adapter, url)
+    if not meta.title or meta.title.lower() in ("unknown title", "unknown"):
+        raise FanFicFareError(f"FanFicFare returned invalid title for {url}: {meta.title!r}")
 
     chapter_texts: list[ChapterText] = []
     for i, record in enumerate(adapter.story.getChapters(), start=1):
