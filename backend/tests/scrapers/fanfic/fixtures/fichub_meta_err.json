@@ -1,0 +1,9 @@
+{
+  "arg": "https:/www.fanfiction.net/s/9999999/1/Bogus",
+  "err": -1,
+  "fixits": ["did you mean ..."],
+  "msg": "unable to find fic",
+  "q": "https://www.fanfiction.net/s/9999999/1/Bogus",
+  "ret": 2,
+  "upstream": true
+}

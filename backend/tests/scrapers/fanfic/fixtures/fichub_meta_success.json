@@ -1,0 +1,16 @@
+{
+  "epub_url": "/epub/abc123XYZ/Sample-Story.epub",
+  "urlId": "abc123XYZ",
+  "meta": {
+    "title": "Sample Story",
+    "author": "Test Author",
+    "chapters": 5,
+    "status": "complete",
+    "words": 12500,
+    "description": "A short test summary.",
+    "rawExtendedMeta": {
+      "fandoms": ["Test Fandom"]
+    }
+  },
+  "err": 0
+}

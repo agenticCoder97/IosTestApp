@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     mangadex_title_match_threshold: float = 0.85
     mangadex_auto_switch_source: bool = True
 
+    # FFNet (AST-29) — kill switch flips primary scraper to FicHub-only
+    ffnet_new_scraper_disabled: bool = False
+
     @property
     def oracle_wallet_dir(self) -> Optional[Path]:
         if self.oracle_wallet_path:
