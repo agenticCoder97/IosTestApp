@@ -154,18 +154,22 @@ async def find_mangadex_match(
             e,
         )
 
-    # Build the search query. Prefer the page title from iOS WebView; fall back
-    # to the URL slug (e.g. /webtoon/solo-leveling/ → "solo leveling"), which is
-    # FAR more searchable than the URL itself.
+    # Build the search query. Prefer the URL slug (toongod/hentai20 use clean
+    # slug-as-title patterns: /webtoon/solo-leveling/ → "solo leveling").
+    # Use the iOS page title only as a last-resort fallback — aggregator pages
+    # ship SEO-noisy <title> like "Solo Leveling Manhwa in English Online Free
+    # Chapters | ToonGod" which doesn't match anything on MangaDex.
     raw_title = (source_title or "").strip()
-    if not raw_title or raw_title.startswith(("http://", "https://")):
-        slug_title = _title_from_url(source_url)
-        search_title = _normalize(slug_title) or slug_title or _normalize(source_title) or source_title
-    else:
+    slug_title = _title_from_url(source_url)
+    if slug_title:
+        search_title = _normalize(slug_title) or slug_title
+    elif raw_title and not raw_title.startswith(("http://", "https://")):
         search_title = _normalize(raw_title) or raw_title
+    else:
+        search_title = _normalize(source_url)
     logger.info(
-        "find_mangadex_match search | source=%s search_title=%r raw_title=%r",
-        source, search_title, raw_title,
+        "find_mangadex_match search | source=%s search_title=%r slug=%r raw=%r",
+        source, search_title, slug_title, raw_title,
     )
 
     md = MangadexScraper()

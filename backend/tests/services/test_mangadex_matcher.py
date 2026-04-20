@@ -118,9 +118,11 @@ async def test_find_match_returns_match_when_threshold_met(
         "tags": ["Action", "Adventure"],
         "thumbnail_url": "https://uploads.mangadex.org/covers/abc/c.jpg.512.jpg",
     })
+    # source_url's slug ("solo-leveling") is the matcher's primary search-title
+    # source — aggregator URLs use clean slug-as-title patterns.
     match = await find_mangadex_match(
         source="toongod",
-        source_url="https://toongod.org/manga/x/",
+        source_url="https://toongod.org/webtoon/solo-leveling/",
         source_title="Solo Leveling",
     )
     assert match is not None
