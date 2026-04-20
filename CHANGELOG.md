@@ -8,7 +8,7 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ### Backend
 
-- **AST-29** — FFNet scraper rewrite: replaced 313 lines of bespoke httpx + 403-retry + BeautifulSoup parsing with `FanFicFare` (primary) + `FicHub` (fallback). New `_fichub.py` shared client (reusable by AST-28) handles FicHub's REST + EPUB-split. New `_fanficfare_runner.py` bridges iOS-harvested cookies into FFF's session and wraps blocking calls in `asyncio.to_thread`. Kill switch `FFNET_NEW_SCRAPER_DISABLED=true` falls through to FicHub-only. Net -151 LOC; 16 unit tests + 3 live smoke tests. ([PR #TBD](https://github.com/agenticCoder97/IosTestApp/pull/TBD))
+- **AST-29** — FFNet scraper rewrite: replaced 313 lines of bespoke httpx + 403-retry + BeautifulSoup parsing with `FanFicFare` (primary) + `FicHub` (fallback). New `_fichub.py` shared client (reusable by AST-28) handles FicHub's REST + EPUB-split. New `_fanficfare_runner.py` bridges iOS-harvested cookies into FFF's session and wraps blocking calls in `asyncio.to_thread`. Kill switch `FFNET_NEW_SCRAPER_DISABLED=true` falls through to FicHub-only. Net -151 LOC; 16 unit tests + 3 live smoke tests. ([PR #38](https://github.com/agenticCoder97/IosTestApp/pull/38))
 
 ### iOS
 
