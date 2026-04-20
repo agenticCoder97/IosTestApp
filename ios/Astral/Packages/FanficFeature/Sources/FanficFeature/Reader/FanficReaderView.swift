@@ -85,7 +85,7 @@ struct FanficReaderView: View {
 
                                         if let title = currentChapter.title {
                                             Text(title)
-                                                .font(fontFamily.boldFont(size: fontSize * 1.4))
+                                                .font(fontFamily.boldFont(size: fontSize * 1.2))
                                                 .foregroundStyle(textColor)
                                         }
 
