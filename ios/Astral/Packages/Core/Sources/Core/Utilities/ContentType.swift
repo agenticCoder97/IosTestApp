@@ -36,6 +36,7 @@ public enum ComicSource: String, CaseIterable, Codable, Sendable {
     case nhentai
     case toongod
     case hentai20
+    case mangadex
 }
 
 public enum FanficSource: String, CaseIterable, Codable, Sendable {

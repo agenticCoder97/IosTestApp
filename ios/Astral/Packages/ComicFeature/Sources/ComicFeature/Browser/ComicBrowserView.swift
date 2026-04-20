@@ -123,6 +123,17 @@ struct ComicBrowserView: View {
                 .ignoresSafeArea(edges: .bottom)
         }
         .background(AstralColors.background)
+        .sheet(item: Binding(
+            get: { viewModel.matchProposal.map { MatchProposalIdentifiable(payload: $0) } },
+            set: { newValue in viewModel.matchProposal = newValue?.payload }
+        )) { wrapper in
+            MangaDexMatchDialog(
+                match: wrapper.payload,
+                originalSource: viewModel.pendingOriginalRequest?.sourceKey ?? "",
+                onAccept: { viewModel.acceptMatch(modelContext: modelContext) },
+                onDecline: { viewModel.declineMatch(modelContext: modelContext) }
+            )
+        }
         .overlay(alignment: .bottom) {
             if let toast = viewModel.scrapeToast {
                 ToastView(toast.message, isSuccess: toast.isSuccess)
@@ -150,12 +161,18 @@ final class ComicBrowserViewModel {
     var canGoBack = false
     var canGoForward = false
 
+    // AST-30 — MangaDex match flow
+    var matchProposal: MangaDexMatchPayload? = nil
+    var pendingOriginalRequest: ScrapeRequest? = nil
+    var pendingPageTitle: String? = nil
+
     /// Allowed domains per source — blocks ad redirects to unrelated sites.
     var allowedDomains: [String] {
         switch selectedSource {
         case .nhentai: return ["nhentai.net", "nhentai.to"]
         case .toongod: return ["toongod.org", "toongod.com"]
         case .hentai20: return ["hentai20.io"]
+        case .mangadex: return ["mangadex.org"]
         }
     }
 
@@ -177,6 +194,7 @@ final class ComicBrowserViewModel {
         case .nhentai: return URL(string: "https://nhentai.net")!
         case .toongod: return URL(string: "https://www.toongod.org")!
         case .hentai20: return URL(string: "https://hentai20.io")!
+        case .mangadex: return URL(string: "https://mangadex.org")!
         }
     }
 
@@ -194,40 +212,106 @@ final class ComicBrowserViewModel {
         )
 
         let ua = try? await webView.evaluateJavaScript("navigator.userAgent") as? String
+        let pageTitle = try? await webView.evaluateJavaScript("document.title") as? String
 
         let request = ScrapeRequest(
             url: url.absoluteString,
             sourceKey: selectedSource.rawValue,
             cookies: sourceCookies,
             userAgent: ua ?? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)",
-            contentType: "comic"
+            contentType: "comic",
+            pageTitle: pageTitle ?? nil
         )
+        pendingPageTitle = pageTitle ?? nil
 
+        return await submitAndHandle(request)
+    }
+
+    /// Submits a ScrapeRequest. On a match-proposed outcome, stores the proposal
+    /// (driving the dialog) and returns nil — the dialog's accept/decline
+    /// callbacks finish the flow via acceptMatch/declineMatch.
+    private func submitAndHandle(_ request: ScrapeRequest) async -> LocalScrapeJob? {
         do {
-            let response: ScrapeJobResponse = try await APIClient.shared.request(.initiateScrape(request))
-            let alreadyDone = response.status == "complete" || response.status == "partial"
-            showToast(ScrapeToast(message: alreadyDone ? "Already in library" : "Scrape queued", isSuccess: true))
-            return LocalScrapeJob(
-                id: response.id,
-                contentType: response.contentType,
-                storyId: response.storyId,
-                status: response.status,
-                chaptersScraped: response.chaptersScraped,
-                chaptersFailed: response.chaptersFailed,
-                totalChapters: response.totalChapters,
-                createdAt: response.createdAt,
-                completedAt: response.completedAt,
-                sourceUrl: response.sourceUrl,
-                sourceKey: response.sourceKey,
-                jobType: response.jobType,
-                errorMessage: response.errorMessage,
-                currentStep: response.currentStep,
-                lastErrorType: response.lastErrorType,
-                startedAt: response.startedAt
-            )
+            let outcome = try await APIClient.shared.submitScrape(request)
+            switch outcome {
+            case .jobCreated(let response):
+                let alreadyDone = response.status == "complete" || response.status == "partial"
+                showToast(ScrapeToast(
+                    message: alreadyDone ? "Already in library" : "Scrape queued",
+                    isSuccess: true
+                ))
+                pendingOriginalRequest = nil
+                return LocalScrapeJob(
+                    id: response.id,
+                    contentType: response.contentType,
+                    storyId: response.storyId,
+                    status: response.status,
+                    chaptersScraped: response.chaptersScraped,
+                    chaptersFailed: response.chaptersFailed,
+                    totalChapters: response.totalChapters,
+                    createdAt: response.createdAt,
+                    completedAt: response.completedAt,
+                    sourceUrl: response.sourceUrl,
+                    sourceKey: response.sourceKey,
+                    jobType: response.jobType,
+                    errorMessage: response.errorMessage,
+                    currentStep: response.currentStep,
+                    lastErrorType: response.lastErrorType,
+                    startedAt: response.startedAt
+                )
+            case .matchProposed(let match):
+                pendingOriginalRequest = request
+                matchProposal = match
+                return nil
+            }
         } catch {
             showToast(ScrapeToast(message: "Scrape failed: \(error.localizedDescription)", isSuccess: false))
             return nil
+        }
+    }
+
+    /// Called when the user taps "Use MangaDex" in the match dialog.
+    func acceptMatch(modelContext: ModelContext) {
+        guard let match = matchProposal,
+              let original = pendingOriginalRequest else { return }
+        matchProposal = nil
+        Task {
+            // Re-submit pointing at MangaDex; cookies/UA empty since we don't
+            // have MangaDex cookies on hand and the API is public.
+            let mangaRequest = ScrapeRequest(
+                url: match.mangadexUrl,
+                sourceKey: "mangadex",
+                cookies: [],
+                userAgent: original.userAgent,
+                contentType: "comic",
+                pageTitle: pendingPageTitle,
+                previousSource: original.sourceKey,
+                previousSourceUrl: original.url,
+                matchConfidence: match.confidence
+            )
+            if let job = await submitAndHandle(mangaRequest) {
+                modelContext.insert(job)
+            }
+        }
+    }
+
+    /// Called when the user taps "Keep <source>" in the match dialog.
+    func declineMatch(modelContext: ModelContext) {
+        guard let original = pendingOriginalRequest else { return }
+        matchProposal = nil
+        Task {
+            let retry = ScrapeRequest(
+                url: original.url,
+                sourceKey: original.sourceKey,
+                cookies: original.cookies,
+                userAgent: original.userAgent,
+                contentType: original.contentType,
+                pageTitle: original.pageTitle,
+                skipMatch: true
+            )
+            if let job = await submitAndHandle(retry) {
+                modelContext.insert(job)
+            }
         }
     }
 
@@ -252,6 +336,8 @@ final class ComicBrowserViewModel {
             canScrape = path.contains("/manga/") || path.contains("/webtoon/")
         case .hentai20:
             canScrape = path.contains("/manga/")
+        case .mangadex:
+            canScrape = path.contains("/title/")
         }
     }
 
@@ -266,6 +352,7 @@ final class ComicBrowserViewModel {
         case .nhentai: homeURL = URL(string: "https://nhentai.net")!
         case .toongod: homeURL = URL(string: "https://www.toongod.org")!
         case .hentai20: homeURL = URL(string: "https://hentai20.io")!
+        case .mangadex: homeURL = URL(string: "https://mangadex.org")!
         }
         webView?.load(URLRequest(url: homeURL))
         addressBarText = homeURL.absoluteString
@@ -304,6 +391,17 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
                 viewModel.isLoading = webView.isLoading
             }
         }
+        // SPA support (AST-30): MangaDex uses client-side routing, so didFinish
+        // doesn't fire on /title/ navigation. Observe webView.url directly.
+        context.coordinator.urlObservation = webView.observe(\.url) { webView, _ in
+            Task { @MainActor in
+                let url = webView.url
+                viewModel.currentURL = url
+                viewModel.addressBarText = url?.absoluteString ?? ""
+                if let url { viewModel.savedURLs[viewModel.selectedSource] = url }
+                viewModel.evaluateCanScrape(url: url)
+            }
+        }
 
         return webView
     }
@@ -324,6 +422,7 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
         var loadedSource: ComicSource
         var progressObservation: NSKeyValueObservation?
         var loadingObservation: NSKeyValueObservation?
+        var urlObservation: NSKeyValueObservation?
 
         init(viewModel: ComicBrowserViewModel) {
             self.viewModel = viewModel
@@ -441,4 +540,9 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
             return nil
         }
     }
+}
+
+private struct MatchProposalIdentifiable: Identifiable {
+    let payload: MangaDexMatchPayload
+    var id: String { payload.mangaId }
 }

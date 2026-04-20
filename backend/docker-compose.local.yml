@@ -17,6 +17,8 @@ services:
       - LOG_LEVEL=DEBUG
     volumes:
       - ./app:/app/app  # hot reload in local dev
+      - ./tests:/app/tests  # live test edits
+      - ./pytest.ini:/app/pytest.ini  # asyncio_mode=auto for tests
       - astral_media:/mnt/astral-media
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
@@ -81,6 +83,8 @@ services:
       - SCRAPE_PAGE_CONCURRENCY=8
     volumes:
       - ./app:/app/app
+      - ./tests:/app/tests  # live test edits
+      - ./pytest.ini:/app/pytest.ini  # asyncio_mode=auto for tests
       - astral_media:/mnt/astral-media
     depends_on:
       postgres:

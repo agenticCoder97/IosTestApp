@@ -27,6 +27,10 @@ class Comic(Base):
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     archive_status: Mapped[str] = mapped_column(String(20), nullable=False, default="none", server_default="none")
+    # MangaDex source-swap audit trail (AST-30)
+    previous_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    previous_source_url: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
+    match_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     chapters: Mapped[list["ComicChapter"]] = relationship("ComicChapter", back_populates="comic", lazy="select")
     comic_authors: Mapped[list["ComicAuthor"]] = relationship("ComicAuthor", back_populates="comic", lazy="select")

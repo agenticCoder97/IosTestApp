@@ -10,9 +10,51 @@ from app.services import scrape_service
 router = APIRouter(prefix="/scrape", tags=["scrape"])
 
 
-@router.post("/comic", response_model=ScrapeJobResponse, status_code=202)
+@router.post(
+    "/comic",
+    responses={
+        202: {"description": "Scrape job created OR MangaDex match proposed (distinguished by response body shape)"},
+        503: {"description": "MangaDex disabled (kill switch)"},
+    },
+)
 async def initiate_comic_scrape(body: ScrapeRequest, db: AsyncSession = Depends(get_db)):
+    from fastapi.responses import JSONResponse
+    from app.core.config import settings
+    from app.services.mangadex_matcher import find_mangadex_match
+
     body_with_type = body.model_copy(update={"content_type": "comic"})
+
+    # Kill switch: hard-stop direct MangaDex scrapes.
+    if body_with_type.source_key == "mangadex" and settings.mangadex_disabled:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "MangaDex temporarily disabled"},
+        )
+
+    # Matcher hook: only for eligible sources, only if user hasn't opted out, only if alive.
+    if (
+        body_with_type.source_key in ("toongod", "hentai20")
+        and not body_with_type.skip_match
+        and not settings.mangadex_disabled
+    ):
+        # Prime the cookie cache BEFORE the matcher's source-meta fetch — without
+        # this, the source scraper reads stale Redis cookies and gets 403'd by
+        # Cloudflare. iOS just harvested fresh cookies in the request body.
+        await scrape_service.store_cookies(
+            body_with_type.source_key, body_with_type.cookies, body_with_type.user_agent,
+        )
+        match = await find_mangadex_match(
+            source=body_with_type.source_key,
+            source_url=body_with_type.url,
+            source_title=body_with_type.page_title or body_with_type.url,
+        )
+        if match is not None:
+            return JSONResponse(
+                status_code=202,
+                content={"match": match.to_dict()},
+            )
+
+    # Normal path: create job + enqueue.
     return await scrape_service.initiate_scrape(db, body_with_type)
 
 

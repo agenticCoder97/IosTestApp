@@ -1,0 +1,259 @@
+"""
+MangaDex comic source adapter (AST-30).
+
+# MangaDex API ToS (https://api.mangadex.org/docs/):
+# - Honor takedown requests (kill-switch via MANGADEX_DISABLED env)
+# - Real User-Agent required; no Via header; TLS 1.2+
+# - POST success/failure to api.mangadex.network/report on every page fetch
+# - Astral is a private single-user app on a local device — public attribution
+#   clause does not apply, but report POSTs are still mandatory.
+"""
+import logging
+import re
+import time
+from typing import Optional
+from urllib.parse import urlparse
+
+from app.core.constants import SourceKey
+from app.scrapers.base import (
+    BaseScraper,
+    ChapterInfo,
+    PageInfo,
+    StoryMetadata,
+)
+from app.scrapers.comic._mangadex_http import MangadexHTTPClient
+
+logger = logging.getLogger(__name__)
+
+_TITLE_URL_RE = re.compile(r"/title/([0-9a-f-]+)", re.I)
+_CHAPTER_URL_RE = re.compile(r"/chapter/([0-9a-f-]+)", re.I)
+_API = "https://api.mangadex.org"
+
+
+def _extract_manga_id(url: str) -> str:
+    m = _TITLE_URL_RE.search(urlparse(url).path)
+    if not m:
+        raise ValueError(f"Cannot extract MangaDex manga id from URL: {url}")
+    return m.group(1)
+
+
+def _extract_chapter_id(url: str) -> str:
+    m = _CHAPTER_URL_RE.search(urlparse(url).path)
+    if not m:
+        raise ValueError(f"Cannot extract MangaDex chapter id from URL: {url}")
+    return m.group(1)
+
+
+def _english_title(title_obj: dict) -> str:
+    return (
+        title_obj.get("en")
+        or next(iter(title_obj.values()), "Unknown Title")
+    )
+
+
+class MangadexScraper(BaseScraper):
+    source_key = SourceKey.MANGADEX
+    content_type = "comic"
+    requires_browser = False
+    request_delay_seconds = 0.0  # rate limiter handles pacing
+    max_retries = 3
+
+    def __init__(self):
+        super().__init__()
+        self._http = MangadexHTTPClient()
+
+    async def get_story_metadata(self, url: str) -> StoryMetadata:
+        manga_id = _extract_manga_id(url)
+        body = await self._http.get_json(
+            f"{_API}/manga/{manga_id}",
+            params={"includes[]": ["cover_art", "author"]},
+        )
+        data = body["data"]
+        attrs = data["attributes"]
+        title = _english_title(attrs.get("title", {}))
+        authors: list[str] = []
+        cover_filename: Optional[str] = None
+        for rel in data.get("relationships", []):
+            rtype = rel.get("type")
+            rattrs = rel.get("attributes") or {}
+            if rtype == "author":
+                name = rattrs.get("name")
+                if name:
+                    authors.append(name)
+            elif rtype == "cover_art":
+                fn = rattrs.get("fileName")
+                if fn:
+                    cover_filename = fn
+        thumbnail_url: Optional[str] = None
+        if cover_filename:
+            thumbnail_url = (
+                f"https://uploads.mangadex.org/covers/{manga_id}/{cover_filename}.512.jpg"
+            )
+        tags = [
+            {
+                "name": _english_title(t["attributes"].get("name", {})),
+                "tag_type": t["attributes"].get("group", "tag"),
+            }
+            for t in attrs.get("tags", [])
+        ]
+        last_chapter = attrs.get("lastChapter")
+        try:
+            total_chapters = int(float(last_chapter)) if last_chapter else None
+        except (TypeError, ValueError):
+            total_chapters = None
+        return StoryMetadata(
+            title=title,
+            source_url=f"https://mangadex.org/title/{manga_id}",
+            source_key=self.source_key,
+            source_id=manga_id,
+            description=_english_title(attrs.get("description", {})) or None,
+            language=attrs.get("originalLanguage"),
+            authors=authors,
+            tags=tags,
+            thumbnail_url=thumbnail_url,
+            total_chapters=total_chapters,
+            category=attrs.get("contentRating"),
+        )
+
+    async def get_chapter_list(self, story_url: str) -> list[ChapterInfo]:
+        manga_id = _extract_manga_id(story_url)
+        chapters: list[ChapterInfo] = []
+        offset = 0
+        limit = 500
+        while True:
+            body = await self._http.get_json(
+                f"{_API}/manga/{manga_id}/feed",
+                params={
+                    "translatedLanguage[]": ["en"],
+                    "order[chapter]": "asc",
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+            page = body.get("data", [])
+            for ch in page:
+                attrs = ch.get("attributes", {})
+                # Skip chapters hosted on external readers (MangaPlus etc.).
+                if attrs.get("externalUrl"):
+                    continue
+                num_str = attrs.get("chapter")
+                try:
+                    chapter_number = float(num_str) if num_str is not None else None
+                except (TypeError, ValueError):
+                    chapter_number = None
+                if chapter_number is None:
+                    continue
+                chapters.append(ChapterInfo(
+                    chapter_number=chapter_number,
+                    title=attrs.get("title") or None,
+                    source_url=f"https://mangadex.org/chapter/{ch['id']}",
+                ))
+            total = body.get("total", 0)
+            offset += body.get("limit", limit)
+            if offset >= total:
+                break
+        return chapters
+
+    async def get_chapter_pages(self, chapter_url: str) -> list[PageInfo]:
+        chapter_id = _extract_chapter_id(chapter_url)
+        body = await self._http.get_json(
+            f"{_API}/at-home/server/{chapter_id}",
+            at_home=True,
+        )
+        base_url = body["baseUrl"]
+        chapter = body["chapter"]
+        chapter_hash = chapter["hash"]
+        filenames = chapter.get("data", [])
+        return [
+            PageInfo(
+                page_number=i,
+                source_url=f"{base_url}/data/{chapter_hash}/{fn}",
+            )
+            for i, fn in enumerate(filenames, start=1)
+        ]
+
+    async def download_image(self, url: str, dest_path: str) -> str:
+        """
+        Override BaseScraper.download_image to (a) use httpx-based streaming
+        and (b) POST a MD@Home report on every fetch. Report failures must
+        never break a scrape — they are best-effort per ToS.
+        """
+        start = time.monotonic()
+        # /uploads/ paths are pre-warm CDN; /data/ and /data-saver/ are MD@Home.
+        cached = "/uploads/" in url
+        try:
+            rel_path, byte_count = await self._http.fetch_image_to_disk(url, dest_path)
+            await self._http.post_json(self._http.REPORT_URL, json={
+                "url": url,
+                "success": True,
+                "cached": cached,
+                "bytes": byte_count,
+                "duration": int((time.monotonic() - start) * 1000),
+            })
+            return rel_path
+        except Exception:
+            await self._http.post_json(self._http.REPORT_URL, json={
+                "url": url,
+                "success": False,
+                "cached": cached,
+                "bytes": 0,
+                "duration": int((time.monotonic() - start) * 1000),
+            })
+            raise
+
+    async def get_chapter_text(self, chapter_url: str) -> str:
+        raise NotImplementedError("MangaDex is a comic source — no text content")
+
+    async def search(
+        self, *, title: str, content_ratings: list[str], limit: int = 10,
+    ) -> list[dict]:
+        """Return a flat list of {id, title, alt_titles, original_language,
+        last_chapter, tags, thumbnail_url} dicts. Filters to manga that have
+        at least one English chapter — silently rejecting candidates we
+        couldn't read anyway."""
+        body = await self._http.get_json(
+            f"{_API}/manga",
+            params={
+                "title": title,
+                "limit": limit,
+                "contentRating[]": content_ratings,
+                "availableTranslatedLanguage[]": ["en"],
+                "includes[]": ["cover_art"],
+                "order[relevance]": "desc",
+            },
+        )
+        out: list[dict] = []
+        for entry in body.get("data", []):
+            attrs = entry.get("attributes", {})
+            cover_filename = None
+            for rel in entry.get("relationships", []):
+                if rel.get("type") == "cover_art":
+                    cover_filename = (rel.get("attributes") or {}).get("fileName")
+            try:
+                last_chapter_int = int(float(attrs.get("lastChapter") or 0))
+            except (TypeError, ValueError):
+                last_chapter_int = 0
+            # MangaDex altTitles is a list of single-key dicts: [{"en": "X"}, {"ko": "Y"}, ...].
+            # Flatten to a list of strings; matcher's title-sim takes max across these.
+            alt_titles: list[str] = []
+            for at in attrs.get("altTitles", []):
+                if isinstance(at, dict):
+                    for v in at.values():
+                        if v:
+                            alt_titles.append(v)
+            out.append({
+                "id": entry["id"],
+                "title": _english_title(attrs.get("title", {})),
+                "alt_titles": alt_titles,
+                "original_language": attrs.get("originalLanguage"),
+                "last_chapter": last_chapter_int,
+                "tags": [
+                    _english_title((t.get("attributes") or {}).get("name", {}))
+                    for t in attrs.get("tags", [])
+                ],
+                "thumbnail_url": (
+                    f"https://uploads.mangadex.org/covers/{entry['id']}/{cover_filename}.512.jpg"
+                    if cover_filename else None
+                ),
+            })
+        return out

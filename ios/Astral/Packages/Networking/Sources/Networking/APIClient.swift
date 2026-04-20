@@ -106,6 +106,47 @@ public actor APIClient {
 
         AstralLogger.network("\(method) \(path) → \(status) (\(ms)ms)")
     }
+
+    /// AST-30 — submits a scrape request and decodes either a job-created or
+    /// match-proposed response based on body shape. Both come back as 2xx.
+    public func submitScrape(_ request: ScrapeRequest) async throws -> ScrapeOutcome {
+        let endpoint = Endpoint.initiateScrape(request)
+        let urlRequest = try endpoint.urlRequest()
+        let method = urlRequest.httpMethod ?? "POST"
+        let path = urlRequest.url?.path ?? "?"
+        let start = CFAbsoluteTimeGetCurrent()
+
+        AstralLogger.network("\(method) \(path) →")
+
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+        let status = httpResponse.statusCode
+
+        switch status {
+        case 503:
+            throw APIError.serverError(503)
+        case 200...299:
+            AstralLogger.network("\(method) \(path) → \(status) (\(ms)ms)")
+            // Try to decode the match envelope first; on failure, fall back
+            // to the standard ScrapeJobResponse.
+            if let match = try? decoder.decode(ScrapeMatchResponse.self, from: data) {
+                return .matchProposed(match.match)
+            }
+            let job = try decoder.decode(ScrapeJobResponse.self, from: data)
+            return .jobCreated(job)
+        case 428:
+            throw APIError.cookieRefreshNeeded
+        case 429:
+            throw APIError.rateLimited
+        case 500...599:
+            throw APIError.serverError(status)
+        default:
+            throw APIError.httpError(status)
+        }
+    }
 }
 
 public enum APIError: LocalizedError, Sendable {

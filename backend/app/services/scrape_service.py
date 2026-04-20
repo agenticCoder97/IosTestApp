@@ -40,8 +40,11 @@ def _job_to_schema(job: ScrapeJob) -> ScrapeJobResponse:
     )
 
 
-async def _store_cookies(source_key: str, cookies: list, user_agent: str) -> None:
-    logger.info("_store_cookies | source_key=%s num_cookies=%d ttl=%ds", source_key, len(cookies), settings.cookie_cache_ttl_secs)
+async def store_cookies(source_key: str, cookies: list, user_agent: str) -> None:
+    """Cache the cookie + UA pair under cookies:<source_key> in Redis. Made public
+    (was _store_cookies) so the matcher hook in the scrape route can prime the
+    cookie cache before invoking source-side metadata fetches."""
+    logger.info("store_cookies | source_key=%s num_cookies=%d ttl=%ds", source_key, len(cookies), settings.cookie_cache_ttl_secs)
     r = await aioredis.from_url(settings.redis_url)
     try:
         cache_data = {
@@ -53,14 +56,14 @@ async def _store_cookies(source_key: str, cookies: list, user_agent: str) -> Non
             json.dumps(cache_data),
             ex=settings.cookie_cache_ttl_secs,
         )
-        logger.info("_store_cookies stored successfully | source_key=%s", source_key)
+        logger.info("store_cookies stored successfully | source_key=%s", source_key)
     finally:
         await r.aclose()
 
 
 async def initiate_scrape(db: AsyncSession, body: ScrapeRequest) -> ScrapeJobResponse:
     logger.info("initiate_scrape called | url=%s source_key=%s content_type=%s", body.url, body.source_key, body.content_type)
-    await _store_cookies(body.source_key, body.cookies, body.user_agent)
+    await store_cookies(body.source_key, body.cookies, body.user_agent)
 
     # Create a placeholder story record if it doesn't exist
     story_id = uuid.uuid4()
@@ -78,9 +81,15 @@ async def initiate_scrape(db: AsyncSession, body: ScrapeRequest) -> ScrapeJobRes
                 title="Pending scrape...",
                 source_key=body.source_key,
                 source_url=body.url,
+                previous_source=body.previous_source,
+                previous_source_url=body.previous_source_url,
+                match_confidence=body.match_confidence,
             )
             db.add(comic)
-            logger.info("initiate_scrape new comic placeholder created | story_id=%s", story_id)
+            logger.info(
+                "initiate_scrape new comic placeholder created | story_id=%s prev=%s conf=%s",
+                story_id, body.previous_source, body.match_confidence,
+            )
     else:
         result = await db.execute(
             select(Fanfic).where(Fanfic.source_url == body.url, Fanfic.deleted_at.is_(None))

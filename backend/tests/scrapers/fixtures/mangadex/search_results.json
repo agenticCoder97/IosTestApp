@@ -1,0 +1,32 @@
+{
+  "result": "ok",
+  "data": [
+    {
+      "id": "match-1",
+      "type": "manga",
+      "attributes": {
+        "title": {"en": "Solo Leveling"},
+        "originalLanguage": "ko",
+        "lastChapter": "179",
+        "tags": [
+          {"id": "t1", "type": "tag", "attributes": {"name": {"en": "Action"}, "group": "genre"}},
+          {"id": "t2", "type": "tag", "attributes": {"name": {"en": "Adventure"}, "group": "genre"}}
+        ]
+      },
+      "relationships": [
+        {"id": "c1", "type": "cover_art", "attributes": {"fileName": "cover.jpg"}}
+      ]
+    },
+    {
+      "id": "match-2",
+      "type": "manga",
+      "attributes": {
+        "title": {"en": "Solo Leveling Side Story"},
+        "originalLanguage": "ko",
+        "lastChapter": "20",
+        "tags": []
+      },
+      "relationships": []
+    }
+  ]
+}

@@ -10,7 +10,27 @@ class ScrapeRequest(BaseModel):
     source_key: str
     cookies: list[CookieDTO]
     user_agent: str
-    content_type: str
+    content_type: str = "comic"
+    # AST-30 — MangaDex matcher fields. All optional, ignored for ineligible sources.
+    page_title: Optional[str] = None
+    skip_match: bool = False
+    previous_source: Optional[str] = None
+    previous_source_url: Optional[str] = None
+    match_confidence: Optional[float] = None
+
+
+class MangaDexMatchPayload(BaseModel):
+    manga_id: str
+    mangadex_url: str
+    title: str
+    confidence: float
+    thumbnail_url: Optional[str] = None
+    chapter_count: int
+    source_chapter_count: int
+
+
+class ScrapeMatchResponse(BaseModel):
+    match: MangaDexMatchPayload
 
 
 class ScrapeJobResponse(BaseModel):

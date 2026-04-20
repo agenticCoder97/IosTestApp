@@ -1,0 +1,28 @@
+{
+  "result": "ok",
+  "data": [
+    {
+      "id": "ch-4",
+      "type": "chapter",
+      "attributes": {
+        "chapter": "4",
+        "title": "Onward",
+        "translatedLanguage": "en",
+        "externalUrl": null
+      }
+    },
+    {
+      "id": "ch-5",
+      "type": "chapter",
+      "attributes": {
+        "chapter": "5",
+        "title": null,
+        "translatedLanguage": "en",
+        "externalUrl": null
+      }
+    }
+  ],
+  "limit": 3,
+  "offset": 3,
+  "total": 5
+}
