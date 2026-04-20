@@ -76,7 +76,7 @@ struct FanficReaderView: View {
                             ScrollView {
                                 VStack(alignment: .leading, spacing: paragraphSpacing) {
                                     // Chapter header
-                                    VStack(alignment: .leading, spacing: 6) {
+                                    VStack(alignment: .leading, spacing: 4) {
                                         Text("Chapter \(currentChapter.chapterNumber, specifier: "%.0f")")
                                             .font(fontFamily.font(size: fontSize * 0.75))
                                             .tracking(1.5)
@@ -91,7 +91,7 @@ struct FanficReaderView: View {
 
 
                                     }
-                                    .padding(.bottom, 8)
+                                    .padding(.bottom, 4)
 
                                     // Divider between header and content
                                     HStack(spacing: 8) {
@@ -141,7 +141,7 @@ struct FanficReaderView: View {
                                     chapterNavigationFooter
                                 }
                                 .padding(.horizontal, horizontalMargin)
-                                .padding(.vertical, 20)
+                                .padding(.vertical, 10)
                                 .animation(AstralAnimation.quick, value: fontSize)
                                 .animation(AstralAnimation.quick, value: lineHeight)
                                 .animation(AstralAnimation.quick, value: horizontalMargin)
