@@ -34,6 +34,22 @@ _NORMALIZE_DROP = re.compile(r"\b(vol(?:ume)?\.?|ch(?:apter)?\.?|ep(?:isode)?\.?
 _NON_ALNUM = re.compile(r"[^a-z0-9 ]+")
 _MULTI_WS = re.compile(r"\s+")
 
+# Trailing slug noise on aggregator URLs that doesn't belong in a title query.
+_SLUG_NOISE = re.compile(r"\b(manhwa|manga|webtoon|raw|uncensored|official|english)\b", re.I)
+
+
+def _title_from_url(url: str) -> str:
+    """Best-effort title extraction from a /webtoon/<slug>/ or /manga/<slug>/ URL.
+    Used as a fallback when iOS didn't capture document.title."""
+    from urllib.parse import urlparse
+    path = urlparse(url).path.rstrip("/")
+    if not path:
+        return ""
+    slug = path.rsplit("/", 1)[-1]
+    title = slug.replace("-", " ").replace("_", " ")
+    title = _SLUG_NOISE.sub(" ", title)
+    return _MULTI_WS.sub(" ", title).strip()
+
 
 @dataclass
 class MangaDexMatch:
@@ -138,10 +154,24 @@ async def find_mangadex_match(
             e,
         )
 
+    # Build the search query. Prefer the page title from iOS WebView; fall back
+    # to the URL slug (e.g. /webtoon/solo-leveling/ → "solo leveling"), which is
+    # FAR more searchable than the URL itself.
+    raw_title = (source_title or "").strip()
+    if not raw_title or raw_title.startswith(("http://", "https://")):
+        slug_title = _title_from_url(source_url)
+        search_title = _normalize(slug_title) or slug_title or _normalize(source_title) or source_title
+    else:
+        search_title = _normalize(raw_title) or raw_title
+    logger.info(
+        "find_mangadex_match search | source=%s search_title=%r raw_title=%r",
+        source, search_title, raw_title,
+    )
+
     md = MangadexScraper()
     try:
         candidates = await md.search(
-            title=_normalize(source_title) or source_title,
+            title=search_title,
             content_ratings=["safe", "suggestive", "erotica"],
             limit=10,
         )
@@ -150,10 +180,12 @@ async def find_mangadex_match(
         return None
 
     best: Optional[tuple[float, dict]] = None
+    # Score using search_title (cleaned/derived) so a junk source_title doesn't
+    # tank similarity against the candidate's clean title.
     for c in candidates:
         s = _score(
             c,
-            source_title=source_title,
+            source_title=search_title,
             expected_lang=_EXPECTED_LANG[source],
             source_tags=src_tags,
             source_chapter_count=src_chapter_count,
