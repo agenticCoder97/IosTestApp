@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.scrapers.fanfic._html_to_text import html_to_paragraphs
+
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://fichub.net"
@@ -132,7 +134,7 @@ def _split_epub_bytes(epub_bytes: bytes) -> list[ChapterText]:
         if "nav" in name or "cover" in name or "title" in name:
             continue
         chapter_num += 1
-        html = item.get_content().decode("utf-8", errors="replace")
+        html = html_to_paragraphs(item.get_content().decode("utf-8", errors="replace"))
         title = item.title or f"Chapter {chapter_num}"
         chapters.append(ChapterText(number=chapter_num, title=title, html=html))
 

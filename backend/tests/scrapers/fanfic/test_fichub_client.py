@@ -125,3 +125,38 @@ async def test_strips_nav_and_cover_from_chapters(monkeypatch):
     assert "Cover" not in titles
     htmls = " ".join(c.html for c in chapters)
     assert "Cover Image" not in htmls
+
+
+def test_split_epub_bytes_strips_xhtml_to_plain_paragraphs(tmp_path):
+    """AST-41: each ChapterText.html returned from _split_epub_bytes is
+    plain-text paragraphs joined by \n\n, not raw XHTML."""
+    from ebooklib import epub
+    from app.scrapers.fanfic._fichub import _split_epub_bytes
+
+    book = epub.EpubBook()
+    book.set_identifier("test")
+    book.set_title("T")
+    book.set_language("en")
+    chap = epub.EpubHtml(title="Chapter 1", file_name="c1.xhtml", lang="en")
+    chap.content = (
+        "<?xml version='1.0' encoding='utf-8'?>"
+        "<!DOCTYPE html><html xmlns='http://www.w3.org/1999/xhtml'>"
+        "<head/><body><h2>Chapter 1</h2>"
+        "<div><p>Alpha paragraph.</p><p>Bravo paragraph.</p></div>"
+        "</body></html>"
+    ).encode("utf-8")
+    book.add_item(chap)
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.toc = [chap]
+    book.spine = ['nav', chap]
+
+    out_path = tmp_path / "test.epub"
+    epub.write_epub(str(out_path), book)
+    epub_bytes = out_path.read_bytes()
+
+    chapters = _split_epub_bytes(epub_bytes)
+    assert len(chapters) == 1
+    assert chapters[0].html == "Alpha paragraph.\n\nBravo paragraph."
+    assert "<?xml" not in chapters[0].html
+    assert "<p>" not in chapters[0].html

@@ -23,6 +23,7 @@ from typing import Any
 
 from app.scrapers.base import StoryMetadata
 from app.scrapers.fanfic._fichub import ChapterText
+from app.scrapers.fanfic._html_to_text import html_to_paragraphs
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ def _fetch_sync(url: str, cookies: list[dict], user_agent: str
     chapter_texts: list[ChapterText] = []
     for i, record in enumerate(adapter.story.getChapters(), start=1):
         chap_url, chap_title = record[0], record[1]
-        html = adapter.getChapterText(chap_url) or ""
+        html = html_to_paragraphs(adapter.getChapterText(chap_url) or "")
         chapter_texts.append(ChapterText(number=i, title=chap_title or f"Chapter {i}", html=html))
 
     return meta, chapter_texts
