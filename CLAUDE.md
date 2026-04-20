@@ -52,6 +52,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `AppConfig.staticBaseURL` **must** end with a trailing `/` — no trailing slash causes `"/staticcomics/..."` 404s
 - curl_cffi impersonation: use `chrome120`, not `safari17_2` (unsupported in curl_cffi 0.7.4)
 - `ARQ_MAX_JOBS=3`, `SOFT_DELETE_DAYS=5`, `COOKIE_CACHE_TTL_SECS=86400` are standard env vars
+- MangaDex source (AST-30) — env vars:
+  - `MANGADEX_DISABLED=true|false` — kill switch. Hard-stops new mangadex scrapes (HTTP 503), silently disables the matcher for toongod/hentai20 adds.
+  - `MANGADEX_TITLE_MATCH_THRESHOLD=0.85` — minimum confidence for the match-confirm dialog.
+  - `MANGADEX_AUTO_SWITCH_SOURCE=true|false` — master toggle for the matcher.
+  - OAuth2 personal-client login for the `pornographic` content rating is tracked in AST-35 (not in v1).
 
 ## SwiftData Gotchas
 
