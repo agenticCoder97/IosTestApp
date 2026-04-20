@@ -1,5 +1,6 @@
 # FFNet chapter text → plain text normalization
 
+**Linear:** [AST-41](https://linear.app/nnetraganti/issue/AST-41/normalize-ffnet-chapter-text-to-plain-text-strip-epubxhtml-markup)
 **Status:** Approved design, ready for implementation plan.
 **Date:** 2026-04-20
 **Scope:** Backend only (FFNet scraper paths + one-shot data backfill).
