@@ -89,14 +89,7 @@ struct FanficReaderView: View {
                                                 .foregroundStyle(textColor)
                                         }
 
-                                        // Reading time estimate
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "clock")
-                                                .font(.system(size: fontSize * 0.65))
-                                            Text(readingTimeLabel)
-                                                .font(fontFamily.font(size: fontSize * 0.75))
-                                        }
-                                        .foregroundStyle(AstralColors.muted.opacity(0.8))
+
                                     }
                                     .padding(.bottom, 8)
 
@@ -339,15 +332,6 @@ struct FanficReaderView: View {
         case .sepia: Color(hex: 0xD4C5A9)
         case .paper: Color(hex: 0x2C2C2C)
         }
-    }
-
-    private var readingTimeLabel: String {
-        let wordCount = chapterContent.split(separator: " ").count
-        let minutes = max(1, wordCount / 238)
-        let wordStr = wordCount > 1000
-            ? String(format: "%.1fk words", Double(wordCount) / 1000.0)
-            : "\(wordCount) words"
-        return "\(wordStr) · \(minutes) min read"
     }
 
     private var chapterFavOverlay: some View {
