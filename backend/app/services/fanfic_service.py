@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from math import ceil
-import redis.asyncio as aioredis
-from arq.connections import ArqRedis
+from app.cache.redis_pool import get_arq
+from app.cache.cache_ttl import CacheTTL
 from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, defer
@@ -129,7 +129,7 @@ async def list_fanfics(
         total_pages=total_pages,
         has_next=page < total_pages,
     )
-    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=CacheTTL.LIST)
     return response
 
 
@@ -152,7 +152,7 @@ async def get_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> Optional[FanficR
     if not fanfic:
         return None
     response = _fanfic_to_schema(fanfic, include_chapters=True)
-    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=CacheTTL.LIST)
     return response
 
 
@@ -178,7 +178,7 @@ async def get_chapter(
     if not chapter:
         return None
     response = _chapter_to_schema(chapter, include_content=True)
-    await redis_cache.set(cache_key, response.model_dump_json(), ttl=86400)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=CacheTTL.CHAPTER_PAGES)
     return response
 
 
@@ -239,10 +239,7 @@ async def permanent_delete_fanfic(db: AsyncSession, fanfic_id: uuid.UUID) -> boo
 
     # Best-effort media wipe — mirrors permanent_delete_comic enqueue pattern.
     try:
-        r = await aioredis.from_url(settings.redis_url)
-        arq_redis = ArqRedis(r.connection_pool)
-        await arq_redis.enqueue_job("fanfic_media_wipe_task", str(fanfic_id))
-        await arq_redis.aclose()
+        await get_arq().enqueue_job("fanfic_media_wipe_task", str(fanfic_id))
     except Exception as e:
         logger.warning(
             "permanent_delete_fanfic ARQ enqueue failed | fanfic_id=%s error=%s",

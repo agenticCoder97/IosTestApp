@@ -1,6 +1,5 @@
 import logging
 import uuid
-from arq.connections import ArqRedis
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from app.db.database import AsyncSessionLocal
@@ -8,8 +7,6 @@ from app.models.comic import Comic
 from app.models.fanfic import Fanfic
 from app.models.scrape import ScrapeJob
 from app.core.constants import JobStatus, JobType, SourceKey
-import redis.asyncio as aioredis
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -103,16 +100,16 @@ async def auto_update_task(ctx):
             skipped_active,
         )
 
-    # Enqueue all created jobs into ARQ outside the DB session
+    # Enqueue all created jobs into ARQ outside the DB session.
+    # ctx['redis'] is the ArqRedis the worker is already connected with —
+    # no new pool needed.
     if jobs_to_add:
         try:
-            r = await aioredis.from_url(settings.redis_url)
-            arq_redis = ArqRedis(r.connection_pool)
+            arq_redis = ctx["redis"]
             for job in jobs_to_add:
                 task_name = "comic_scrape_task" if job.content_type == "comic" else "fanfic_scrape_task"
                 await arq_redis.enqueue_job(task_name, str(job.id))
                 queued += 1
-            await arq_redis.aclose()
             logger.info("auto_update_task enqueued=%d", queued)
         except Exception as e:
             logger.error("auto_update_task ARQ enqueue failed | error=%s", e)

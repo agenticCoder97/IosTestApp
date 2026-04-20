@@ -14,7 +14,7 @@ from app.schemas.scrape import ScrapeRequest, ScrapeJobResponse, ScrapeLogEntry
 from app.schemas.shared import PaginatedResponse
 from app.core.config import settings
 from app.core.constants import JobStatus, JobType
-import redis.asyncio as aioredis
+from app.cache.redis_pool import get_arq, get_cache_redis
 
 logger = logging.getLogger(__name__)
 
@@ -45,20 +45,17 @@ async def store_cookies(source_key: str, cookies: list, user_agent: str) -> None
     (was _store_cookies) so the matcher hook in the scrape route can prime the
     cookie cache before invoking source-side metadata fetches."""
     logger.info("store_cookies | source_key=%s num_cookies=%d ttl=%ds", source_key, len(cookies), settings.cookie_cache_ttl_secs)
-    r = await aioredis.from_url(settings.redis_url)
-    try:
-        cache_data = {
-            "cookies": [c.model_dump() for c in cookies],
-            "user_agent": user_agent,
-        }
-        await r.set(
-            f"cookies:{source_key}",
-            json.dumps(cache_data),
-            ex=settings.cookie_cache_ttl_secs,
-        )
-        logger.info("store_cookies stored successfully | source_key=%s", source_key)
-    finally:
-        await r.aclose()
+    r = get_cache_redis()
+    cache_data = {
+        "cookies": [c.model_dump() for c in cookies],
+        "user_agent": user_agent,
+    }
+    await r.set(
+        f"cookies:{source_key}",
+        json.dumps(cache_data),
+        ex=settings.cookie_cache_ttl_secs,
+    )
+    logger.info("store_cookies stored successfully | source_key=%s", source_key)
 
 
 async def initiate_scrape(db: AsyncSession, body: ScrapeRequest) -> ScrapeJobResponse:
@@ -146,12 +143,9 @@ async def initiate_scrape(db: AsyncSession, body: ScrapeRequest) -> ScrapeJobRes
 
     # Enqueue ARQ task
     try:
-        r = await aioredis.from_url(settings.redis_url)
-        from arq.connections import ArqRedis
-        arq_redis = ArqRedis(r.connection_pool)
+        arq = get_arq()
         task_name = "comic_scrape_task" if body.content_type == "comic" else "fanfic_scrape_task"
-        await arq_redis.enqueue_job(task_name, str(job.id))
-        await arq_redis.aclose()
+        await arq.enqueue_job(task_name, str(job.id))
         logger.info("initiate_scrape ARQ enqueue success | task=%s job_id=%s", task_name, job.id)
     except Exception as e:
         logger.warning("initiate_scrape ARQ enqueue failed | job_id=%s error=%s", job.id, e)
@@ -230,13 +224,9 @@ async def retry_job(db: AsyncSession, job_id: uuid.UUID) -> ScrapeJobResponse:
     logger.info("retry_job created | new_job_id=%s original_job_id=%s", retry_job.id, job_id)
 
     try:
-        import redis.asyncio as aioredis
-        from arq.connections import ArqRedis
-        r = await aioredis.from_url(settings.redis_url)
-        arq_redis = ArqRedis(r.connection_pool)
+        arq = get_arq()
         task_name = "comic_scrape_task" if job.content_type == "comic" else "fanfic_scrape_task"
-        await arq_redis.enqueue_job(task_name, str(retry_job.id))
-        await arq_redis.aclose()
+        await arq.enqueue_job(task_name, str(retry_job.id))
         logger.info("retry_job ARQ enqueue success | task=%s new_job_id=%s", task_name, retry_job.id)
     except Exception as e:
         logger.warning("retry_job ARQ enqueue failed | new_job_id=%s error=%s", retry_job.id, e)
@@ -310,13 +300,9 @@ async def delta_update(db: AsyncSession, story_id: uuid.UUID) -> ScrapeJobRespon
     logger.info("delta_update job created | job_id=%s content_type=%s story_id=%s", job.id, content_type, story_id)
 
     try:
-        import redis.asyncio as aioredis
-        from arq.connections import ArqRedis
-        r = await aioredis.from_url(settings.redis_url)
-        arq_redis = ArqRedis(r.connection_pool)
+        arq = get_arq()
         task_name = "comic_scrape_task" if content_type == "comic" else "fanfic_scrape_task"
-        await arq_redis.enqueue_job(task_name, str(job.id))
-        await arq_redis.aclose()
+        await arq.enqueue_job(task_name, str(job.id))
         logger.info("delta_update ARQ enqueue success | task=%s job_id=%s", task_name, job.id)
     except Exception as e:
         logger.warning("delta_update ARQ enqueue failed | job_id=%s error=%s", job.id, e)

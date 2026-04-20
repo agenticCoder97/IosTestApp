@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from math import ceil
-import redis.asyncio as aioredis
-from arq.connections import ArqRedis
+from app.cache.redis_pool import get_arq
+from app.cache.cache_ttl import CacheTTL
 from sqlalchemy import select, func, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -114,7 +114,7 @@ async def list_comics(
         total_pages=total_pages,
         has_next=page < total_pages,
     )
-    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=CacheTTL.LIST)
     logger.info("list_comics returning %d items (cached) | page=%d", len(comics), page)
     return response
 
@@ -140,7 +140,7 @@ async def get_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[ComicResp
     if not comic:
         return None
     response = _comic_to_schema(comic, include_chapters=True)
-    await redis_cache.set(cache_key, response.model_dump_json(), ttl=300)
+    await redis_cache.set(cache_key, response.model_dump_json(), ttl=CacheTTL.LIST)
     return response
 
 
@@ -178,7 +178,7 @@ async def get_chapter_pages(
         )
         for p in pages
     ]
-    await redis_cache.set(cache_key, json.dumps([r.model_dump(mode="json") for r in response]), ttl=86400)
+    await redis_cache.set(cache_key, json.dumps([r.model_dump(mode="json") for r in response]), ttl=CacheTTL.CHAPTER_PAGES)
     return response
 
 
@@ -240,10 +240,7 @@ async def archive_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[Comic
     await redis_cache.invalidate_comics(str(comic_id))
 
     try:
-        r = await aioredis.from_url(settings.redis_url)
-        arq_redis = ArqRedis(r.connection_pool)
-        await arq_redis.enqueue_job("comic_archive_task", str(comic_id))
-        await arq_redis.aclose()
+        await get_arq().enqueue_job("comic_archive_task", str(comic_id))
     except Exception as e:
         logger.warning("archive_comic ARQ enqueue failed | comic_id=%s error=%s", comic_id, e)
 
@@ -266,10 +263,7 @@ async def unarchive_comic(db: AsyncSession, comic_id: uuid.UUID) -> Optional[Com
     await redis_cache.invalidate_comics(str(comic_id))
 
     try:
-        r = await aioredis.from_url(settings.redis_url)
-        arq_redis = ArqRedis(r.connection_pool)
-        await arq_redis.enqueue_job("comic_unarchive_task", str(comic_id))
-        await arq_redis.aclose()
+        await get_arq().enqueue_job("comic_unarchive_task", str(comic_id))
     except Exception as e:
         logger.warning("unarchive_comic ARQ enqueue failed | comic_id=%s error=%s", comic_id, e)
 
@@ -339,10 +333,7 @@ async def permanent_delete_comic(db: AsyncSession, comic_id: uuid.UUID) -> bool:
 
     # Best-effort media wipe — mirrors archive_comic enqueue pattern.
     try:
-        r = await aioredis.from_url(settings.redis_url)
-        arq_redis = ArqRedis(r.connection_pool)
-        await arq_redis.enqueue_job("comic_media_wipe_task", str(comic_id))
-        await arq_redis.aclose()
+        await get_arq().enqueue_job("comic_media_wipe_task", str(comic_id))
     except Exception as e:
         logger.warning(
             "permanent_delete_comic ARQ enqueue failed | comic_id=%s error=%s",

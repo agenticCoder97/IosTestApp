@@ -11,6 +11,7 @@ from app.tasks.comic_media_wipe_task import comic_media_wipe_task
 from app.tasks.fanfic_media_wipe_task import fanfic_media_wipe_task
 from app.tasks.cleanup_task import cleanup_task
 from app.tasks.auto_update_task import auto_update_task
+from app.cache.redis_pool import init_pools, close_pools
 
 # Configure logging at import time — arq starts via CLI so main.py never runs
 configure_logging()
@@ -24,9 +25,11 @@ async def startup(ctx: dict) -> None:
         3600,
         settings.redis_url,
     )
+    await init_pools()
 
 
 async def shutdown(ctx: dict) -> None:
+    await close_pools()
     logger.info("arq_worker shutdown")
 
 

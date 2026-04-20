@@ -8,6 +8,7 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ### Backend
 
+- **AST-40** — Redis layer consolidation: replaced 8 ad-hoc `aioredis.from_url(...)` + `ArqRedis(r.connection_pool)` sites (which leaked one `ConnectionPool` per call) with a single shared singleton in `app/cache/redis_pool.py`. Pools are opened in FastAPI lifespan + ARQ worker `on_startup`, closed cleanly on shutdown. `BaseScraper._get_cookies()` now wraps `json.loads()` so a corrupted cookie cache degrades to "no cookies" instead of crashing the scrape. `auto_update_task` uses `ctx['redis']` instead of opening its own pool. Magic-number TTLs replaced with `CacheTTL` constants. Net -47 LOC; test suite improves from 21 → 10 pre-existing failures (all unrelated SQL errors). ([PR #39](https://github.com/agenticCoder97/IosTestApp/pull/39))
 - **AST-29** — FFNet scraper rewrite: replaced 313 lines of bespoke httpx + 403-retry + BeautifulSoup parsing with `FanFicFare` (primary) + `FicHub` (fallback). New `_fichub.py` shared client (reusable by AST-28) handles FicHub's REST + EPUB-split. New `_fanficfare_runner.py` bridges iOS-harvested cookies into FFF's session and wraps blocking calls in `asyncio.to_thread`. Kill switch `FFNET_NEW_SCRAPER_DISABLED=true` falls through to FicHub-only. Net -151 LOC; 16 unit tests + 3 live smoke tests. ([PR #38](https://github.com/agenticCoder97/IosTestApp/pull/38))
 
 ### iOS

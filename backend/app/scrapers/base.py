@@ -6,8 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 import httpx
-import redis.asyncio as aioredis
 from curl_cffi.requests import AsyncSession as CurlSession
+from app.cache.redis_pool import get_cache_redis
 from app.core.config import settings
 from app.core.constants import COOKIE_CACHE_KEY_PREFIX
 
@@ -93,29 +93,34 @@ class BaseScraper(ABC):
             return self._cookie_cache
 
         logger.debug("_get_cookies loading from Redis | source_key=%s", self.source_key)
-        r = await aioredis.from_url(settings.redis_url)
-        try:
-            # source_key is a SourceKey enum — .value gives the raw string ("nhentai")
-            # that matches the key format used by the iOS app's cookie store
-            key = self.source_key.value if hasattr(self.source_key, 'value') else str(self.source_key)
-            raw = await r.get(f"{COOKIE_CACHE_KEY_PREFIX}{key}")
-            if not raw:
-                # Expected for sources that don't require cookies (e.g. nhentai public).
-                # Logged at DEBUG only — this appears hundreds of times per job otherwise.
-                logger.debug("_get_cookies no cached cookies | source_key=%s (proceeding without)",
-                             self.source_key)
-                result = ([], "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)")
-            else:
+        r = get_cache_redis()
+        # source_key is a SourceKey enum — .value gives the raw string ("nhentai")
+        # that matches the key format used by the iOS app's cookie store
+        key = self.source_key.value if hasattr(self.source_key, 'value') else str(self.source_key)
+        raw = await r.get(f"{COOKIE_CACHE_KEY_PREFIX}{key}")
+        if not raw:
+            # Expected for sources that don't require cookies (e.g. nhentai public).
+            # Logged at DEBUG only — this appears hundreds of times per job otherwise.
+            logger.debug("_get_cookies no cached cookies | source_key=%s (proceeding without)",
+                         self.source_key)
+            result = ([], "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)")
+        else:
+            try:
                 data = json.loads(raw)
                 cookies = data.get("cookies", [])
                 user_agent = data.get("user_agent", "")
-                logger.info("_get_cookies loaded %d cookies | source_key=%s ua=%s",
-                            len(cookies), self.source_key, user_agent[:40] if user_agent else "none")
-                result = (cookies, user_agent)
-            self._cookie_cache = result
-            return result
-        finally:
-            await r.aclose()
+            except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                # Corrupted Redis value — degrade to "no cookies" rather than
+                # crashing the scrape job. Caller's headless browser fallback
+                # will repopulate the cache on the next failed fetch.
+                logger.warning("_get_cookies corrupted cache, degrading | source_key=%s error=%s",
+                               self.source_key, e)
+                cookies, user_agent = [], ""
+            logger.info("_get_cookies loaded %d cookies | source_key=%s ua=%s",
+                        len(cookies), self.source_key, user_agent[:40] if user_agent else "none")
+            result = (cookies, user_agent)
+        self._cookie_cache = result
+        return result
 
     async def _fetch_via_browser(self, url: str) -> str | None:
         """
@@ -159,15 +164,12 @@ class BaseScraper(ABC):
                         "cookies": cookie_dtos,
                         "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
                     }
-                    r = await aioredis.from_url(settings.redis_url)
-                    try:
-                        await r.set(
-                            f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key.value if hasattr(self.source_key, 'value') else self.source_key}",
-                            json.dumps(cache_data),
-                            ex=settings.cookie_cache_ttl_secs,
-                        )
-                    finally:
-                        await r.aclose()
+                    r = get_cache_redis()
+                    await r.set(
+                        f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key.value if hasattr(self.source_key, 'value') else self.source_key}",
+                        json.dumps(cache_data),
+                        ex=settings.cookie_cache_ttl_secs,
+                    )
                     self._cookie_cache = None
 
                 logger.info("_fetch_via_browser success | url=%s bytes=%d cookies=%d",
@@ -232,15 +234,12 @@ class BaseScraper(ABC):
                     "cookies": cookie_dtos,
                     "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
                 }
-                r = await aioredis.from_url(settings.redis_url)
-                try:
-                    await r.set(
-                        f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key.value if hasattr(self.source_key, 'value') else self.source_key}",
-                        json.dumps(cache_data),
-                        ex=settings.cookie_cache_ttl_secs,
-                    )
-                finally:
-                    await r.aclose()
+                r = get_cache_redis()
+                await r.set(
+                    f"{COOKIE_CACHE_KEY_PREFIX}{self.source_key.value if hasattr(self.source_key, 'value') else self.source_key}",
+                    json.dumps(cache_data),
+                    ex=settings.cookie_cache_ttl_secs,
+                )
 
                 # Invalidate in-process cache so next _get_cookies reads fresh from Redis
                 self._cookie_cache = None

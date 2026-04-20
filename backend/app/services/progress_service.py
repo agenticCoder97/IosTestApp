@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.progress import ReadingProgress
 from app.schemas.progress import ComicProgressRequest, FanficProgressRequest, ProgressResponse
 from app.cache import redis_cache
+from app.cache.cache_ttl import CacheTTL
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ async def get_all_progress(
     )
     rows = result.scalars().all()
     response = [_to_schema(p) for p in rows]
-    await redis_cache.set(cache_key, json.dumps([r.model_dump(mode="json") for r in response]), ttl=120)
+    await redis_cache.set(cache_key, json.dumps([r.model_dump(mode="json") for r in response]), ttl=CacheTTL.PROGRESS)
     logger.info("get_all_progress returning %d records (cached) | content_type=%s", len(rows), content_type)
     return response
 
