@@ -88,3 +88,40 @@ async def test_fetch_story_meta_wraps_timeout_as_fichuberror(monkeypatch):
 
     with pytest.raises(_fichub.FicHubError, match="timed out|timeout"):
         await _fichub.fetch_story_meta("https://www.fanfiction.net/s/13262338")
+
+
+async def test_download_and_split_epub_extracts_chapters(monkeypatch):
+    epub_bytes = (FIXTURES / "sample.epub").read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/epub/abc123/sample.epub"
+        return httpx.Response(200, content=epub_bytes,
+                              headers={"content-type": "application/epub+zip"})
+
+    monkeypatch.setattr(_fichub, "_build_client", lambda: _mock_client(handler))
+
+    chapters = await _fichub.download_and_split_epub("/epub/abc123/sample.epub")
+
+    assert len(chapters) == 3
+    assert chapters[0].number == 1
+    assert chapters[0].title == "Chapter 1"
+    assert "Body of chapter 1" in chapters[0].html
+    assert chapters[1].number == 2
+    assert chapters[2].number == 3
+
+
+async def test_strips_nav_and_cover_from_chapters(monkeypatch):
+    """nav.xhtml and cover.xhtml must NOT appear as chapters."""
+    epub_bytes = (FIXTURES / "sample.epub").read_bytes()
+
+    def handler(_req):
+        return httpx.Response(200, content=epub_bytes)
+
+    monkeypatch.setattr(_fichub, "_build_client", lambda: _mock_client(handler))
+
+    chapters = await _fichub.download_and_split_epub("/epub/abc123/sample.epub")
+
+    titles = [c.title for c in chapters]
+    assert "Cover" not in titles
+    htmls = " ".join(c.html for c in chapters)
+    assert "Cover Image" not in htmls

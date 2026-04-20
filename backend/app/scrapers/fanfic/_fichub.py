@@ -92,3 +92,48 @@ async def fetch_story_meta(fic_url: str) -> FicHubMeta:
         epub_url=body.get("epub_url", ""),
         url_id=body.get("urlId", ""),
     )
+
+
+async def download_and_split_epub(epub_url: str) -> list[ChapterText]:
+    """Download an EPUB from FicHub, parse with ebooklib, return chapters in
+    spine order. Strips cover.xhtml, nav.xhtml, and any item flagged as the
+    EPUB nav or cover document.
+    """
+    try:
+        async with _build_client() as client:
+            response = await client.get(epub_url)
+    except httpx.HTTPError as e:
+        raise FicHubError(f"EPUB download failed for {epub_url}: {e}") from e
+
+    if response.status_code != 200:
+        raise FicHubError(f"EPUB download HTTP {response.status_code} for {epub_url}")
+
+    return _split_epub_bytes(response.content)
+
+
+def _split_epub_bytes(epub_bytes: bytes) -> list[ChapterText]:
+    """Synchronous EPUB → list[ChapterText]. Pulled out for unit testability.
+
+    `ebooklib.epub.read_epub` only accepts a filesystem path, so we round-trip
+    through a NamedTemporaryFile rather than a BytesIO.
+    """
+    import tempfile
+    from ebooklib import epub, ITEM_DOCUMENT
+
+    with tempfile.NamedTemporaryFile(suffix=".epub", delete=True) as tf:
+        tf.write(epub_bytes)
+        tf.flush()
+        book = epub.read_epub(tf.name)
+
+    chapters: list[ChapterText] = []
+    chapter_num = 0
+    for item in book.get_items_of_type(ITEM_DOCUMENT):
+        name = (item.get_name() or "").lower()
+        if "nav" in name or "cover" in name or "title" in name:
+            continue
+        chapter_num += 1
+        html = item.get_content().decode("utf-8", errors="replace")
+        title = item.title or f"Chapter {chapter_num}"
+        chapters.append(ChapterText(number=chapter_num, title=title, html=html))
+
+    return chapters
