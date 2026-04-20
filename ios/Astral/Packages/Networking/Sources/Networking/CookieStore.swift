@@ -16,6 +16,7 @@ public final class CookieStore: Sendable {
         "hentai20": "hentai20.io",
         "ao3": "archiveofourown.org",
         "ffnet": "fanfiction.net",
+        "mangadex": "mangadex.org",
     ]
 
     private nonisolated(unsafe) let defaults = UserDefaults(suiteName: "com.astral.cookies")!
