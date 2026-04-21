@@ -99,12 +99,12 @@ async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> J
     # du -sb on /mnt/astral-media (storage) can also take a few seconds on
     # a populated volume.
     collectors = [
-        ("cost",     cost.collect,                                _empty_cost,             8.0),
+        ("cost",     cost.collect,                                _empty_cost,             12.0),
         ("services", services_coll.collect,                       lambda: [],              2.0),
         ("requests", partial(requests_coll.collect, range),       lambda: _empty_requests(range), 2.0),
         ("arq",      arq.collect,                                 _empty_arq,              4.0),
         ("storage",  storage.collect,                             _empty_storage,          10.0),
-        ("backups",  backups.collect,                             _empty_backups,          8.0),
+        ("backups",  backups.collect,                             _empty_backups,          12.0),
         ("cert",     cert.collect,                                _empty_cert,             2.0),
         ("logs",     partial(logs_coll.collect, 100),             lambda: [],              2.0),
     ]
