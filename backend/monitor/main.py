@@ -56,11 +56,28 @@ async def lifespan(_app: FastAPI):
         logger.warning("monitor pg pool failed: %s", e)
         pg_pool = None
 
+    # Warm the OCI SDK before serving traffic — first instance-principal
+    # signer handshake + first Budget/Usage API call can take 8-15s cold,
+    # which trips /metrics timeouts on the dashboard's initial load.
+    # Fire-and-forget; the task populates last_good so the FIRST /metrics
+    # request already has warm data.
+    async def _warm_oci():
+        try:
+            await asyncio.gather(
+                cost.collect(),
+                backups.collect(),
+                return_exceptions=True,
+            )
+            logger.info("monitor: OCI warm-up complete")
+        except Exception as e:
+            logger.warning("monitor: OCI warm-up failed: %s", e)
+
     tasks = [
         asyncio.create_task(bg.supervise(bg.docker_sampler, "docker_sampler")),
         asyncio.create_task(bg.supervise(bg.log_tailer, "log_tailer")),
         asyncio.create_task(bg.supervise(bg.nginx_access_sampler, "nginx_access_sampler")),
         asyncio.create_task(bg.supervise(bg.storage_trend_hoister, "storage_trend_hoister")),
+        asyncio.create_task(_warm_oci()),
     ]
     logger.info("monitor started: %d bg tasks, redis=%s", len(tasks), _REDIS_URL)
 
