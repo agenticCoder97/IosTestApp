@@ -6,6 +6,10 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ## 2026-04-21
 
+### iOS
+
+- **AST-53** — iPhone now talking to prod: no code change needed — `AppConfig.swift` release branch already pointed at `https://astral-reader.duckdns.org` with the correct trailing-slash `staticBaseURL`, and Info.plist ATS exceptions are correctly scoped only to `localhost` + `192.168.0.108` (dev). Verified end-to-end by building in Release config, installing on the physical iPhone, and watching real requests hit the A1 (library load, progress hydrate, scrapes list all 200 OK). Expected side effect: local SwiftData entries from the dev backend return 404 on detail fetches against fresh prod — harmless, resolves by wiping+reinstalling the app or letting users re-scrape.
+
 ### Backend
 
 - **AST-49** — Prod stack live on OCI: brought up the unified compose stack (postgres, redis, fastapi, arq_worker, nginx, certbot) on the A1 VM at `astral-reader.duckdns.org`. First-time deploy required (a) pre-creating `/mnt/astral-media/postgres` with uid 70 ownership for the alpine postgres container, and (b) fixing a latent bug in `nginx.conf` where `worker_processes auto;` was nested inside the `events{}` block (nginx rejects with `"directive is not allowed here"`). End-to-end verified: `GET https://astral-reader.duckdns.org/api/v1/health` returns `{"status":"ok"}` with a valid LE cert, HTTP→HTTPS 301 redirect works, `fastapi` + `arq_worker` startup logs clean (Redis + Postgres connected, `create_all()` ran, 8 ARQ functions registered including cron jobs). ([PR #44](https://github.com/agenticCoder97/IosTestApp/pull/44))
