@@ -139,3 +139,12 @@ volumes:
 networks:
   astral_net:
     driver: bridge
+    # Pin the bridge subnet so nginx's `allow 172.19.0.0/16` for the
+    # stub_status location always matches the monitor container's IP.
+    # Docker bridge networks otherwise get whatever /16 is free, which
+    # could be 172.20.x.x on a re-provision and would silently deny the
+    # monitor scrape.
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.19.0.0/16

@@ -18,17 +18,29 @@ _BUDGET_OCID = os.getenv("OCI_BUDGET_OCID")
 async def collect() -> CostBlock:
     # Budget + egress API calls run concurrently so cost collector
     # wall-time is max(budget, egress) rather than budget + egress.
-    budget, egress_tb_used = await asyncio.gather(
+    # return_exceptions=True so a partial failure (budget succeeds + egress
+    # fails, or vice versa) still returns the real data we did get, rather
+    # than raising into safe() and losing the other half to fallback.
+    budget_res, egress_res = await asyncio.gather(
         _fetch_budget(),
         _fetch_egress(),
+        return_exceptions=True,
     )
+    if isinstance(budget_res, BaseException):
+        logger.warning("cost._fetch_budget failed: %s", budget_res)
+        budget_res = None
+    egress_tb_used = None if isinstance(egress_res, BaseException) else egress_res
+
     af = await _fetch_always_free(egress_tb_used=egress_tb_used)
 
+    # Budget block defaults when the API call failed; currency/mtd/forecast
+    # fall back to zeros so the CostBlock remains renderable.
+    budget_data = getattr(budget_res, "data", None)
     return CostBlock(
-        currency=getattr(budget.data, "currency", "USD"),
-        month_to_date=float(getattr(budget.data, "actual_spend", 0.0) or 0.0),
-        forecast=float(getattr(budget.data, "forecasted_spend", 0.0) or 0.0),
-        budget=float(getattr(budget.data, "amount", 1.0) or 1.0),
+        currency=getattr(budget_data, "currency", "USD") if budget_data else "USD",
+        month_to_date=float(getattr(budget_data, "actual_spend", 0.0) or 0.0) if budget_data else 0.0,
+        forecast=float(getattr(budget_data, "forecasted_spend", 0.0) or 0.0) if budget_data else 0.0,
+        budget=float(getattr(budget_data, "amount", 1.0) or 1.0) if budget_data else 1.0,
         last_alert=None,
         always_free=AlwaysFree(
             a1_ocpu=CapUsage(**af["a1_ocpu"]),
