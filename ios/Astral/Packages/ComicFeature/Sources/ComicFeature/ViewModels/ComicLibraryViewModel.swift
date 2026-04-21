@@ -94,9 +94,11 @@ final class ComicLibraryViewModel {
         } catch let error as APIError where error == .cookieRefreshNeeded {
             errorMessage = "Browser refresh needed"
             AstralLogger.warning("fetchComics: cookie refresh needed", context: "ComicLibraryVM")
-        } catch is URLError {
-            errorMessage = "Backend unreachable — check Docker is running"
-            AstralLogger.error("fetchComics: backend unreachable", context: "ComicLibraryVM")
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            AstralLogger.info("fetchComics cancelled mid-flight", context: "ComicLibraryVM")
+        } catch let urlError as URLError {
+            errorMessage = "Couldn't reach the server — \(urlError.localizedDescription)"
+            AstralLogger.error("fetchComics URL error: \(urlError.code.rawValue) — \(urlError.localizedDescription)", context: "ComicLibraryVM")
         } catch {
             errorMessage = "Sync failed: \(error.localizedDescription)"
             AstralLogger.error("fetchComics failed: \(error)", context: "ComicLibraryVM")

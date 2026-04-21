@@ -148,9 +148,11 @@ final class FanficLibraryViewModel {
                     AstralLogger.info("Migration: thumbnail assignment complete", context: "FanficLibraryVM")
                 }
             }
-        } catch is URLError {
-            errorMessage = "Backend unreachable — check Docker is running"
-            AstralLogger.error("fetchFanfics: backend unreachable", context: "FanficLibraryVM")
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            AstralLogger.info("fetchFanfics cancelled mid-flight", context: "FanficLibraryVM")
+        } catch let urlError as URLError {
+            errorMessage = "Couldn't reach the server — \(urlError.localizedDescription)"
+            AstralLogger.error("fetchFanfics URL error: \(urlError.code.rawValue) — \(urlError.localizedDescription)", context: "FanficLibraryVM")
         } catch {
             errorMessage = "Sync failed: \(error.localizedDescription)"
             AstralLogger.error("fetchFanfics failed: \(error)", context: "FanficLibraryVM")
