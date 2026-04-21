@@ -146,9 +146,12 @@ async def _fetch_service_extra(svc: str, started_at_iso: str, now_ms: int, redis
         if svc == "fastapi":
             import os as _os
             workers = int(_os.getenv("UVICORN_WORKERS", "1"))
-            cached = NGINX_WINDOW_CACHE.get("1h", {})
-            rps_pts = cached.get("series_rps", [])
-            rps = float(rps_pts[-1][1]) if rps_pts else 0.0
+            # Use the 60-second /api/* window so rps is genuinely "last
+            # minute of prod API traffic" rather than a 1-hour average.
+            cached = NGINX_WINDOW_CACHE.get("1m_api", {})
+            sc = cached.get("status_codes", {}) or {}
+            total = sum(int(sc.get(k, 0) or 0) for k in ("2xx", "3xx", "4xx", "5xx"))
+            rps = total / 60.0
             return {"workers": workers, "rps": f"{rps:.2f}"}
 
         if svc == "arq_worker":
@@ -331,7 +334,8 @@ _LOG_RE = _re.compile(
     r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)"$'
 )
 
-_WINDOWS_S = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000}
+_WINDOWS_S = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000,
+              "1m_api": 60}
 
 
 def _parse_log_line(line: str) -> dict | None:
@@ -435,6 +439,12 @@ async def nginx_access_sampler() -> None:
             for w, seconds in _WINDOWS_S.items():
                 cutoff = now_ms - seconds * 1000
                 window_records = [r for r in all_records if r["ts_ms"] >= cutoff]
+                # 1m_api: narrow to prod API paths only — used by the
+                # fastapi service card for live RPS. Other windows stay
+                # full-traffic (they drive the Request Metrics chart).
+                if w == "1m_api":
+                    window_records = [r for r in window_records
+                                      if r["path"].startswith("/api/")]
                 NGINX_WINDOW_CACHE[w] = _compute_window(window_records, w)
         except Exception as e:
             logger.warning("nginx_access_sampler failed: %s", e)
