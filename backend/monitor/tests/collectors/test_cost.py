@@ -18,7 +18,10 @@ async def test_collect_assembles_from_budget_api(monkeypatch):
     async def _fb():
         return fake_budget
 
-    async def _faf():
+    async def _fegress():
+        return 0.18
+
+    async def _faf(**kwargs):
         return {
             "a1_ocpu":       {"used": 4,  "cap": 4,  "unit": "ocpu"},
             "a1_ram_gb":     {"used": 24, "cap": 24, "unit": "GB"},
@@ -27,6 +30,7 @@ async def test_collect_assembles_from_budget_api(monkeypatch):
             "object_std_gb": {"used": 3.4,"cap": 20,"unit": "GB"},
         }
 
+    monkeypatch.setattr(cost_mod, "_fetch_egress", _fegress)
     monkeypatch.setattr(cost_mod, "_fetch_budget", _fb)
     monkeypatch.setattr(cost_mod, "_fetch_always_free", _faf)
     monkeypatch.setattr(cost_mod, "get_cache_redis", lambda: FakeAsyncRedis(decode_responses=True))

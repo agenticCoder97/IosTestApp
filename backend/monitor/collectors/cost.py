@@ -16,8 +16,13 @@ _BUDGET_OCID = os.getenv("OCI_BUDGET_OCID")
 
 
 async def collect() -> CostBlock:
-    budget = await _fetch_budget()
-    af = await _fetch_always_free()
+    # Budget + egress API calls run concurrently so cost collector
+    # wall-time is max(budget, egress) rather than budget + egress.
+    budget, egress_tb_used = await asyncio.gather(
+        _fetch_budget(),
+        _fetch_egress(),
+    )
+    af = await _fetch_always_free(egress_tb_used=egress_tb_used)
 
     return CostBlock(
         currency=getattr(budget.data, "currency", "USD"),
@@ -35,6 +40,56 @@ async def collect() -> CostBlock:
     )
 
 
+async def _call_usage_api():
+    """OCI Usage API round-trip via instance-principal signer. Sync call
+    wrapped in to_thread because the SDK is blocking."""
+    def _sync():
+        import oci
+        from datetime import datetime, timezone
+
+        tenancy = os.getenv("OCI_TENANCY_OCID")
+        if not tenancy:
+            raise RuntimeError("OCI_TENANCY_OCID env var not set")
+
+        signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+        client = oci.usage_api.UsageapiClient(config={}, signer=signer)
+
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        details = oci.usage_api.models.RequestSummarizedUsagesDetails(
+            tenant_id=tenancy,
+            time_usage_started=month_start,
+            time_usage_ended=now,
+            granularity="MONTHLY",
+            query_type="USAGE",
+            group_by=["service"],
+        )
+        return client.request_summarized_usages(details)
+
+    return await asyncio.to_thread(_sync)
+
+
+async def _fetch_egress() -> Optional[float]:
+    """TB used on outbound networking this calendar month. None on failure."""
+    if not os.getenv("OCI_TENANCY_OCID"):
+        return None
+    try:
+        resp = await _call_usage_api()
+        gb_total = 0.0
+        for item in getattr(resp.data, "items", []) or []:
+            svc = (getattr(item, "service", "") or "").lower()
+            # All OCI outbound-transfer line items live under the "Networking"
+            # service family. Simpler + more robust than whitelisting SKUs.
+            if "networking" in svc:
+                qty = float(getattr(item, "computed_quantity", 0.0) or 0.0)
+                gb_total += qty
+        return gb_total / 1024.0  # GB → TB
+    except Exception as e:
+        logger.debug("_fetch_egress failed: %s", e)
+        return None
+
+
 async def _fetch_budget():
     """OCI Budget API via instance-principal signer."""
     if not _BUDGET_OCID:
@@ -49,7 +104,7 @@ async def _fetch_budget():
     return await asyncio.to_thread(_sync)
 
 
-async def _fetch_always_free() -> dict:
+async def _fetch_always_free(egress_tb_used: Optional[float] = None) -> dict:
     """Assemble 5-dimension usage-vs-cap snapshot.
 
     block_vol_gb + object_std_gb read from storage last-good; others are
@@ -72,10 +127,11 @@ async def _fetch_always_free() -> dict:
     except Exception:
         pass
 
+    egress = round(egress_tb_used, 3) if egress_tb_used is not None else 0.0
     return {
         "a1_ocpu":       {"used": 4,  "cap": 4,  "unit": "ocpu"},
         "a1_ram_gb":     {"used": 24, "cap": 24, "unit": "GB"},
         "block_vol_gb":  {"used": used_block_gb, "cap": 200, "unit": "GB"},
-        "egress_tb":     {"used": 0.18, "cap": 10, "unit": "TB"},
+        "egress_tb":     {"used": egress, "cap": 10, "unit": "TB"},
         "object_std_gb": {"used": used_obj_gb, "cap": 20, "unit": "GB"},
     }
