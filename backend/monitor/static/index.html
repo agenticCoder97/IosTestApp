@@ -564,12 +564,12 @@
       <div>
         <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-2">Month-to-date spend</div>
         <div class="flex items-end gap-2">
-          <div class="text-[44px] leading-none font-bold text-white mono">$0.00</div>
-          <div class="text-muted mono text-sm pb-1.5">/ $1.00</div>
+          <div class="text-[44px] leading-none font-bold text-white mono" id="cost-spend-mtd">$0.00</div>
+          <div class="text-muted mono text-sm pb-1.5">/ <span id="cost-spend-budget">$1.00</span></div>
         </div>
         <div class="mt-3 gauge ok"><span style="width:0%"></span></div>
         <div class="mt-2 flex justify-between text-[11px] text-muted">
-          <span>forecast <span class="mono text-body">$0.00</span></span>
+          <span>forecast <span class="mono text-body" id="cost-spend-forecast">$0.00</span></span>
           <span>alert <span class="mono text-body">never fired</span></span>
         </div>
 
@@ -598,10 +598,10 @@
             <div class="badge badge-warn" title="at-cap but free">AT CAP</div>
           </div>
           <div class="mt-2 flex items-baseline gap-1">
-            <span class="text-2xl font-semibold text-white mono">4</span>
-            <span class="text-muted mono text-xs">/ 4 ocpu</span>
+            <span class="text-2xl font-semibold text-white mono" id="ocpu-used">4</span>
+            <span class="text-muted mono text-xs">/ <span id="ocpu-cap">4</span> ocpu</span>
           </div>
-          <div class="mt-3 gauge warn"><span style="width:100%"></span></div>
+          <div class="mt-3 gauge warn"><span id="gauge-ocpu" style="width:100%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">always-free cap · no charge</div>
         </div>
         <!-- A1 RAM -->
@@ -611,10 +611,10 @@
             <div class="badge badge-warn">AT CAP</div>
           </div>
           <div class="mt-2 flex items-baseline gap-1">
-            <span class="text-2xl font-semibold text-white mono">24</span>
-            <span class="text-muted mono text-xs">/ 24 GB</span>
+            <span class="text-2xl font-semibold text-white mono" id="ram-used">24</span>
+            <span class="text-muted mono text-xs">/ <span id="ram-cap">24</span> GB</span>
           </div>
-          <div class="mt-3 gauge warn"><span style="width:100%"></span></div>
+          <div class="mt-3 gauge warn"><span id="gauge-ram" style="width:100%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">always-free cap · no charge</div>
         </div>
         <!-- Block volume -->
@@ -624,8 +624,8 @@
             <div class="badge badge-ok">98% free</div>
           </div>
           <div class="mt-2 flex items-baseline gap-1">
-            <span class="text-2xl font-semibold text-white mono">197</span>
-            <span class="text-muted mono text-xs">/ 200 GB total</span>
+            <span class="text-2xl font-semibold text-white mono" id="vol-used">197</span>
+            <span class="text-muted mono text-xs">/ <span id="vol-cap">200</span> GB total</span>
           </div>
           <div class="mt-3 gauge ok"><span id="gauge-vol" style="width:98.5%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">boot 47 · data 150</div>
@@ -638,7 +638,7 @@
           </div>
           <div class="mt-2 flex items-baseline gap-1">
             <span class="text-2xl font-semibold text-white mono" id="egress-used">0.12</span>
-            <span class="text-muted mono text-xs">/ 10 TB</span>
+            <span class="text-muted mono text-xs">/ <span id="egress-cap">10</span> TB</span>
           </div>
           <div class="mt-3 gauge ok"><span id="gauge-egress" style="width:1.2%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">projected <span class="text-body" id="egress-forecast">0.18</span> TB</div>
@@ -1556,6 +1556,61 @@ function renderBackups(){
   document.getElementById('bk-next').textContent = `${h}h ${pad2(m)}m`;
 }
 
+function renderCost(){
+  setDegradedDot('sec-cost', STATE.data.cost_meta);
+  const c = STATE.data.cost;
+  if(!c) return;
+  const af = c.always_free || {};
+
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if(el && val != null) el.textContent = val;
+  };
+
+  // Spend block
+  set('cost-spend-mtd',      '$' + Number(c.month_to_date || 0).toFixed(2));
+  set('cost-spend-budget',   '$' + Number(c.budget || 0).toFixed(2));
+  set('cost-spend-forecast', '$' + Number(c.forecast || 0).toFixed(2));
+
+  // Gauges — each entry is [used-id, cap-id, gauge-fill-id, usageObj, formatter]
+  const rows = [
+    ['ocpu-used',   'ocpu-cap',   'gauge-ocpu',   af.a1_ocpu,       v => String(Math.round(v))],
+    ['ram-used',    'ram-cap',    'gauge-ram',    af.a1_ram_gb,     v => String(Math.round(v))],
+    ['vol-used',    'vol-cap',    'gauge-vol',    af.block_vol_gb,  v => String(Math.round(v))],
+    ['egress-used', 'egress-cap', 'gauge-egress', af.egress_tb,     v => Number(v).toFixed(2)],
+  ];
+
+  let worstPct = 0;
+  for(const [usedId, capId, gaugeId, usage, fmt] of rows){
+    if(!usage) continue;
+    set(usedId, fmt(usage.used));
+    set(capId,  fmt(usage.cap));
+    const pct = usage.cap > 0 ? (usage.used / usage.cap) * 100 : 0;
+    worstPct = Math.max(worstPct, pct);
+    const gauge = document.getElementById(gaugeId);
+    if(gauge){ gauge.style.width = Math.min(100, pct).toFixed(1) + '%'; }
+  }
+
+  // Section-header badge: escalate from WITHIN CAPS (green) to APPROACHING CAP (amber) at 80%
+  const head = document.getElementById('sec-cost');
+  if(head){
+    const badge = head.querySelector('.badge');
+    if(badge){
+      if(worstPct >= 80){
+        badge.className = 'badge badge-warn';
+        const dot = badge.querySelector('.dot'); if(dot) dot.className = 'dot warn';
+        const txt = badge.childNodes[badge.childNodes.length - 1];
+        if(txt && txt.nodeType === Node.TEXT_NODE) txt.nodeValue = 'APPROACHING CAP';
+      } else {
+        badge.className = 'badge badge-ok';
+        const dot = badge.querySelector('.dot'); if(dot) dot.className = 'dot ok';
+        const txt = badge.childNodes[badge.childNodes.length - 1];
+        if(txt && txt.nodeType === Node.TEXT_NODE) txt.nodeValue = 'WITHIN CAPS';
+      }
+    }
+  }
+}
+
 function renderCert(){
   setDegradedDot('sec-cert', STATE.data.cert_meta);
   const c = STATE.data.cert;
@@ -1619,6 +1674,7 @@ function renderLogs(){
 }
 
 function renderAll(){
+  renderCost();
   renderServices();
   renderRequests();
   renderArq();
@@ -1626,15 +1682,9 @@ function renderAll(){
   renderBackups();
   renderCert();
   renderLogs();
-  // egress gauge
-  const eg = STATE.data.cost.always_free.egress_tb;
-  document.getElementById('egress-used').textContent = eg.used.toFixed(2);
-  document.getElementById('egress-forecast').textContent = (eg.used*1.55).toFixed(2);
-  document.getElementById('gauge-egress').style.width = (eg.used/eg.cap*100).toFixed(1)+'%';
   // as-of
   document.getElementById('asof').textContent = new Date(STATE.data.generated_at).toUTCString().replace('GMT','UTC');
   // degraded-mode amber dots on section headers
-  setDegradedDot('sec-cost',     STATE.data.cost_meta);
   setDegradedDot('sec-services', STATE.data.services_meta);
   setDegradedDot('sec-requests', STATE.data.requests_meta);
   setDegradedDot('sec-arq',      STATE.data.arq_meta);
