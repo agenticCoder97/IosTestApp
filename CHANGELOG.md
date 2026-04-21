@@ -6,6 +6,10 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ## 2026-04-21
 
+### Backend
+
+- **AST-57** — OCI monitor dashboard: new `astral_monitor` service in the prod compose stack serves a pixel-locked dark-mode dashboard at `astral-reader.duckdns.org/monitor/` (Basic Auth). `/metrics` aggregates docker-compose service stats (docker_sampler), ARQ queue state, pg+media+block-vol+Object-Storage usage, OCI Budget API, LE cert expiry, nginx request metrics (1h/6h/24h/7d/30d), and a 500-line log tail — all behind a 2s `safe()` timeout so a single broken collector becomes a degraded amber-dot marker instead of a failed response. Four bg samplers (docker_sampler 10s, log_tailer streaming, nginx_access_sampler 60s, storage_trend_hoister 1h) keep request-path latency under 300ms p95. Total incremental OCI spend: $0 (fits within A1 24GB RAM envelope). 40 unit tests. ([PR #48](https://github.com/agenticCoder97/IosTestApp/pull/48))
+
 ### iOS
 
 - **AST-56** — Fix library refresh false-positive "Backend unreachable": both `ComicLibraryViewModel` and `FanficLibraryViewModel` caught `URLError` as a blanket unreachable state, which incorrectly flagged `URLError.cancelled` (fired by SwiftUI when `.refreshable` cancels an in-flight `.task`) as a backend failure. Discriminate `.cancelled` (silent, expected) from real URLErrors (surface the underlying `localizedDescription`). Also updates the user-facing message from the dev-flavored "check Docker is running" to "Couldn't reach the server — <reason>". ([PR #47](https://github.com/agenticCoder97/IosTestApp/pull/47))
