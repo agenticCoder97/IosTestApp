@@ -1323,12 +1323,13 @@ function genDataMock(range){
    SPARKLINE / CHART HELPERS
    ========================================================================= */
 function sparkSvg(points, {w=100, h=28, tone=''}={}){
-  if(!points.length) return '';
+  if(!points || !points.length) return '';
   const min = Math.min(...points), max = Math.max(...points), range = (max-min)||1;
-  const step = w/(points.length-1);
+  // length-1 case would divide by zero → NaN coordinates; degenerate to a flat line at x=0..w
+  const step = points.length > 1 ? w/(points.length-1) : 0;
   let d = '';
   points.forEach((p,i)=>{
-    const x = i*step;
+    const x = points.length > 1 ? i*step : w/2;
     const y = h - ((p-min)/range)*(h-2) - 1;
     d += (i===0?'M':'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
   });
