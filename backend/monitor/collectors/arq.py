@@ -18,6 +18,7 @@ import os
 import time
 from datetime import datetime, timezone
 
+import redis.asyncio as aioredis
 from arq.jobs import deserialize_job_raw, deserialize_result
 
 from monitor.cache import get_cache_redis
@@ -26,10 +27,29 @@ from monitor.schema import ArqActiveJob, ArqBlock, ArqCompletedJob, ArqFailedJob
 logger = logging.getLogger("monitor.arq")
 
 _ARQ_MAX_JOBS = int(os.getenv("ARQ_MAX_JOBS", "3"))
+_REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+# Bytes-mode client for arq:job:* / arq:result:* reads.
+# The shared monitor client uses decode_responses=True, which raises
+# UnicodeDecodeError on the first byte of any arq payload (0x80 =
+# serializer header). We open a second connection with bytes mode so
+# arq's deserializer gets raw bytes. Cached module-level so we don't
+# pay a new handshake per /metrics call.
+_bytes_client: aioredis.Redis | None = None
+
+
+def _get_bytes_client() -> aioredis.Redis:
+    global _bytes_client
+    if _bytes_client is None:
+        _bytes_client = aioredis.from_url(
+            _REDIS_URL, decode_responses=False, socket_connect_timeout=2,
+        )
+    return _bytes_client
 
 
 async def collect() -> ArqBlock:
     r = get_cache_redis()
+    rb = _get_bytes_client()
 
     # Pending queue depth — zset of job_ids scheduled to run
     queue_depth = int(await r.zcard("arq:queue") or 0)
@@ -44,13 +64,9 @@ async def collect() -> ArqBlock:
     active: list[ArqActiveJob] = []
     now_ms = int(time.time() * 1000)
     for job_id in in_progress_ids[:20]:
-        raw = await r.get(f"arq:job:{job_id}")
+        raw = await rb.get(f"arq:job:{job_id}")
         if not raw:
             continue
-        if isinstance(raw, str):
-            # decode_responses=True returned latin-1; re-encode to bytes
-            # for arq's deserializer (it expects raw bytes).
-            raw = raw.encode("latin-1")
         try:
             fn, args, _kwargs, _job_try, enqueue_time = deserialize_job_raw(raw)
         except Exception as e:
@@ -73,11 +89,9 @@ async def collect() -> ArqBlock:
     failed: list[dict] = []
     cutoff_ms = now_ms - 24 * 3600 * 1000
     async for key in r.scan_iter(match="arq:result:*", count=200):
-        raw = await r.get(key)
+        raw = await rb.get(key)
         if not raw:
             continue
-        if isinstance(raw, str):
-            raw = raw.encode("latin-1")
         try:
             jr = deserialize_result(raw)
         except Exception:

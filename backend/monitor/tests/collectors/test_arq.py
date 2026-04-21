@@ -5,6 +5,10 @@ the same schema the real worker writes. The pre-AST-58 version of these
 tests built JSON fixtures against `arq:in_progress:` (underscore), which
 silently hid two bugs in the collector: wrong key prefix (real ARQ uses
 hyphen) and wrong serializer assumption.
+
+Two fake redises are monkeypatched: the decode-mode client (for queue
+depth + key scans) and the bytes-mode client (for arq:job:* /
+arq:result:* payload reads).
 """
 import time
 from datetime import datetime, timezone
@@ -16,10 +20,24 @@ from fakeredis import FakeAsyncRedis
 from monitor.collectors import arq as arq_mod
 
 
+def _patch(monkeypatch):
+    r = FakeAsyncRedis(decode_responses=True)
+    rb = FakeAsyncRedis(decode_responses=False, server=r.connection_pool.connection_kwargs.get("server"))
+    # fakeredis shares state via the default server when no server= is given,
+    # but we still want both views to see the same keyspace — use one backing
+    # server instance explicitly.
+    from fakeredis import FakeServer
+    srv = FakeServer()
+    r = FakeAsyncRedis(decode_responses=True, server=srv)
+    rb = FakeAsyncRedis(decode_responses=False, server=srv)
+    monkeypatch.setattr(arq_mod, "get_cache_redis", lambda: r)
+    monkeypatch.setattr(arq_mod, "_get_bytes_client", lambda: rb)
+    return r, rb
+
+
 @pytest.mark.asyncio
 async def test_collect_empty_queue(monkeypatch):
-    r = FakeAsyncRedis(decode_responses=True)
-    monkeypatch.setattr(arq_mod, "get_cache_redis", lambda: r)
+    _patch(monkeypatch)
     block = await arq_mod.collect()
     assert block.queue_depth == 0
     assert block.in_flight == 0
@@ -30,7 +48,7 @@ async def test_collect_empty_queue(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_collect_populated_queue(monkeypatch):
-    r = FakeAsyncRedis(decode_responses=True)
+    r, rb = _patch(monkeypatch)
 
     # 3 jobs pending in the default queue
     for i in range(3):
@@ -48,9 +66,7 @@ async def test_collect_populated_queue(monkeypatch):
         enqueue_time_ms=enq_ms,
         serializer=None,
     )
-    await r.set("arq:job:job_inflight", raw_job.decode("latin-1"))
-
-    monkeypatch.setattr(arq_mod, "get_cache_redis", lambda: r)
+    await rb.set("arq:job:job_inflight", raw_job)
 
     block = await arq_mod.collect()
     assert block.queue_depth == 3
@@ -65,7 +81,7 @@ async def test_collect_populated_queue(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_collect_recent_completed_and_failed(monkeypatch):
-    r = FakeAsyncRedis(decode_responses=True)
+    r, rb = _patch(monkeypatch)
     now = datetime.now(timezone.utc)
     now_ms = int(now.timestamp() * 1000)
 
@@ -99,10 +115,9 @@ async def test_collect_recent_completed_and_failed(monkeypatch):
         job_id="bad_job",
         serializer=None,
     )
-    await r.set("arq:result:ok_job", ok.decode("latin-1"))
-    await r.set("arq:result:bad_job", bad.decode("latin-1"))
+    await rb.set("arq:result:ok_job", ok)
+    await rb.set("arq:result:bad_job", bad)
 
-    monkeypatch.setattr(arq_mod, "get_cache_redis", lambda: r)
     block = await arq_mod.collect()
     assert block.completed_24h == 1
     assert block.failed_24h == 1
