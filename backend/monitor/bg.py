@@ -12,7 +12,7 @@ _BACKOFF_INITIAL_S = 10
 _BACKOFF_MAX_S = 60
 
 SERVICE_CACHE: dict[str, dict[str, Any]] = {}
-LOG_DEQUE: Deque[dict[str, Any]] = deque(maxlen=500)
+LOG_DEQUE: Deque[dict[str, Any]] = deque(maxlen=2000)
 NGINX_WINDOW_CACHE: dict[str, dict[str, Any]] = {}
 
 
@@ -271,7 +271,10 @@ def _classify_level(msg: str, svc: str, status: int | None = None) -> str:
 async def _follow_one(client, container, svc: str) -> None:
     """Follow a single container forever. Lines go to LOG_DEQUE."""
     def _iter():
-        return container.logs(stream=True, follow=True, tail=0, timestamps=True)
+        # tail=200 gives newly-attached followers recent history on monitor
+        # restart, so quiet services (fastapi, astral_monitor) are visible in
+        # the Logs view immediately rather than only after new traffic arrives.
+        return container.logs(stream=True, follow=True, tail=200, timestamps=True)
 
     it = await asyncio.to_thread(_iter)
     while True:
