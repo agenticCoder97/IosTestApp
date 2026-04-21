@@ -101,7 +101,7 @@ async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> J
         ("cost",     cost.collect,                                _empty_cost,             4.0),
         ("services", services_coll.collect,                       lambda: [],              2.0),
         ("requests", partial(requests_coll.collect, range),       lambda: _empty_requests(range), 2.0),
-        ("arq",      arq.collect,                                 _empty_arq,              2.0),
+        ("arq",      arq.collect,                                 _empty_arq,              4.0),
         ("storage",  storage.collect,                             _empty_storage,          10.0),
         ("backups",  backups.collect,                             _empty_backups,          4.0),
         ("cert",     cert.collect,                                _empty_cert,             2.0),
