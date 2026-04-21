@@ -313,19 +313,6 @@
   .uptime-grid .cell.none{ background: rgba(107,107,122,.18); }
   .uptime-grid .cell:hover{ filter: brightness(1.3); }
 
-  /* Metrics Explorer — query builder chip */
-  .mx-chip{
-    display:inline-flex; align-items:center; gap:6px;
-    padding: 5px 10px; border-radius:6px;
-    background: var(--elevated); box-shadow: inset 0 0 0 0.5px var(--border);
-    font:500 12px/1 "JetBrains Mono",monospace; color:var(--body);
-    cursor:pointer;
-  }
-  .mx-chip .k{ color:var(--muted); }
-  .mx-chip .v{ color:var(--gold); }
-  .mx-chip:hover{ box-shadow: inset 0 0 0 0.5px rgba(201,168,76,.35); }
-  .mx-op{ color:var(--muted); font: 500 11px/1 "JetBrains Mono",monospace; padding: 0 2px; }
-
   /* Recommendations */
   .reco{
     display:grid; grid-template-columns: 28px 1fr auto; gap: 12px;
@@ -688,27 +675,6 @@
   <section class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
     <!-- Left: line chart -->
     <div class="card p-4 sm:p-5">
-      <!-- Metrics Explorer (GCP) -->
-      <div class="flex items-center gap-1.5 flex-wrap mb-4 pb-3 border-b border-border/70">
-        <span class="text-[11px] tracking-[.14em] uppercase text-muted mr-1">query</span>
-        <span class="mx-chip" data-mx="metric"><span class="k">metric</span><span class="v" id="mx-metric">http.requests</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></span>
-        <span class="mx-op">·</span>
-        <span class="mx-chip" data-mx="agg"><span class="k">agg</span><span class="v" id="mx-agg">rate(1m)</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></span>
-        <span class="mx-op">·</span>
-        <span class="mx-chip" data-mx="group"><span class="k">group by</span><span class="v" id="mx-group">endpoint</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></span>
-        <span class="mx-op">where</span>
-        <span class="mx-chip"><span class="k">status</span><span class="v">!= 2xx</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
-        <span class="flex-1"></span>
-        <span class="badge badge-muted mono" title="copy query">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          PromQL
-        </span>
-      </div>
-
       <div class="flex items-baseline justify-between flex-wrap gap-2">
         <div>
           <div class="text-[11px] tracking-[.14em] uppercase text-muted">Requests/sec · p95 latency</div>
