@@ -13,7 +13,7 @@ def test_log_deque_maxlen_is_2000():
 
 
 @pytest.mark.asyncio
-async def test_follow_one_requests_200_line_backfill(monkeypatch):
+async def test_follow_one_requests_200_line_backfill():
     """_follow_one must pass tail=200 to container.logs() so newly-attached
     followers pick up recent history on monitor restart."""
     captured = {}
