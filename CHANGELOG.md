@@ -8,6 +8,14 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ### Backend
 
+- **AST-51** — Weekly pg_dump backup cron to OCI Object Storage: new `backend/scripts/astral-backup.sh` pipes `pg_dump --format=custom | gzip | oci os object put` to the private `astral-backups` bucket (Standard tier, Always Free). Auth via OCI **instance principal** — no API keys on disk; IAM dynamic group + policy scope the A1 (`astral-server`) to manage only that bucket, and Object Storage gets a lifecycle rule that auto-deletes objects older than 56 days (8 weekly snapshots). Script features: `set -euo pipefail`, `--dry-run` + `--help` flags, tee-to-log, post-upload `os object head` verification. Runbook at `backend/scripts/astral-backup-setup.md` covers one-time OCI provisioning, A1-host install, and restore via `pg_restore`. Post-merge install on A1 still pending (oci-cli, `/etc/cron.d/astral-backup`). ([PR #46](https://github.com/agenticCoder97/IosTestApp/pull/46))
+
+### Docs
+
+- **AST-52** — Documented DB reversal (Oracle ADB → Postgres 16 on the A1 VM) in `ARCHITECTURE.md`: added new top-level "Corrections from v1.1 (v1.2)" section with ❌→✅ Was/Now/Reason table; updated §1.2 Architecture DB + Driver rows (`asyncpg`, `/mnt/astral-media/postgres`); replaced the two Oracle rows in §1.3 Technology Decisions with a single Postgres-on-A1 rationale row; §2.2 `database.py` description notes `asyncpg` + retained-as-dead-code Oracle path with AST-55 reference. Also removed `ORACLE_WALLET_PATH=` / `ORACLE_WALLET_PASSWORD=` from `backend/.env.example`. Oracle refs still present in §2.4/§3/§8 — outside scope, tracked for sweep alongside AST-55. ([PR #45](https://github.com/agenticCoder97/IosTestApp/pull/45))
+
+### Backend
+
 - **AST-54** — End-to-end prod smoke test passed: iPhone (release build) → DuckDNS → nginx (TLS) → FastAPI → ARQ worker → Postgres + block-volume storage → iPhone reader. Initiated a live comic scrape of `hentai20.io/manga/wireless-onahole/` (86 chapters, CF-cookie-gated); flowed cleanly through all services (cookies stored in Redis, ARQ enqueue, worker scraped chapters in parallel ~2.5s each, images written to `/mnt/astral-media/`, pages served from `/static/` over HTTPS). No code changes; migration functionally complete.
 
 ### iOS
