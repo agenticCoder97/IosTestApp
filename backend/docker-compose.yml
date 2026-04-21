@@ -75,7 +75,9 @@ services:
       - astral_net
 
   certbot:
-    image: certbot/dns-duckdns:latest
+    # community-maintained image bundling certbot + certbot-dns-duckdns plugin;
+    # the previously-referenced certbot/dns-duckdns doesn't exist on Docker Hub.
+    image: infinityofspace/certbot_dns_duckdns:latest
     env_file:
       - .env.oci
     volumes:
