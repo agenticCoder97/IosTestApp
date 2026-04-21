@@ -166,17 +166,20 @@ async def _fetch_service_extra(svc: str, started_at_iso: str, now_ms: int, redis
             }
 
         if svc == "nginx":
+            # Prefer real stub_status data; fall back to the 1h window
+            # approximation if the scrape fails (stub_status not mounted,
+            # nginx down, etc.).
+            from monitor.collectors import _nginx_stub
+            stub = await _nginx_stub.fetch_stub()
+            if stub:
+                return {
+                    "active_connections": stub["active_connections"],
+                    "reqs_total":         stub["total_requests"],
+                }
             cached = NGINX_WINDOW_CACHE.get("1h", {})
-            rps_pts = cached.get("series_rps", [])
-            last_rps = float(rps_pts[-1][1]) if rps_pts else 0.0
-            # Active connections isn't available without the nginx stub_status
-            # module; use last-bucket rps as a rough "in-flight" proxy.
             sc = cached.get("status_codes", {}) or {}
             total = sum(int(sc.get(k, 0) or 0) for k in ("2xx", "3xx", "4xx", "5xx"))
-            return {
-                "active_connections": max(1, int(round(last_rps))),
-                "reqs_total": total,
-            }
+            return {"active_connections": 0, "reqs_total": total}
 
         if svc == "certbot":
             # certbot container loops `certbot renew; sleep 43200` (12h).
