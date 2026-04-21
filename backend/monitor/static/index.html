@@ -753,6 +753,69 @@
   </section>
 
 
+  <!-- ─── 4. ARQ WORKER ──────────────────────────────────────────────── -->
+  <div class="section-head" id="sec-arq">
+    <span class="crumb">astral / oci / <span class="cur">arq worker</span></span>
+    <span class="rule"></span>
+    <span class="mono text-[11px] text-muted">ARQ_MAX_JOBS=3 · redis://:6379/0</span>
+  </div>
+
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <!-- KPIs + active -->
+    <div class="card p-4 sm:p-5 lg:col-span-1">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="elevated p-3">
+          <div class="text-[11px] tracking-[.14em] uppercase text-muted">queue depth</div>
+          <div class="text-2xl font-semibold text-white mono mt-1" id="qd">0</div>
+          <div class="bar-track mt-2"><span id="qd-bar" style="width:0%"></span></div>
+        </div>
+        <div class="elevated p-3">
+          <div class="text-[11px] tracking-[.14em] uppercase text-muted">in flight</div>
+          <div class="text-2xl font-semibold text-white mono mt-1" id="inflight">0</div>
+          <div class="bar-track mt-2"><span style="width:0%; background:var(--success)"></span></div>
+        </div>
+        <div class="elevated p-3">
+          <div class="text-[11px] tracking-[.14em] uppercase text-muted">completed 24h</div>
+          <div class="text-2xl font-semibold text-white mono mt-1" id="completed-24h">0</div>
+          <div class="text-[11px] text-muted mt-1 mono" id="completed-24h-sub">—</div>
+        </div>
+        <div class="elevated p-3">
+          <div class="text-[11px] tracking-[.14em] uppercase text-muted">failed 24h</div>
+          <div class="text-2xl font-semibold mono mt-1" id="failed-24h" style="color:var(--warning)">0</div>
+          <div class="text-[11px] text-muted mt-1 mono" id="failed-24h-sub">—</div>
+        </div>
+      </div>
+
+      <div class="hr mt-4 pt-4">
+        <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-2">Active jobs</div>
+        <div id="active-jobs" class="space-y-2"></div>
+      </div>
+    </div>
+
+    <!-- Completed -->
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Recent completed</div>
+        <span class="badge badge-ok">5 last</span>
+      </div>
+      <table class="z">
+        <thead><tr><th>job</th><th>source</th><th class="text-right">took</th></tr></thead>
+        <tbody id="completed"></tbody>
+      </table>
+    </div>
+
+    <!-- Failed -->
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Recent failed</div>
+        <span class="badge badge-warn">5 last</span>
+      </div>
+      <table class="z">
+        <thead><tr><th>job</th><th>source</th><th>err</th></tr></thead>
+        <tbody id="failed"></tbody>
+      </table>
+    </div>
+  </section>
 
 
   <!-- ─── 5. STORAGE ──────────────────────────────────────────────────── -->
@@ -1511,6 +1574,12 @@ function renderArq(){
   document.getElementById('qd').textContent = a.queue_depth;
   document.getElementById('qd-bar').style.width = Math.min(100, a.queue_depth*15) + '%';
   document.getElementById('inflight').textContent = a.in_flight;
+  document.getElementById('completed-24h').textContent = (a.completed_24h ?? 0).toLocaleString();
+  document.getElementById('failed-24h').textContent = (a.failed_24h ?? 0).toLocaleString();
+  const done = a.completed_24h ?? 0;
+  const bad = a.failed_24h ?? 0;
+  const total = done + bad;
+  document.getElementById('failed-24h-sub').textContent = total ? ((bad/total*100).toFixed(1) + '% rate') : '0% rate';
 
   // active
   document.getElementById('active-jobs').innerHTML = a.active.length === 0
