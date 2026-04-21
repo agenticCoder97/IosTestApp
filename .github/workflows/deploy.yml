@@ -1,0 +1,76 @@
+name: Deploy to OCI A1
+
+on:
+  push:
+    branches: [development]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed areas
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "monitor=true" >> "$GITHUB_OUTPUT"
+            echo "app=true"     >> "$GITHUB_OUTPUT"
+            echo "nginx=true"   >> "$GITHUB_OUTPUT"
+            echo "any=true"     >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git show --name-only --format='' HEAD)
+            printf 'Changed files:\n%s\n' "$CHANGED"
+            echo "monitor=$(echo "$CHANGED" | grep -qE '^backend/(monitor/|Dockerfile\.monitor)' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "app=$(echo "$CHANGED" | grep -qE '^backend/(app/|Dockerfile$|Dockerfile\.worker|requirements)' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "nginx=$(echo "$CHANGED" | grep -q '^backend/nginx/' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "any=$(echo "$CHANGED" | grep -q '^backend/' && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to A1
+        if: steps.changes.outputs.any == 'true' || github.event_name == 'workflow_dispatch'
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_MONITOR: ${{ steps.changes.outputs.monitor }}
+          DEPLOY_APP: ${{ steps.changes.outputs.app }}
+          DEPLOY_NGINX: ${{ steps.changes.outputs.nginx }}
+          BUILD_SHA: ${{ github.sha }}
+        with:
+          host: astral-reader.duckdns.org
+          username: ubuntu
+          key: ${{ secrets.ASTRAL_OCI_SSH_KEY }}
+          envs: DEPLOY_MONITOR,DEPLOY_APP,DEPLOY_NGINX,BUILD_SHA
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd ~/astral
+            git pull --ff-only
+            cd backend
+            SHORT_SHA=${BUILD_SHA::7}
+
+            if [ "$DEPLOY_APP" = "true" ]; then
+              echo "==> Rebuilding fastapi + arq_worker"
+              docker compose build fastapi arq_worker
+              docker compose up -d --no-deps fastapi arq_worker
+            fi
+
+            if [ "$DEPLOY_MONITOR" = "true" ]; then
+              echo "==> Rebuilding astral_monitor (sha=${SHORT_SHA})"
+              MONITOR_BUILD_SHA=${SHORT_SHA} docker compose build astral_monitor
+              docker compose up -d --no-deps astral_monitor
+            fi
+
+            if [ "$DEPLOY_NGINX" = "true" ]; then
+              echo "==> Reloading nginx config"
+              docker compose exec -T nginx nginx -s reload
+            fi
+
+            echo "==> Service status"
+            docker compose ps --format 'table {{.Name}}\t{{.Status}}'
