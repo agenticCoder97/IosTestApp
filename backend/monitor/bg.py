@@ -136,5 +136,123 @@ async def log_tailer() -> None:
     raise NotImplementedError
 
 
+# ─── nginx access log sampler ─────────────────────────────────────────
+
+import re as _re
+from datetime import datetime as _dt, timezone as _tz
+from pathlib import Path as _Path
+
+NGINX_ACCESS_PATH = _Path("/var/log/nginx/access.log")
+
+_LOG_RE = _re.compile(
+    r'^(?P<ip>\S+) - (?P<user>\S+) '
+    r'\[(?P<ts>[^\]]+)\] '
+    r'"(?P<method>\S+) (?P<path>\S+) (?P<proto>[^"]+)" '
+    r'(?P<status>\d{3}) (?P<bytes>\d+|-) '
+    r'rt=(?P<rt>[\d.]+) urt="(?P<urt>[^"]*)" '
+    r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)"$'
+)
+
+_WINDOWS_S = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000}
+
+
+def _parse_log_line(line: str) -> dict | None:
+    m = _LOG_RE.match(line.strip())
+    if not m:
+        return None
+    try:
+        ts = _dt.fromisoformat(m["ts"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=_tz.utc)
+    except Exception:
+        return None
+    try:
+        rt_ms = int(float(m["rt"]) * 1000)
+    except Exception:
+        rt_ms = 0
+    return {
+        "ts_ms": int(ts.timestamp() * 1000),
+        "method": m["method"],
+        "path": m["path"],
+        "status": int(m["status"]),
+        "rt_ms": rt_ms,
+    }
+
+
+def _compute_window(records: list[dict], window: str) -> dict:
+    status_codes = {"2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0}
+    by_path: dict[tuple[str, str], list[int]] = {}
+    bucket_ms = max(60_000, _WINDOWS_S[window] * 1000 // 60)
+    series_rps_buckets: dict[int, int] = {}
+    series_p95_buckets: dict[int, list[int]] = {}
+
+    for r in records:
+        s = r["status"]
+        if   200 <= s < 300: status_codes["2xx"] += 1
+        elif 300 <= s < 400: status_codes["3xx"] += 1
+        elif 400 <= s < 500: status_codes["4xx"] += 1
+        elif 500 <= s < 600: status_codes["5xx"] += 1
+        by_path.setdefault((r["method"], r["path"]), []).append(r["rt_ms"])
+        bucket = (r["ts_ms"] // bucket_ms) * bucket_ms
+        series_rps_buckets[bucket] = series_rps_buckets.get(bucket, 0) + 1
+        series_p95_buckets.setdefault(bucket, []).append(r["rt_ms"])
+
+    series_rps = [[b, series_rps_buckets[b] / (bucket_ms / 1000)] for b in sorted(series_rps_buckets)]
+    series_p95 = [[b, _pct(series_p95_buckets[b], 95)] for b in sorted(series_p95_buckets)]
+
+    slowest = []
+    for (method, path), rts in by_path.items():
+        slowest.append({
+            "method": method, "path": path,
+            "p50_ms": _pct(rts, 50),
+            "p95_ms": _pct(rts, 95),
+            "p99_ms": _pct(rts, 99),
+            "count": len(rts),
+        })
+    slowest.sort(key=lambda r: r["p95_ms"], reverse=True)
+    slowest = slowest[:10]
+
+    return {
+        "window": window,
+        "series_rps": series_rps,
+        "series_p95_ms": series_p95,
+        "status_codes": status_codes,
+        "slowest": slowest,
+    }
+
+
+def _pct(values: list[int], p: int) -> int:
+    if not values:
+        return 0
+    xs = sorted(values)
+    k = int(len(xs) * p / 100)
+    return xs[min(k, len(xs) - 1)]
+
+
 async def nginx_access_sampler() -> None:
-    raise NotImplementedError
+    """Every 60s: tail access.log, compute all 5 windows, write NGINX_WINDOW_CACHE."""
+    while True:
+        try:
+            if not NGINX_ACCESS_PATH.exists():
+                await asyncio.sleep(60)
+                continue
+            from collections import deque as _deque
+            tail_buf: Deque[str] = _deque(maxlen=100_000)
+            with NGINX_ACCESS_PATH.open("r", errors="replace") as fh:
+                for line in fh:
+                    tail_buf.append(line)
+
+            now_ms = int(_dt.now(_tz.utc).timestamp() * 1000)
+            all_records = []
+            for line in tail_buf:
+                rec = _parse_log_line(line)
+                if rec is not None:
+                    all_records.append(rec)
+
+            for w, seconds in _WINDOWS_S.items():
+                cutoff = now_ms - seconds * 1000
+                window_records = [r for r in all_records if r["ts_ms"] >= cutoff]
+                NGINX_WINDOW_CACHE[w] = _compute_window(window_records, w)
+        except Exception as e:
+            logger.warning("nginx_access_sampler failed: %s", e)
+        await asyncio.sleep(60)
