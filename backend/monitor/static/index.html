@@ -1159,11 +1159,27 @@ async function genData(range){
 // Map /metrics schema into the field names the existing renderers expect.
 function normalizeMetrics(d){
   // services: cpu_pct → cpu, mem_mb → mem, spark_cpu → spark
-  d.services = (d.services || []).map(s => Object.assign({}, s, {
-    cpu:   s.cpu_pct ?? s.cpu ?? 0,
-    mem:   s.mem_mb  ?? s.mem ?? 0,
-    spark: s.spark_cpu ?? s.spark ?? [],
-  }));
+  // Plus sensible defaults for the service-specific `extra` keys the handoff
+  // renderers dereference (pg_connections, ops_sec, rps, reqs_total, …).
+  // The backend doesn't populate these yet (follow-up task) so default them
+  // here to avoid TypeError on undefined.
+  const EXTRA_DEFAULTS = {
+    postgres:   { pg_connections: 0, pg_max_connections: 100 },
+    redis:      { ops_sec: 0, keys: 0 },
+    fastapi:    { workers: 1, rps: '0.00' },
+    arq_worker: { jobs_active: 0, max: 3 },
+    nginx:      { active_connections: 0, reqs_total: 0 },
+    certbot:    { next_check_in: '—' },
+  };
+  d.services = (d.services || []).map(s => {
+    const base = Object.assign({}, s, {
+      cpu:   s.cpu_pct ?? s.cpu ?? 0,
+      mem:   s.mem_mb  ?? s.mem ?? 0,
+      spark: (s.spark_cpu && s.spark_cpu.length ? s.spark_cpu : (s.spark && s.spark.length ? s.spark : [0])),
+    });
+    base.extra = Object.assign({}, EXTRA_DEFAULTS[base.name] || {}, base.extra || {});
+    return base;
+  });
   // requests: series are [[ts, val], ...] tuples; renderer expects flat [val, val, ...]
   const r = d.requests;
   if(r){
