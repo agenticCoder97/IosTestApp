@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## 2026-04-21
+
+### Backend
+
+- **AST-47** — Merge prod compose files + add Postgres service: consolidated `docker-compose.yml` and `docker-compose.worker.yml` into a single unified prod compose (6 services: `postgres`, `redis`, `fastapi`, `arq_worker`, `nginx`, `certbot`). Adds the previously-missing `postgres:16-alpine` with bind-mount to `/mnt/astral-media/postgres` (block volume → survives VM re-provision). Both app services now `depends_on: postgres (healthy) + redis (started)`, eliminating the silent Redis cache-miss window when bringing stacks up separately. Drops `./wallet:/app/wallet:ro` mounts (Oracle ADB path superseded per AST-42). Part of the OCI migration. ([PR #42](https://github.com/agenticCoder97/IosTestApp/pull/42))
+
 ## 2026-04-20
 
 ### Backend
