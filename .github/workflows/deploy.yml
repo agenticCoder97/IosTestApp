@@ -51,7 +51,9 @@ jobs:
           script: |
             set -euo pipefail
             cd ~/astral
-            git pull --ff-only
+            git fetch origin
+            git checkout development
+            git reset --hard origin/development
             cd backend
             SHORT_SHA=${BUILD_SHA::7}
 
