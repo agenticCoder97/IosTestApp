@@ -77,7 +77,7 @@ async def test_metrics_returns_schema_shape(monkeypatch):
 
     monkeypatch.setattr(cert, "collect", _ct)
 
-    async def _lg(limit=100, svc=None, q=None):
+    async def _lg(limit=400, svc=None, q=None):
         return []
 
     monkeypatch.setattr(logs, "collect", _lg)

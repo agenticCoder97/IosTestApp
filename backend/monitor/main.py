@@ -132,7 +132,7 @@ async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> J
         ("storage",  storage.collect,                             _empty_storage,          10.0),
         ("backups",  backups.collect,                             _empty_backups,          12.0),
         ("cert",     cert.collect,                                _empty_cert,             2.0),
-        ("logs",     partial(logs_coll.collect, 400),             lambda: [],              2.0),
+        ("logs",     partial(logs_coll.collect, bg._LOG_METRICS_LIMIT),             lambda: [],              2.0),
     ]
     results = await asyncio.gather(
         *[cache.safe(c, name, redis=redis, timeout=t, fallback=fb())
