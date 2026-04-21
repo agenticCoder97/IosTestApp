@@ -56,6 +56,13 @@ async def _sample_once(client, redis) -> None:
         status = state.get("Status", "unknown")
         health_obj = state.get("Health")
         health = health_obj.get("Status") if isinstance(health_obj, dict) else None
+        # Absence of a Docker healthcheck is not evidence of unhealthiness —
+        # synthesize "healthy" for any container whose Docker state is
+        # "running", so the UI's UP/DOWN badge reflects runtime reality
+        # rather than compose healthcheck presence. Exited/dead containers
+        # keep health=None and the renderer correctly flags them DOWN.
+        if health is None and status == "running":
+            health = "healthy"
         started_at = state.get("StartedAt") or ""
         try:
             started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
