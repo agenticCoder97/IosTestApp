@@ -12,7 +12,7 @@ _BACKOFF_INITIAL_S = 10
 _BACKOFF_MAX_S = 60
 _LOG_DEQUE_MAXLEN = 2000       # ~10 × _LOG_TAIL_ON_ATTACH across all services
 _LOG_TAIL_ON_ATTACH = 200      # lines of history fetched when a follower (re)attaches
-_LOG_METRICS_LIMIT = 400       # lines sliced from LOG_DEQUE per /metrics call
+LOG_METRICS_LIMIT = 400        # lines sliced from LOG_DEQUE per /metrics call
 
 SERVICE_CACHE: dict[str, dict[str, Any]] = {}
 LOG_DEQUE: Deque[dict[str, Any]] = deque(maxlen=_LOG_DEQUE_MAXLEN)

@@ -2,6 +2,8 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 
+from monitor import bg
+
 
 @pytest.mark.asyncio
 async def test_metrics_returns_schema_shape(monkeypatch):
@@ -77,7 +79,7 @@ async def test_metrics_returns_schema_shape(monkeypatch):
 
     monkeypatch.setattr(cert, "collect", _ct)
 
-    async def _lg(limit=400, svc=None, q=None):
+    async def _lg(limit=bg.LOG_METRICS_LIMIT, svc=None, q=None):
         return []
 
     monkeypatch.setattr(logs, "collect", _lg)
