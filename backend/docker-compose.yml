@@ -1,6 +1,28 @@
-version: "3.9"
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - astral_net
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    networks:
+      - astral_net
+
   fastapi:
     build:
       context: .
@@ -10,8 +32,29 @@ services:
     env_file:
       - .env.oci
     volumes:
-      - ./wallet:/app/wallet:ro
       - astral_media:/mnt/astral-media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - astral_net
+
+  arq_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env.oci
+    volumes:
+      - astral_media:/mnt/astral-media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
     networks:
       - astral_net
@@ -48,6 +91,12 @@ volumes:
       type: none
       o: bind
       device: /mnt/astral-media
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/astral-media/postgres
   letsencrypt:
 
 networks:
