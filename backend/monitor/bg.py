@@ -334,3 +334,35 @@ async def nginx_access_sampler() -> None:
         except Exception as e:
             logger.warning("nginx_access_sampler failed: %s", e)
         await asyncio.sleep(60)
+
+
+# ─── storage trend hoister ────────────────────────────────────────────
+
+async def storage_trend_hoister() -> None:
+    """Every hour, sample storage into Redis ZSETs so the UI's storage
+    sparklines have 7d of history."""
+    from monitor.collectors import storage
+    from monitor.cache import get_cache_redis_or_none
+    import time as _time
+
+    while True:
+        try:
+            r = get_cache_redis_or_none()
+            block = await storage.collect()
+            now_ms = int(_time.time() * 1000)
+
+            async def _push(key, val):
+                if val is None or r is None:
+                    return
+                await r.zadd(f"mon:sparkline:storage:{key}", {str(int(val)): now_ms})
+                await r.zremrangebyscore(
+                    f"mon:sparkline:storage:{key}", 0, now_ms - 7 * 24 * 3600 * 1000,
+                )
+
+            await _push("postgres", block.postgres_bytes)
+            await _push("media", block.media_bytes)
+            await _push("block_free", block.block_vol.free_bytes if block.block_vol else None)
+            await _push("object_used", block.object_storage.used_bytes if block.object_storage else None)
+        except Exception as e:
+            logger.warning("storage_trend_hoister failed: %s", e)
+        await asyncio.sleep(3600)

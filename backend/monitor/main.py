@@ -60,6 +60,7 @@ async def lifespan(_app: FastAPI):
         asyncio.create_task(bg.supervise(bg.docker_sampler, "docker_sampler")),
         asyncio.create_task(bg.supervise(bg.log_tailer, "log_tailer")),
         asyncio.create_task(bg.supervise(bg.nginx_access_sampler, "nginx_access_sampler")),
+        asyncio.create_task(bg.supervise(bg.storage_trend_hoister, "storage_trend_hoister")),
     ]
     logger.info("monitor started: 3 bg tasks, redis=%s", _REDIS_URL)
 
