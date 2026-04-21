@@ -91,6 +91,11 @@ async def _sample_once(client, redis) -> None:
         })
         entry["spark_cpu"] = (entry.get("spark_cpu", []) + [round(cpu_pct, 2)])[-120:]
 
+        # Service-specific `extra` dict — what each card footer renders.
+        extra = await _fetch_service_extra(svc, started_at, now_ms, redis)
+        if extra:
+            entry["extra"] = extra
+
         try:
             await redis.zadd(f"mon:sparkline:{svc}", {str(cpu_pct): now_ms})
             await redis.zremrangebyscore(
@@ -98,6 +103,87 @@ async def _sample_once(client, redis) -> None:
             )
         except Exception as e:
             logger.debug("sparkline update failed svc=%s err=%s", svc, e)
+
+
+async def _fetch_service_extra(svc: str, started_at_iso: str, now_ms: int, redis_cli) -> dict:
+    """Per-service `extra` dict surfaced in the UI card footer.
+
+    Each fetch is isolated — if a subsystem is down (redis, pg) we return an
+    empty dict and the UI falls back to normalizeMetrics defaults in the JS.
+    """
+    try:
+        if svc == "postgres":
+            from monitor.collectors import storage as _s
+            pool = _s.get_pg_pool_or_none()
+            if pool is None:
+                return {}
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT (SELECT count(*) FROM pg_stat_activity "
+                    "        WHERE datname = current_database()) AS conns, "
+                    "current_setting('max_connections')::int AS max_conns"
+                )
+            return {
+                "pg_connections": int(row["conns"]) if row else 0,
+                "pg_max_connections": int(row["max_conns"]) if row else 100,
+            }
+
+        if svc == "redis" and redis_cli is not None:
+            info = await redis_cli.info("stats")
+            keys = await redis_cli.dbsize()
+            return {
+                "ops_sec": int(info.get("instantaneous_ops_per_sec", 0) or 0),
+                "keys": int(keys or 0),
+            }
+
+        if svc == "fastapi":
+            import os as _os
+            workers = int(_os.getenv("UVICORN_WORKERS", "1"))
+            cached = NGINX_WINDOW_CACHE.get("1h", {})
+            rps_pts = cached.get("series_rps", [])
+            rps = float(rps_pts[-1][1]) if rps_pts else 0.0
+            return {"workers": workers, "rps": f"{rps:.2f}"}
+
+        if svc == "arq_worker":
+            import os as _os
+            jobs_active = 0
+            if redis_cli is not None:
+                async for _k in redis_cli.scan_iter(match="arq:in_progress:*", count=200):
+                    jobs_active += 1
+            return {
+                "jobs_active": jobs_active,
+                "max": int(_os.getenv("ARQ_MAX_JOBS", "3")),
+            }
+
+        if svc == "nginx":
+            cached = NGINX_WINDOW_CACHE.get("1h", {})
+            rps_pts = cached.get("series_rps", [])
+            last_rps = float(rps_pts[-1][1]) if rps_pts else 0.0
+            # Active connections isn't available without the nginx stub_status
+            # module; use last-bucket rps as a rough "in-flight" proxy.
+            sc = cached.get("status_codes", {}) or {}
+            total = sum(int(sc.get(k, 0) or 0) for k in ("2xx", "3xx", "4xx", "5xx"))
+            return {
+                "active_connections": max(1, int(round(last_rps))),
+                "reqs_total": total,
+            }
+
+        if svc == "certbot":
+            # certbot container loops `certbot renew; sleep 43200` (12h).
+            # next_check_in is computed from container uptime mod 12h.
+            try:
+                from datetime import datetime as _dt, timezone as _tzmod
+                started = _dt.fromisoformat(started_at_iso.replace("Z", "+00:00"))
+                age_s = int((now_ms / 1000) - started.timestamp())
+            except Exception:
+                age_s = 0
+            secs_to_next = 43200 - (age_s % 43200)
+            h, m = secs_to_next // 3600, (secs_to_next % 3600) // 60
+            return {"next_check_in": f"{h}h {m}m"}
+
+    except Exception as e:
+        logger.debug("service extra fetch failed svc=%s err=%s", svc, e)
+    return {}
 
 
 def _compute_cpu_pct(stats: dict) -> float:
