@@ -59,11 +59,25 @@ class RedisCache:
             logger.debug("cache.RedisCache.set failed key=%s err=%s", key, e)
 
 
+def _as_jsonable(v: Any) -> Any:
+    """Convert pydantic v2 models (and lists of them) into JSON-serializable
+    dicts/lists. Fallback ``default=str`` in json.dumps turns a pydantic
+    BaseModel into its ``str()`` repr (e.g. ``"currency='USD' ..."``), which
+    round-trips back as a string and fails the /metrics schema validation."""
+    if hasattr(v, "model_dump"):
+        return v.model_dump(mode="json", by_alias=True)
+    if isinstance(v, list):
+        return [_as_jsonable(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _as_jsonable(x) for k, x in v.items()}
+    return v
+
+
 async def set_last_good(redis: aioredis.Redis, name: str, value: Any) -> None:
     try:
         await redis.set(
             f"mon:last_good:{name}",
-            json.dumps(value, default=str),
+            json.dumps(_as_jsonable(value), default=str),
             ex=_LAST_GOOD_TTL_S,
         )
     except Exception as e:
