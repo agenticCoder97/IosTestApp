@@ -8,6 +8,7 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ### Backend
 
+- **AST-50** — Fix certbot image reference: the previous `certbot/dns-duckdns` image doesn't exist on Docker Hub (pull fails with `repository does not exist`). Switched to `infinityofspace/certbot_dns_duckdns:latest` (community-maintained, bundles certbot + certbot-dns-duckdns plugin). Verified `certbot plugins` lists `dns-duckdns` correctly; initial LE cert for `astral-reader.duckdns.org` successfully issued via DNS-01 and landed in the `letsencrypt` named volume. ([PR #43](https://github.com/agenticCoder97/IosTestApp/pull/43))
 - **AST-47** — Merge prod compose files + add Postgres service: consolidated `docker-compose.yml` and `docker-compose.worker.yml` into a single unified prod compose (6 services: `postgres`, `redis`, `fastapi`, `arq_worker`, `nginx`, `certbot`). Adds the previously-missing `postgres:16-alpine` with bind-mount to `/mnt/astral-media/postgres` (block volume → survives VM re-provision). Both app services now `depends_on: postgres (healthy) + redis (started)`, eliminating the silent Redis cache-miss window when bringing stacks up separately. Drops `./wallet:/app/wallet:ro` mounts (Oracle ADB path superseded per AST-42). Part of the OCI migration. ([PR #42](https://github.com/agenticCoder97/IosTestApp/pull/42))
 
 ## 2026-04-20
