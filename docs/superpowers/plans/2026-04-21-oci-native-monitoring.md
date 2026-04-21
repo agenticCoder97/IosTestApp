@@ -12,49 +12,28 @@
 
 ## Task 1: Confirm A1 OS and gather OCIDs
 
-**Files:**
-- No repo changes — gather values needed for later tasks.
+**Status: COMPLETE — all OCIDs resolved via OCI CLI.**
 
-- [ ] **Step 1: SSH into A1 and check OS**
+| Variable | Value |
+|---|---|
+| `A1_INSTANCE_OCID` | `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq` |
+| `BOOT_VOL_OCID` | `ocid1.bootvolume.oc1.us-sanjose-1.abzwuljrj7brujoejpqkggvnaj462mlz7abziyx5dt25uitwxddcmwxlapya` |
+| `DATA_VOL_OCID` | `ocid1.volume.oc1.us-sanjose-1.abzwuljrkyzyl6lpwnpofra4srw7a5774twnbgdotsznxxzfrryceb7qqo2q` |
+| `VNIC_OCID` | `ocid1.vnic.oc1.us-sanjose-1.abzwuljrfhdghxmtaqrns6ucqydprsacft7nuykxryhbw2vrv4vsempyck3q` |
+| `OS_NAMESPACE` | `axfta6t5vu1x` |
+| Region | `us-sanjose-1` |
+| Availability Domain | `dgpj:US-SANJOSE-1-AD-1` |
+| Bucket | `astral-backups` ✓ confirmed |
+
+- [x] **Step 1–5: All OCIDs gathered via OCI CLI** — no console lookup needed.
+
+- [ ] **Step 6: Confirm A1 OS (needed for agent install package format)**
 
 ```bash
 ssh ubuntu@<a1-ip> "cat /etc/os-release | grep -E '^(NAME|VERSION)'"
 ```
 
-Expected output (Ubuntu example):
-```
-NAME="Ubuntu"
-VERSION="22.04.3 LTS (Jammy Jellyfish)"
-```
-
-Note: if Oracle Linux, use `.rpm` in Task 2. If Ubuntu/Debian, use `.deb`.
-
-- [ ] **Step 2: Get instance OCID**
-
-In OCI Console: `Compute → Instances → <your A1 instance>` → copy **OCID** field.
-Save as `A1_INSTANCE_OCID=ocid1.instance.oc1...`
-
-- [ ] **Step 3: Get block volume OCIDs**
-
-In OCI Console: `Storage → Block Storage → Block Volumes`
-Two volumes expected: boot volume + data volume (attached to `/mnt/astral-media`).
-Copy both OCIDs. Save as:
-```
-BOOT_VOL_OCID=ocid1.bootvolume.oc1...
-DATA_VOL_OCID=ocid1.volume.oc1...
-```
-
-- [ ] **Step 4: Get Object Storage namespace**
-
-In OCI Console: `Storage → Object Storage → Buckets`
-The namespace is shown at the top of the page (e.g. `ax1bcd2efg3h`).
-Save as `OS_NAMESPACE=<value>`
-
-- [ ] **Step 5: Get VNIC OCID**
-
-In OCI Console: `Compute → Instances → <A1> → Attached VNICs`
-Copy the primary VNIC OCID.
-Save as `VNIC_OCID=ocid1.vnic.oc1...`
+Expected (Ubuntu): use `.deb` in Task 2. If Oracle Linux: use `.rpm`.
 
 ---
 
@@ -174,7 +153,7 @@ For each widget: click **Add Widget → Metric Chart**, set the fields, click **
   - Compartment: Astral
   - Namespace: `oci_computeagent`
   - Metric: `CpuUtilization`
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistics: Max, P95
   - Interval: 1m
   - Title: `CPU Utilization`
@@ -182,7 +161,7 @@ For each widget: click **Add Widget → Metric Chart**, set the fields, click **
 - [ ] **Widget 1.2 — Memory Utilization**
   - Namespace: `oci_computeagent`
   - Metric: `MemoryUtilization`
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistics: Max, P95
   - Interval: 1m
   - Title: `Memory Utilization`
@@ -190,7 +169,7 @@ For each widget: click **Add Widget → Metric Chart**, set the fields, click **
 - [ ] **Widget 1.3 — Load Average**
   - Namespace: `oci_computeagent`
   - Metric: `CpuLoadAverage` (1-minute)
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistic: Mean
   - Interval: 1m
   - Title: `Load Average`
@@ -198,7 +177,7 @@ For each widget: click **Add Widget → Metric Chart**, set the fields, click **
 - [ ] **Widget 1.4 — Disk Read/Write Bytes**
   - Namespace: `oci_computeagent`
   - Metrics: `DiskBytesRead`, `DiskBytesWritten` (two lines, same chart)
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistic: Sum
   - Interval: 1m
   - Title: `Disk Throughput`
@@ -206,7 +185,7 @@ For each widget: click **Add Widget → Metric Chart**, set the fields, click **
 - [ ] **Widget 1.5 — Network Bytes In/Out**
   - Namespace: `oci_computeagent`
   - Metrics: `NetworksBytesIn`, `NetworksBytesOut` (two lines)
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistic: Sum
   - Interval: 1m
   - Title: `Network Throughput`
@@ -214,7 +193,7 @@ For each widget: click **Add Widget → Metric Chart**, set the fields, click **
 - [ ] **Widget 1.6 — Running Processes**
   - Namespace: `oci_computeagent`
   - Metric: `ProcessesCount`
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistic: Mean
   - Interval: 5m
   - Title: `Running Processes`
@@ -228,7 +207,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 2.1 — Boot Volume IOPS**
   - Namespace: `oci_blockstore`
   - Metrics: `VolumeReadOps`, `VolumeWriteOps` (two lines)
-  - Dimension: `resourceId` = `BOOT_VOL_OCID`
+  - Dimension: `resourceId` = `ocid1.bootvolume.oc1.us-sanjose-1.abzwuljrj7brujoejpqkggvnaj462mlz7abziyx5dt25uitwxddcmwxlapya`
   - Statistic: Sum
   - Interval: 1m
   - Title: `Boot Volume IOPS`
@@ -236,7 +215,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 2.2 — Boot Volume Throughput**
   - Namespace: `oci_blockstore`
   - Metrics: `VolumeReadThroughput`, `VolumeWriteThroughput` (two lines)
-  - Dimension: `resourceId` = `BOOT_VOL_OCID`
+  - Dimension: `resourceId` = `ocid1.bootvolume.oc1.us-sanjose-1.abzwuljrj7brujoejpqkggvnaj462mlz7abziyx5dt25uitwxddcmwxlapya`
   - Statistic: Mean
   - Interval: 1m
   - Title: `Boot Volume Throughput`
@@ -244,21 +223,21 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 2.3 — Boot Volume Throttled IOPS**
   - Namespace: `oci_blockstore`
   - Metric: `VolumeThrottledIOs`
-  - Dimension: `resourceId` = `BOOT_VOL_OCID`
+  - Dimension: `resourceId` = `ocid1.bootvolume.oc1.us-sanjose-1.abzwuljrj7brujoejpqkggvnaj462mlz7abziyx5dt25uitwxddcmwxlapya`
   - Statistic: Sum
   - Interval: 1m
   - Title: `Boot Volume Throttled IOPS` (should be 0 at idle)
 
 - [ ] **Widget 2.4 — Data Volume IOPS**
-  - Same as 2.1 but `resourceId` = `DATA_VOL_OCID`
+  - Same as 2.1 but `resourceId` = `ocid1.volume.oc1.us-sanjose-1.abzwuljrkyzyl6lpwnpofra4srw7a5774twnbgdotsznxxzfrryceb7qqo2q`
   - Title: `Data Volume IOPS (/mnt/astral-media)`
 
 - [ ] **Widget 2.5 — Data Volume Throughput**
-  - Same as 2.2 but `resourceId` = `DATA_VOL_OCID`
+  - Same as 2.2 but `resourceId` = `ocid1.volume.oc1.us-sanjose-1.abzwuljrkyzyl6lpwnpofra4srw7a5774twnbgdotsznxxzfrryceb7qqo2q`
   - Title: `Data Volume Throughput`
 
 - [ ] **Widget 2.6 — Data Volume Throttled IOPS**
-  - Same as 2.3 but `resourceId` = `DATA_VOL_OCID`
+  - Same as 2.3 but `resourceId` = `ocid1.volume.oc1.us-sanjose-1.abzwuljrkyzyl6lpwnpofra4srw7a5774twnbgdotsznxxzfrryceb7qqo2q`
   - Title: `Data Volume Throttled IOPS`
 
 ---
@@ -268,7 +247,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 3.1 — Stored Bytes**
   - Namespace: `oci_objectstorage`
   - Metric: `StoredBytes`
-  - Dimensions: `namespace` = `OS_NAMESPACE`, `bucketName` = `astral-backups`
+  - Dimensions: `namespace` = `axfta6t5vu1x`, `bucketName` = `astral-backups`
   - Statistic: Max
   - Interval: 5m
   - Title: `Backup Bucket Size`
@@ -276,7 +255,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 3.2 — Request Counts**
   - Namespace: `oci_objectstorage`
   - Metrics: `GetRequests`, `PutRequests`, `AllRequests` (three lines)
-  - Dimensions: `namespace` = `OS_NAMESPACE`, `bucketName` = `astral-backups`
+  - Dimensions: `namespace` = `axfta6t5vu1x`, `bucketName` = `astral-backups`
   - Statistic: Sum
   - Interval: 5m
   - Title: `Object Storage Requests`
@@ -284,7 +263,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 3.3 — First Byte Latency**
   - Namespace: `oci_objectstorage`
   - Metric: `FirstByteLatency`
-  - Dimensions: `namespace` = `OS_NAMESPACE`, `bucketName` = `astral-backups`
+  - Dimensions: `namespace` = `axfta6t5vu1x`, `bucketName` = `astral-backups`
   - Statistic: P95
   - Interval: 5m
   - Title: `Object Storage Latency (P95)`
@@ -296,7 +275,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 4.1 — Packets In/Out**
   - Namespace: `oci_vcn`
   - Metrics: `VnicFromNetworkPackets`, `VnicToNetworkPackets` (two lines)
-  - Dimension: `resourceId` = `VNIC_OCID`
+  - Dimension: `resourceId` = `ocid1.vnic.oc1.us-sanjose-1.abzwuljrfhdghxmtaqrns6ucqydprsacft7nuykxryhbw2vrv4vsempyck3q`
   - Statistic: Sum
   - Interval: 1m
   - Title: `VNIC Packets`
@@ -304,7 +283,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 4.2 — Bytes In/Out (egress cap tracker)**
   - Namespace: `oci_vcn`
   - Metrics: `VnicFromNetworkBytes`, `VnicToNetworkBytes` (two lines)
-  - Dimension: `resourceId` = `VNIC_OCID`
+  - Dimension: `resourceId` = `ocid1.vnic.oc1.us-sanjose-1.abzwuljrfhdghxmtaqrns6ucqydprsacft7nuykxryhbw2vrv4vsempyck3q`
   - Statistic: Sum
   - Interval: 1m
   - Title: `VNIC Bytes (set range to current month to track 10 TB cap)`
@@ -312,7 +291,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 4.3 — Dropped Packets**
   - Namespace: `oci_vcn`
   - Metric: `VnicFromNetworkPacketsDropped`
-  - Dimension: `resourceId` = `VNIC_OCID`
+  - Dimension: `resourceId` = `ocid1.vnic.oc1.us-sanjose-1.abzwuljrfhdghxmtaqrns6ucqydprsacft7nuykxryhbw2vrv4vsempyck3q`
   - Statistic: Sum
   - Interval: 1m
   - Title: `Dropped Packets (should be 0)`
@@ -324,7 +303,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 5.1 — Instance Reachability**
   - Namespace: `oci_compute_infrastructure_health`
   - Metric: `instance_status`
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistic: Mean
   - Interval: 5m
   - Title: `Instance Reachability`
@@ -332,7 +311,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 5.2 — Maintenance Status**
   - Namespace: `oci_compute_infrastructure_health`
   - Metric: `maintenance_status`
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistic: Mean
   - Interval: 5m
   - Title: `Scheduled Maintenance`
@@ -344,7 +323,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 6.1 — Root Filesystem Usage**
   - Namespace: `oci_computeagent`
   - Metric: `FilesystemUtilization`
-  - Dimensions: `resourceId` = `A1_INSTANCE_OCID`, `mountPoint` = `/`
+  - Dimensions: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`, `mountPoint` = `/`
   - Statistic: Max
   - Interval: 5m
   - Title: `Filesystem Usage — /`
@@ -352,7 +331,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 6.2 — Media Filesystem Usage**
   - Namespace: `oci_computeagent`
   - Metric: `FilesystemUtilization`
-  - Dimensions: `resourceId` = `A1_INSTANCE_OCID`, `mountPoint` = `/mnt/astral-media`
+  - Dimensions: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`, `mountPoint` = `/mnt/astral-media`
   - Statistic: Max
   - Interval: 5m
   - Title: `Filesystem Usage — /mnt/astral-media`
@@ -360,7 +339,7 @@ Add two rows: one for boot volume, one for data volume. Repeat each widget pair 
 - [ ] **Widget 6.3 — Swap Utilization**
   - Namespace: `oci_computeagent`
   - Metric: `MemorySwapUtilization`
-  - Dimension: `resourceId` = `A1_INSTANCE_OCID`
+  - Dimension: `resourceId` = `ocid1.instance.oc1.us-sanjose-1.anzwuljr47solkicfjexpqt7oe76wwrsxv4iljnwdfejinr5u2iqhoxqqlwq`
   - Statistic: Max
   - Interval: 5m
   - Title: `Swap Utilization`
