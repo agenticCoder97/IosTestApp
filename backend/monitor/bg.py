@@ -132,8 +132,86 @@ async def docker_sampler() -> None:
         await asyncio.sleep(10)
 
 
+# ─── log tailer ────────────────────────────────────────────────────────
+
+import re as __re_for_logs
+from datetime import datetime as __dt_for_logs, timezone as __tz_for_logs
+
+_LOG_LEVEL_RE = __re_for_logs.compile(r"\b(DEBUG|INFO|WARN|ERROR)\b", __re_for_logs.IGNORECASE)
+_REDACT_RES = [
+    __re_for_logs.compile(r"(Authorization:\s*[^\s]+)", __re_for_logs.IGNORECASE),
+    __re_for_logs.compile(r"(Cookie:\s*[^\s]+)", __re_for_logs.IGNORECASE),
+    __re_for_logs.compile(r"(token=[^&\s]+)", __re_for_logs.IGNORECASE),
+]
+
+
+def _redact(msg: str) -> str:
+    for r in _REDACT_RES:
+        msg = r.sub(r"\1=REDACTED", msg)
+    return msg
+
+
+def _classify_level(msg: str, svc: str, status: int | None = None) -> str:
+    if svc == "nginx" and status is not None:
+        if status >= 500: return "error"
+        if status >= 400: return "warn"
+        return "info"
+    m = _LOG_LEVEL_RE.search(msg)
+    if m:
+        return m.group(1).lower()
+    return "info"
+
+
+async def _follow_one(client, container, svc: str) -> None:
+    """Follow a single container forever. Lines go to LOG_DEQUE."""
+    def _iter():
+        return container.logs(stream=True, follow=True, tail=0, timestamps=True)
+
+    it = await asyncio.to_thread(_iter)
+    while True:
+        try:
+            chunk = await asyncio.to_thread(next, it, None)
+        except StopIteration:
+            return
+        if chunk is None:
+            return
+        try:
+            line = chunk.decode("utf-8", errors="replace").rstrip("\n")
+        except Exception:
+            continue
+        ts_str, _, rest = line.partition(" ")
+        try:
+            ts = __dt_for_logs.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except Exception:
+            ts = __dt_for_logs.now(__tz_for_logs.utc)
+        msg = _redact(rest)
+        lvl = _classify_level(msg, svc)
+        LOG_DEQUE.append({"ts": ts, "svc": svc, "lvl": lvl, "msg": msg[:500]})
+
+
 async def log_tailer() -> None:
-    raise NotImplementedError
+    """Spin one _follow_one coroutine per compose service. Reattach on restart."""
+    import docker
+
+    client = docker.from_env()
+    followers: dict[str, asyncio.Task] = {}
+
+    while True:
+        containers = await asyncio.to_thread(
+            client.containers.list,
+            all=True,
+            filters={"label": "com.docker.compose.project=backend"},
+        )
+        by_svc = {
+            c.labels.get("com.docker.compose.service"): c
+            for c in containers
+            if c.labels.get("com.docker.compose.service")
+        }
+        for svc, c in by_svc.items():
+            t = followers.get(svc)
+            if t is None or t.done():
+                followers[svc] = asyncio.create_task(_follow_one(client, c, svc))
+        await asyncio.sleep(30)
 
 
 # ─── nginx access log sampler ─────────────────────────────────────────
