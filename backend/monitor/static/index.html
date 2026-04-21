@@ -1788,6 +1788,112 @@ function renderAll(){
   setDegradedDot('sec-logs',     STATE.data.logs_meta);
 }
 
+// ─── DIAGNOSTIC DUMP ───────────────────────────────────────────────────────
+// Call `__diag()` from the console → copies a compact per-metric report to
+// the clipboard (and prints it). Use when something in the UI looks off and
+// you want to see the raw payload bucketed by panel without pasting the
+// entire /metrics JSON.
+window.__diag = async function(){
+  const d = STATE.data || {};
+  const metaLabel = m => !m ? 'fresh'
+    : m.fallback === 'last_good' ? `DEGRADED (last_good age=${m.age_s ?? '?'}s)`
+    : m.fallback === 'empty'     ? `EMPTY (${m.error ?? 'no last_good'})`
+    : `meta=${JSON.stringify(m)}`;
+  const lines = [];
+  const p = (...xs) => lines.push(xs.join(' '));
+
+  p('─── MONITOR DIAG ───', new Date().toISOString());
+  p('generated_at:', d.generated_at, '· range:', STATE.range, '· build:', d.build);
+  p('');
+
+  // cost
+  p('## cost ·', metaLabel(d.cost_meta));
+  if(d.cost){
+    p('  mtd:', d.cost.month_to_date, d.cost.currency, '· forecast:', d.cost.forecast, '· budget:', d.cost.budget);
+    const af = d.cost.always_free || {};
+    ['a1_ocpu','a1_ram_gb','block_vol_gb','egress_tb','object_std_gb'].forEach(k=>{
+      const u = af[k]; if(u) p(`  af.${k}: ${u.used}/${u.cap} ${u.unit}`);
+    });
+  } else p('  (null)');
+  p('');
+
+  // services
+  p('## services ·', metaLabel(d.services_meta), '·', (d.services||[]).length, 'svc');
+  (d.services||[]).forEach(s=>{
+    const ex = JSON.stringify(s.extra||{});
+    p(`  ${s.name.padEnd(14)} ${s.health.padEnd(9)} up=${s.uptime_s}s cpu=${s.cpu}% mem=${s.mem}MB restarts=${s.restarts} extra=${ex}`);
+  });
+  p('');
+
+  // requests
+  p('## requests ·', metaLabel(d.requests_meta));
+  if(d.requests){
+    const r = d.requests, s = r.status_codes || {};
+    p(`  window: ${r.window} · rps_pts=${(r.series_rps||[]).length} p95_pts=${(r.series_p95_ms||[]).length}`);
+    p(`  codes: 2xx=${s['2xx']} 3xx=${s['3xx']} 4xx=${s['4xx']} 5xx=${s['5xx']} · slowest=${(r.slowest||[]).length}`);
+    if((r.series_rps||[]).length){
+      const rps = r.series_rps;
+      p(`  rps min=${Math.min(...rps)} max=${Math.max(...rps)} last=${rps[rps.length-1]}`);
+    }
+  } else p('  (null)');
+  p('');
+
+  // arq
+  p('## arq ·', metaLabel(d.arq_meta));
+  if(d.arq){
+    p(`  queue_depth=${d.arq.queue_depth} in_flight=${d.arq.in_flight} workers=${d.arq.workers}`);
+    p(`  completed_24h=${d.arq.completed_24h} failed_24h=${d.arq.failed_24h}`);
+    p(`  active=${(d.arq.active||[]).length} recent_completed=${(d.arq.recent_completed||[]).length} recent_failed=${(d.arq.recent_failed||[]).length}`);
+    (d.arq.active||[]).forEach(j => p(`    active: ${j.job_id} ${j.fn} ${j.target} · ${j.elapsed_s}s`));
+    (d.arq.recent_completed||[]).slice(0,3).forEach(j => p(`    done:   ${j.job_id} ${j.fn} ${j.target} · ${j.duration_s}s`));
+    (d.arq.recent_failed||[]).slice(0,3).forEach(j => p(`    failed: ${j.job_id} ${j.fn} ${j.target} · ${j.error}`));
+  } else p('  (null)');
+  p('');
+
+  // storage
+  p('## storage ·', metaLabel(d.storage_meta));
+  if(d.storage){
+    const s = d.storage;
+    const mb = b => b == null ? '—' : (b/1024/1024).toFixed(1) + 'MB';
+    p(`  postgres=${mb(s.postgres_bytes)} media=${mb(s.media_bytes)}`);
+    if(s.block_vol) p(`  block_vol: used=${mb(s.block_vol.used_bytes)} free=${mb(s.block_vol.free_bytes)}`);
+    if(s.object_storage) p(`  object:    used=${mb(s.object_storage.used_bytes)}`);
+    const t = s.trend_7d || {};
+    p(`  trend_pts: postgres=${(t.postgres||[]).length} media=${(t.media||[]).length} block_free=${(t.block_free||[]).length} object_used=${(t.object_used||[]).length}`);
+  } else p('  (null)');
+  p('');
+
+  // backups
+  p('## backups ·', metaLabel(d.backups_meta));
+  if(d.backups){
+    const b = d.backups;
+    p(`  status=${b.status} · last_pg_dump=${b.last_pg_dump || '—'} · last_size=${b.last_size_bytes ?? '—'}`);
+    p(`  next_in=${b.next_run_in_s}s · bucket=${b.bucket} · retention=${b.retention_days}d · runs=${(b.recent_runs||[]).length}`);
+  } else p('  (null)');
+  p('');
+
+  // cert
+  p('## cert ·', metaLabel(d.cert_meta));
+  if(d.cert){
+    p(`  domain=${d.cert.domain} issuer=${d.cert.issuer || '—'}`);
+    p(`  not_after=${d.cert.not_after || '—'} · days_left=${d.cert.days_left ?? '—'}`);
+    const r = d.cert.last_renew || {};
+    p(`  last_renew: ${r.status || '—'} @ ${r.at || '—'}`);
+  } else p('  (null)');
+  p('');
+
+  // logs
+  p('## logs ·', metaLabel(d.logs_meta), '·', (d.logs||[]).length, 'lines');
+  const last = (d.logs||[]).slice(-3);
+  last.forEach(l => p(`  ${l.ts} [${l.level}] ${l.svc}: ${l.msg.slice(0,100)}`));
+
+  const out = lines.join('\n');
+  console.log(out);
+  try { await navigator.clipboard.writeText(out); console.log('(copied to clipboard)'); }
+  catch(e) { console.log('(clipboard write failed — select and copy manually)'); }
+  return out;
+};
+
 /* =========================================================================
    INTERACTIONS
    ========================================================================= */
