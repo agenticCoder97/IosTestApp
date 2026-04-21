@@ -56,16 +56,25 @@ async def lifespan(_app: FastAPI):
         logger.warning("monitor pg pool failed: %s", e)
         pg_pool = None
 
+    # Grow the asyncio default ThreadPoolExecutor — /metrics runs 8
+    # collectors via asyncio.gather; several use asyncio.to_thread for
+    # OCI / docker-py sync calls. Combined with docker_sampler's 7 stats
+    # calls every 10 s, the default 8-worker pool saturates and callers
+    # queue. 32 workers is plenty for a monitor service.
+    import concurrent.futures
+    asyncio.get_event_loop().set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(max_workers=32, thread_name_prefix="monitor")
+    )
+
     # Warm the OCI SDK before serving traffic — first instance-principal
-    # signer handshake + first Budget/Usage API call can take 8-15s cold,
-    # which trips /metrics timeouts on the dashboard's initial load.
-    # Fire-and-forget; the task populates last_good so the FIRST /metrics
-    # request already has warm data.
+    # signer handshake + first Budget/Usage API call can take several
+    # seconds cold. Warm-up also writes to last_good via safe() so
+    # /metrics timeouts fall back to warm cache instead of zero fallbacks.
     async def _warm_oci():
         try:
             await asyncio.gather(
-                cost.collect(),
-                backups.collect(),
+                cache.safe(cost.collect,    "cost",    redis=redis, timeout=15.0, fallback=None),
+                cache.safe(backups.collect, "backups", redis=redis, timeout=15.0, fallback=None),
                 return_exceptions=True,
             )
             logger.info("monitor: OCI warm-up complete")
