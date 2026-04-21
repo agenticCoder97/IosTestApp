@@ -92,19 +92,24 @@ async def index() -> FileResponse:
 @app.get("/metrics")
 async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> JSONResponse:
     redis = cache.get_cache_redis_or_none()
+    # (name, collector, fallback_factory, timeout_s)
+    # OCI-SDK-backed collectors (cost, backups) get a longer timeout because
+    # the instance-principal signer's first handshake can exceed 2 s cold.
+    # du -sb on /mnt/astral-media (storage) can also take a few seconds on
+    # a populated volume.
     collectors = [
-        ("cost", cost.collect, _empty_cost),
-        ("services", services_coll.collect, lambda: []),
-        ("requests", partial(requests_coll.collect, range), lambda: _empty_requests(range)),
-        ("arq", arq.collect, _empty_arq),
-        ("storage", storage.collect, _empty_storage),
-        ("backups", backups.collect, _empty_backups),
-        ("cert", cert.collect, _empty_cert),
-        ("logs", partial(logs_coll.collect, 100), lambda: []),
+        ("cost",     cost.collect,                                _empty_cost,             4.0),
+        ("services", services_coll.collect,                       lambda: [],              2.0),
+        ("requests", partial(requests_coll.collect, range),       lambda: _empty_requests(range), 2.0),
+        ("arq",      arq.collect,                                 _empty_arq,              2.0),
+        ("storage",  storage.collect,                             _empty_storage,          10.0),
+        ("backups",  backups.collect,                             _empty_backups,          4.0),
+        ("cert",     cert.collect,                                _empty_cert,             2.0),
+        ("logs",     partial(logs_coll.collect, 100),             lambda: [],              2.0),
     ]
     results = await asyncio.gather(
-        *[cache.safe(c, name, redis=redis, timeout=2.0, fallback=fb())
-          for name, c, fb in collectors],
+        *[cache.safe(c, name, redis=redis, timeout=t, fallback=fb())
+          for name, c, fb, t in collectors],
     )
     payload: dict = {
         "schema_version": "1.0.0",
@@ -114,7 +119,7 @@ async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> J
         "region": os.getenv("OCI_REGION", "unknown"),
         "instance_ocid": os.getenv("OCI_INSTANCE_OCID", "unknown"),
     }
-    for (name, _c, _fb), (data, meta) in zip(collectors, results):
+    for (name, _c, _fb, _t), (data, meta) in zip(collectors, results):
         payload[name] = _serialize(data)
         if meta is not None:
             payload[f"{name}_meta"] = meta

@@ -45,6 +45,10 @@ async def _sample_once(client, redis) -> None:
         svc = c.labels.get("com.docker.compose.service")
         if not svc:
             continue
+        # The monitor service itself is a compose service but shouldn't appear
+        # in its own UI grid — the dashboard expects exactly 6 cards.
+        if svc == "astral_monitor":
+            continue
         state = c.attrs.get("State", {})
         status = state.get("Status", "unknown")
         health_obj = state.get("Health")
