@@ -6,6 +6,10 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ## 2026-04-21
 
+### Backend
+
+- **AST-54** — End-to-end prod smoke test passed: iPhone (release build) → DuckDNS → nginx (TLS) → FastAPI → ARQ worker → Postgres + block-volume storage → iPhone reader. Initiated a live comic scrape of `hentai20.io/manga/wireless-onahole/` (86 chapters, CF-cookie-gated); flowed cleanly through all services (cookies stored in Redis, ARQ enqueue, worker scraped chapters in parallel ~2.5s each, images written to `/mnt/astral-media/`, pages served from `/static/` over HTTPS). No code changes; migration functionally complete.
+
 ### iOS
 
 - **AST-53** — iPhone now talking to prod: no code change needed — `AppConfig.swift` release branch already pointed at `https://astral-reader.duckdns.org` with the correct trailing-slash `staticBaseURL`, and Info.plist ATS exceptions are correctly scoped only to `localhost` + `192.168.0.108` (dev). Verified end-to-end by building in Release config, installing on the physical iPhone, and watching real requests hit the A1 (library load, progress hydrate, scrapes list all 200 OK). Expected side effect: local SwiftData entries from the dev backend return 404 on detail fetches against fresh prod — harmless, resolves by wiping+reinstalling the app or letting users re-scrape.
