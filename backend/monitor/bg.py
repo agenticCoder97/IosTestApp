@@ -37,7 +37,10 @@ async def _sample_once(client, redis) -> None:
     from datetime import datetime, timezone
 
     now_ms = int(_time.time() * 1000)
-    containers = client.containers.list(
+    # docker-py calls are blocking HTTP — offload to a thread so the event
+    # loop stays responsive to /metrics requests during each 10s sample tick.
+    containers = await asyncio.to_thread(
+        client.containers.list,
         all=True,
         filters={"label": "com.docker.compose.project=backend"},
     )
@@ -61,7 +64,7 @@ async def _sample_once(client, redis) -> None:
             uptime_s = 0
 
         try:
-            stats = c.stats(stream=False)
+            stats = await asyncio.to_thread(c.stats, stream=False)
         except Exception:
             stats = None
 
@@ -311,26 +314,31 @@ def _pct(values: list[int], p: int) -> int:
     return xs[min(k, len(xs) - 1)]
 
 
+def _read_access_log_records() -> list[dict]:
+    """Synchronous file read — invoked via asyncio.to_thread so the event
+    loop stays free during the read. Returns parsed records."""
+    from collections import deque as _deque
+
+    if not NGINX_ACCESS_PATH.exists():
+        return []
+    tail_buf: "deque[str]" = _deque(maxlen=100_000)
+    with NGINX_ACCESS_PATH.open("r", errors="replace") as fh:
+        for line in fh:
+            tail_buf.append(line)
+    out = []
+    for line in tail_buf:
+        rec = _parse_log_line(line)
+        if rec is not None:
+            out.append(rec)
+    return out
+
+
 async def nginx_access_sampler() -> None:
     """Every 60s: tail access.log, compute all 5 windows, write NGINX_WINDOW_CACHE."""
     while True:
         try:
-            if not NGINX_ACCESS_PATH.exists():
-                await asyncio.sleep(60)
-                continue
-            from collections import deque as _deque
-            tail_buf: Deque[str] = _deque(maxlen=100_000)
-            with NGINX_ACCESS_PATH.open("r", errors="replace") as fh:
-                for line in fh:
-                    tail_buf.append(line)
-
+            all_records = await asyncio.to_thread(_read_access_log_records)
             now_ms = int(_dt.now(_tz.utc).timestamp() * 1000)
-            all_records = []
-            for line in tail_buf:
-                rec = _parse_log_line(line)
-                if rec is not None:
-                    all_records.append(rec)
-
             for w, seconds in _WINDOWS_S.items():
                 cutoff = now_ms - seconds * 1000
                 window_records = [r for r in all_records if r["ts_ms"] >= cutoff]
