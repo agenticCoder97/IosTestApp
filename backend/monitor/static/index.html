@@ -1448,6 +1448,31 @@ function renderServices(){
 
 function renderRequests(){
   const r = STATE.data.requests;
+  const sc = r.status_codes || {};
+  const totalReqs = (sc['2xx']||0) + (sc['3xx']||0) + (sc['4xx']||0) + (sc['5xx']||0);
+  const chartEl = document.getElementById('reqChart');
+
+  if(totalReqs === 0){
+    // No traffic in this window — show placeholder instead of a flat-zero chart.
+    if(chartEl){
+      chartEl.innerHTML = `<text x="50%" y="50%" text-anchor="middle"
+        fill="var(--muted)" font-family="JetBrains Mono" font-size="12">
+        (no traffic in this window)</text>`;
+    }
+    document.getElementById('rps-now').textContent = '0.00';
+    document.getElementById('p95-now').innerHTML = `0<span class="text-muted text-sm ml-0.5">ms</span>`;
+    document.getElementById('req-total').textContent = '0';
+    document.getElementById('req-window').textContent = RANGE_LABELS[STATE.range];
+    document.getElementById('sc-2').textContent = '0';
+    document.getElementById('sc-3').textContent = '0';
+    document.getElementById('sc-4').textContent = '0';
+    document.getElementById('sc-5').textContent = '0';
+    document.getElementById('statusBars').innerHTML = '';
+    document.getElementById('slowest').innerHTML =
+      '<tr><td colspan="3" class="text-muted mono text-[12px] py-3 text-center">no requests to rank</td></tr>';
+    return;
+  }
+
   drawRequestChart(r.series_rps, r.series_p95_ms);
   document.getElementById('rps-now').textContent = r.series_rps.at(-1).toFixed(2);
   document.getElementById('p95-now').innerHTML = `${Math.round(r.series_p95_ms.at(-1))}<span class="text-muted text-sm ml-0.5">ms</span>`;
