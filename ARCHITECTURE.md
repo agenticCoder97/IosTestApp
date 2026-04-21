@@ -8,6 +8,18 @@
 
 ---
 
+## 0. Corrections from v1.1 (v1.2)
+
+### ❌→✅ Database — Oracle Autonomous Database → Postgres 16 on the A1 VM
+
+| | |
+|---|---|
+| **Was** | Oracle Autonomous Database Free Tier, `python-oracledb` thin mode, mTLS via `ewallet.pem` wallet. Introduced 3 known pitfalls already in the codebase (Boolean `server_default="false"`, CLOB `=` comparison edge cases, `relationship` as a column name) plus a 4000-byte VARCHAR2 cap on `freeform_tags` that AO3 can blow through. ADB auto-stops after 7 idle days. |
+| **Now** | Postgres 16 running in Docker on the A1 VM alongside FastAPI/ARQ/Redis. Data dir bind-mounted to `/mnt/astral-media/postgres` on the block volume (survives VM re-provision). Driver unchanged: `asyncpg`. Same schema, identical between dev and prod. |
+| **Reason** | Single-user workload (<1 QPS steady state) doesn't benefit from a managed DB. Dev/prod parity eliminates a class of Oracle-specific debugging. 1 GB of RAM on a 24 GB VM is noise. Backups handled by a weekly pg_dump cron to Object Storage (AST-51). |
+
+---
+
 ## 0. Corrections from v1.0
 
 ### ❌→✅ Oracle Driver — cx_Oracle → python-oracledb (thin mode)
@@ -67,8 +79,8 @@ Astral is a private, single-user iOS reading application for manga/manhwa comics
 | iOS App | SwiftUI, iOS 17.2+, SwiftData (local persistence), URLSession / APIClient (async/await) |
 | Backend API | Python 3.11+, FastAPI, Uvicorn, Nginx reverse proxy |
 | Task Queue | ARQ + Redis — async scrape jobs, status tracking, nightly cleanup cron |
-| DB Driver | python-oracledb thin mode — pure Python, ARM64 native, no Instant Client required |
-| Database | Oracle Autonomous Database Free Tier (1 OCPU, 20GB). mTLS via `ewallet.pem` from wallet ZIP |
+| DB Driver | `asyncpg` — pure Python Postgres driver, ARM64 native |
+| Database | Postgres 16 in Docker on the A1 VM. Data on `/mnt/astral-media/postgres` (block volume). `asyncpg` driver. Same schema in dev and prod. |
 | File Storage | OCI Block Volume (200GB) served by Nginx as `/static/` for scraped images |
 | TLS | Let's Encrypt cert on DuckDNS subdomain. Certbot container auto-renews. Standard iOS trust. |
 | Scraping | iOS WKWebView harvests CF cookies → backend httpx reuses them. Playwright ARM64 fallback. |
@@ -78,8 +90,7 @@ Astral is a private, single-user iOS reading application for manga/manhwa comics
 
 | Decision | Rationale |
 |---|---|
-| python-oracledb thin vs cx_Oracle | `cx_Oracle` is deprecated and requires Oracle Instant Client binaries unavailable for ARM64 Linux. `python-oracledb` thin mode is pure Python, installs via pip, runs on any architecture, and is Oracle's official successor. |
-| mTLS wallet format (thin mode) | Oracle Autonomous DB requires mTLS. Thin mode uses `ewallet.pem` from the wallet ZIP. NOT `cwallet.sso` — that format is thick-mode only. The PEM file is mounted into the Docker container via a secrets volume. |
+| Postgres on the A1 VM | Single-user workload (<1 QPS) doesn't benefit from a managed DB. Running Postgres 16 in Docker on the A1 VM gives dev/prod parity (same driver, same dialect, same schema), costs $0 on the Always Free A1, and eliminates a class of Oracle-specific debugging. Data dir bind-mounted to `/mnt/astral-media/postgres` on the block volume so it survives VM re-provision. |
 | HTTPS via DuckDNS + Let's Encrypt | Free subdomain points to OCI public IP. Let's Encrypt issues a valid cert. Certbot in Docker renews automatically. iOS trusts the standard LE chain — no ATS exceptions. |
 | Cookie-Harvest scraping | iOS WKWebView is real Safari — passes Cloudflare natively. App extracts `cf_clearance` cookies and user-agent after page load. Sent to backend with scrape request. Backend httpx reuses them, impersonating the Safari session. |
 | Playwright as fallback | For sites requiring per-page JS rendering. `playwright-stealth` patches fingerprint vectors. Chromium ARM64 supported officially on Ubuntu 22+. Shared pool of max 2 browser instances. |
@@ -162,7 +173,7 @@ backend/app/
 │   └── cleanup_task.py           # Nightly cron: hard-delete rows > 5d old
 │
 ├── db/
-│   └── database.py               # python-oracledb engine, session factory
+│   └── database.py               # asyncpg engine, session factory. Oracle code path retained as dead code for ~2 months before removal (AST-55).
 │
 └── utils/
     ├── file_storage.py           # Block volume path helpers
