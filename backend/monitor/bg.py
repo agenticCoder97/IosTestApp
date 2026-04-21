@@ -56,6 +56,13 @@ async def _sample_once(client, redis) -> None:
         status = state.get("Status", "unknown")
         health_obj = state.get("Health")
         health = health_obj.get("Status") if isinstance(health_obj, dict) else None
+        # Absence of a Docker healthcheck is not evidence of unhealthiness —
+        # synthesize "healthy" for any container whose Docker state is
+        # "running", so the UI's UP/DOWN badge reflects runtime reality
+        # rather than compose healthcheck presence. Exited/dead containers
+        # keep health=None and the renderer correctly flags them DOWN.
+        if health is None and status == "running":
+            health = "healthy"
         started_at = state.get("StartedAt") or ""
         try:
             started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
@@ -139,9 +146,12 @@ async def _fetch_service_extra(svc: str, started_at_iso: str, now_ms: int, redis
         if svc == "fastapi":
             import os as _os
             workers = int(_os.getenv("UVICORN_WORKERS", "1"))
-            cached = NGINX_WINDOW_CACHE.get("1h", {})
-            rps_pts = cached.get("series_rps", [])
-            rps = float(rps_pts[-1][1]) if rps_pts else 0.0
+            # Use the 60-second /api/* window so rps is genuinely "last
+            # minute of prod API traffic" rather than a 1-hour average.
+            cached = NGINX_WINDOW_CACHE.get("1m_api", {})
+            sc = cached.get("status_codes", {}) or {}
+            total = sum(int(sc.get(k, 0) or 0) for k in ("2xx", "3xx", "4xx", "5xx"))
+            rps = total / 60.0
             return {"workers": workers, "rps": f"{rps:.2f}"}
 
         if svc == "arq_worker":
@@ -156,17 +166,20 @@ async def _fetch_service_extra(svc: str, started_at_iso: str, now_ms: int, redis
             }
 
         if svc == "nginx":
+            # Prefer real stub_status data; fall back to the 1h window
+            # approximation if the scrape fails (stub_status not mounted,
+            # nginx down, etc.).
+            from monitor.collectors import _nginx_stub
+            stub = await _nginx_stub.fetch_stub()
+            if stub:
+                return {
+                    "active_connections": stub["active_connections"],
+                    "reqs_total":         stub["total_requests"],
+                }
             cached = NGINX_WINDOW_CACHE.get("1h", {})
-            rps_pts = cached.get("series_rps", [])
-            last_rps = float(rps_pts[-1][1]) if rps_pts else 0.0
-            # Active connections isn't available without the nginx stub_status
-            # module; use last-bucket rps as a rough "in-flight" proxy.
             sc = cached.get("status_codes", {}) or {}
             total = sum(int(sc.get(k, 0) or 0) for k in ("2xx", "3xx", "4xx", "5xx"))
-            return {
-                "active_connections": max(1, int(round(last_rps))),
-                "reqs_total": total,
-            }
+            return {"active_connections": 0, "reqs_total": total}
 
         if svc == "certbot":
             # certbot container loops `certbot renew; sleep 43200` (12h).
@@ -324,7 +337,8 @@ _LOG_RE = _re.compile(
     r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)"$'
 )
 
-_WINDOWS_S = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000}
+_WINDOWS_S = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000,
+              "1m_api": 60}
 
 
 def _parse_log_line(line: str) -> dict | None:
@@ -428,6 +442,12 @@ async def nginx_access_sampler() -> None:
             for w, seconds in _WINDOWS_S.items():
                 cutoff = now_ms - seconds * 1000
                 window_records = [r for r in all_records if r["ts_ms"] >= cutoff]
+                # 1m_api: narrow to prod API paths only — used by the
+                # fastapi service card for live RPS. Other windows stay
+                # full-traffic (they drive the Request Metrics chart).
+                if w == "1m_api":
+                    window_records = [r for r in window_records
+                                      if r["path"].startswith("/api/")]
                 NGINX_WINDOW_CACHE[w] = _compute_window(window_records, w)
         except Exception as e:
             logger.warning("nginx_access_sampler failed: %s", e)

@@ -63,6 +63,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.monitor
+      args:
+        # Pass the current git SHA so the image reports its build via
+        # /metrics. Deploy script should export MONITOR_BUILD_SHA=$(git
+        # rev-parse --short HEAD); if unset it falls back to "unknown".
+        MONITOR_BUILD_SHA: ${MONITOR_BUILD_SHA:-unknown}
     expose:
       - "8001"
     env_file:
@@ -139,3 +144,12 @@ volumes:
 networks:
   astral_net:
     driver: bridge
+    # Pin the bridge subnet so nginx's `allow 172.19.0.0/16` for the
+    # stub_status location always matches the monitor container's IP.
+    # Docker bridge networks otherwise get whatever /16 is free, which
+    # could be 172.20.x.x on a re-provision and would silently deny the
+    # monitor scrape.
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.19.0.0/16

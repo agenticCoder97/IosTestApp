@@ -514,7 +514,7 @@
     <!-- Live indicator -->
     <span class="hidden md:inline-flex items-center gap-1.5 mono text-[11px] text-muted">
       <span class="dot ok live-dot"></span>
-      <span>ap-mumbai-1 · VM.Standard.A1.Flex</span>
+      <span id="hdr-region">— · VM.Standard.A1.Flex</span>
     </span>
 
     <div class="flex-1"></div>
@@ -564,12 +564,12 @@
       <div>
         <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-2">Month-to-date spend</div>
         <div class="flex items-end gap-2">
-          <div class="text-[44px] leading-none font-bold text-white mono">$0.00</div>
-          <div class="text-muted mono text-sm pb-1.5">/ $1.00</div>
+          <div class="text-[44px] leading-none font-bold text-white mono" id="cost-spend-mtd">$0.00</div>
+          <div class="text-muted mono text-sm pb-1.5">/ <span id="cost-spend-budget">$1.00</span></div>
         </div>
         <div class="mt-3 gauge ok"><span style="width:0%"></span></div>
         <div class="mt-2 flex justify-between text-[11px] text-muted">
-          <span>forecast <span class="mono text-body">$0.00</span></span>
+          <span>forecast <span class="mono text-body" id="cost-spend-forecast">$0.00</span></span>
           <span>alert <span class="mono text-body">never fired</span></span>
         </div>
 
@@ -598,10 +598,10 @@
             <div class="badge badge-warn" title="at-cap but free">AT CAP</div>
           </div>
           <div class="mt-2 flex items-baseline gap-1">
-            <span class="text-2xl font-semibold text-white mono">4</span>
-            <span class="text-muted mono text-xs">/ 4 ocpu</span>
+            <span class="text-2xl font-semibold text-white mono" id="ocpu-used">4</span>
+            <span class="text-muted mono text-xs">/ <span id="ocpu-cap">4</span> ocpu</span>
           </div>
-          <div class="mt-3 gauge warn"><span style="width:100%"></span></div>
+          <div class="mt-3 gauge warn"><span id="gauge-ocpu" style="width:100%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">always-free cap · no charge</div>
         </div>
         <!-- A1 RAM -->
@@ -611,10 +611,10 @@
             <div class="badge badge-warn">AT CAP</div>
           </div>
           <div class="mt-2 flex items-baseline gap-1">
-            <span class="text-2xl font-semibold text-white mono">24</span>
-            <span class="text-muted mono text-xs">/ 24 GB</span>
+            <span class="text-2xl font-semibold text-white mono" id="ram-used">24</span>
+            <span class="text-muted mono text-xs">/ <span id="ram-cap">24</span> GB</span>
           </div>
-          <div class="mt-3 gauge warn"><span style="width:100%"></span></div>
+          <div class="mt-3 gauge warn"><span id="gauge-ram" style="width:100%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">always-free cap · no charge</div>
         </div>
         <!-- Block volume -->
@@ -624,8 +624,8 @@
             <div class="badge badge-ok">98% free</div>
           </div>
           <div class="mt-2 flex items-baseline gap-1">
-            <span class="text-2xl font-semibold text-white mono">197</span>
-            <span class="text-muted mono text-xs">/ 200 GB total</span>
+            <span class="text-2xl font-semibold text-white mono" id="vol-used">197</span>
+            <span class="text-muted mono text-xs">/ <span id="vol-cap">200</span> GB total</span>
           </div>
           <div class="mt-3 gauge ok"><span id="gauge-vol" style="width:98.5%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">boot 47 · data 150</div>
@@ -638,7 +638,7 @@
           </div>
           <div class="mt-2 flex items-baseline gap-1">
             <span class="text-2xl font-semibold text-white mono" id="egress-used">0.12</span>
-            <span class="text-muted mono text-xs">/ 10 TB</span>
+            <span class="text-muted mono text-xs">/ <span id="egress-cap">10</span> TB</span>
           </div>
           <div class="mt-3 gauge ok"><span id="gauge-egress" style="width:1.2%"></span></div>
           <div class="mt-1.5 text-[11px] text-muted mono">projected <span class="text-body" id="egress-forecast">0.18</span> TB</div>
@@ -647,86 +647,6 @@
     </div>
   </section>
 
-
-  <!-- ─── 1b. SLO & ERROR BUDGET  (GCP Cloud Monitoring) ───────────────── -->
-  <div class="section-head">
-    <span class="crumb">astral / oci / <span class="cur">slo &amp; error budget</span></span>
-    <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">rolling 30d · target 99.5%</span>
-  </div>
-
-  <section class="grid grid-cols-1 lg:grid-cols-[320px_1fr_1fr] gap-3">
-    <!-- Availability SLO dial -->
-    <div class="card p-4 sm:p-5 flex items-center gap-5">
-      <div class="ring-wrap">
-        <svg width="112" height="112" viewBox="0 0 112 112">
-          <circle cx="56" cy="56" r="48" fill="none" stroke="#2A2A30" stroke-width="8"/>
-          <circle id="slo-ring" cx="56" cy="56" r="48" fill="none" stroke="#4CAF50" stroke-width="8"
-                  stroke-linecap="round" stroke-dasharray="301.6 301.6" stroke-dashoffset="1.5"
-                  transform="rotate(-90 56 56)"/>
-        </svg>
-        <div class="pct"><span class="n" id="slo-pct">99.82%</span><span class="l">availability</span></div>
-      </div>
-      <div class="flex-1 min-w-0">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">slo</div>
-        <div class="text-white font-semibold mt-0.5">API availability</div>
-        <div class="text-[11px] text-muted mono mt-1">2xx+3xx ÷ total · last 30d</div>
-        <div class="mt-3 flex items-center gap-2">
-          <span class="badge badge-ok"><span class="dot ok"></span>HEALTHY</span>
-          <span class="mono text-[11px] text-muted">target 99.5%</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Error budget remaining -->
-    <div class="card p-4 sm:p-5">
-      <div class="flex items-baseline justify-between">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Error budget · 30d</div>
-        <span class="badge badge-ok" id="eb-badge">64% LEFT</span>
-      </div>
-      <div class="flex items-end gap-2 mt-2">
-        <div class="text-[44px] leading-none font-bold text-white mono" id="eb-remaining">2h 18m</div>
-        <div class="text-muted mono text-sm pb-1.5">/ 3h 36m</div>
-      </div>
-      <div class="burn-track mt-4" id="burn-track"></div>
-      <div class="flex justify-between text-[11px] text-muted mono mt-1.5">
-        <span>day 1</span><span>day 15</span><span>day 30</span>
-      </div>
-      <div class="hr mt-3 pt-3 grid grid-cols-3 gap-2 text-center">
-        <div>
-          <div class="text-[11px] uppercase tracking-[.14em] text-muted">burn 1h</div>
-          <div class="mono text-sm text-white mt-0.5" id="burn-1h">0.2×</div>
-        </div>
-        <div>
-          <div class="text-[11px] uppercase tracking-[.14em] text-muted">burn 6h</div>
-          <div class="mono text-sm text-white mt-0.5" id="burn-6h">0.4×</div>
-        </div>
-        <div>
-          <div class="text-[11px] uppercase tracking-[.14em] text-muted">burn 24h</div>
-          <div class="mono text-sm text-white mt-0.5" id="burn-24h">0.6×</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Latency SLO -->
-    <div class="card p-4 sm:p-5">
-      <div class="flex items-baseline justify-between">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Latency SLO · p95 &lt; 500ms</div>
-        <span class="badge badge-ok"><span class="dot ok"></span>ON TRACK</span>
-      </div>
-      <div class="flex items-end gap-2 mt-2">
-        <div class="text-[44px] leading-none font-bold text-white mono" id="lat-slo-pct">98.4%</div>
-        <div class="text-muted mono text-sm pb-1.5">of requests</div>
-      </div>
-      <div class="mt-3 text-[11px] tracking-[.14em] uppercase text-muted mb-1">p95 trend · 7d</div>
-      <svg id="lat-spark" viewBox="0 0 300 44" preserveAspectRatio="none" class="w-full" style="height:44px;"></svg>
-      <div class="flex justify-between text-[11px] text-muted mono mt-1">
-        <span>min <span class="text-body" id="lat-min">88ms</span></span>
-        <span>avg <span class="text-body" id="lat-avg">142ms</span></span>
-        <span>max <span class="text-body" id="lat-max">412ms</span></span>
-      </div>
-    </div>
-  </section>
 
   <!-- ─── 2. SERVICE HEALTH GRID ───────────────────────────────────────── -->
   <div class="section-head" id="sec-services">
@@ -833,29 +753,7 @@
   </section>
 
 
-  <!-- ─── 3b. UPTIME CHECKS (GCP Uptime Monitoring) ─────────────────────── -->
-  <div class="section-head">
-    <span class="crumb">astral / oci / <span class="cur">uptime checks</span></span>
-    <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">synthetic probes · 1m interval · last 60m</span>
-  </div>
-
-  <section class="card p-4 sm:p-5">
-    <div class="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-4 items-start mb-4">
-      <div>
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">overall uptime · 7d</div>
-        <div class="text-[32px] font-bold text-white mono leading-none mt-1">99.94%</div>
-        <div class="text-[11px] text-muted mono mt-1">3 checks · 5 regions · 1 failure</div>
-      </div>
-      <div class="flex gap-4 flex-wrap text-[11px] text-muted mono">
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:var(--success);display:inline-block;"></span>2xx &lt; 500ms</span>
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:var(--warning);display:inline-block;"></span>2xx 500-2000ms</span>
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:var(--error);display:inline-block;"></span>non-2xx / timeout</span>
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:rgba(107,107,122,.18);display:inline-block;"></span>no data</span>
-      </div>
-    </div>
-    <div id="uptime-rows" class="space-y-3"></div>
-  </section>
+  <!-- ─── 4. ARQ WORKER ──────────────────────────────────────────────── -->
   <div class="section-head" id="sec-arq">
     <span class="crumb">astral / oci / <span class="cur">arq worker</span></span>
     <span class="rule"></span>
@@ -868,23 +766,23 @@
       <div class="grid grid-cols-2 gap-3">
         <div class="elevated p-3">
           <div class="text-[11px] tracking-[.14em] uppercase text-muted">queue depth</div>
-          <div class="text-2xl font-semibold text-white mono mt-1" id="qd">2</div>
-          <div class="bar-track mt-2"><span id="qd-bar" style="width:20%"></span></div>
+          <div class="text-2xl font-semibold text-white mono mt-1" id="qd">0</div>
+          <div class="bar-track mt-2"><span id="qd-bar" style="width:0%"></span></div>
         </div>
         <div class="elevated p-3">
           <div class="text-[11px] tracking-[.14em] uppercase text-muted">in flight</div>
-          <div class="text-2xl font-semibold text-white mono mt-1" id="inflight">1</div>
-          <div class="bar-track mt-2"><span style="width:33%; background:var(--success)"></span></div>
+          <div class="text-2xl font-semibold text-white mono mt-1" id="inflight">0</div>
+          <div class="bar-track mt-2"><span style="width:0%; background:var(--success)"></span></div>
         </div>
         <div class="elevated p-3">
           <div class="text-[11px] tracking-[.14em] uppercase text-muted">completed 24h</div>
-          <div class="text-2xl font-semibold text-white mono mt-1">184</div>
-          <div class="text-[11px] text-muted mt-1 mono">avg 14.2s</div>
+          <div class="text-2xl font-semibold text-white mono mt-1" id="completed-24h">0</div>
+          <div class="text-[11px] text-muted mt-1 mono" id="completed-24h-sub">—</div>
         </div>
         <div class="elevated p-3">
           <div class="text-[11px] tracking-[.14em] uppercase text-muted">failed 24h</div>
-          <div class="text-2xl font-semibold mono mt-1" style="color:var(--warning)">2</div>
-          <div class="text-[11px] text-muted mt-1 mono">1.1% rate</div>
+          <div class="text-2xl font-semibold mono mt-1" id="failed-24h" style="color:var(--warning)">0</div>
+          <div class="text-[11px] text-muted mt-1 mono" id="failed-24h-sub">—</div>
         </div>
       </div>
 
@@ -994,23 +892,23 @@
     <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_200px] gap-5 items-center">
       <div>
         <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-1">domain</div>
-        <div class="text-white font-semibold mono">astral-reader.duckdns.org</div>
+        <div id="cert-domain" class="text-white font-semibold mono">astral-reader.duckdns.org</div>
         <div class="mt-3 text-[11px] tracking-[.14em] uppercase text-muted mb-1">issuer</div>
-        <div class="text-body mono text-sm">Let's Encrypt R11</div>
+        <div id="cert-issuer" class="text-body mono text-sm">Let's Encrypt R11</div>
       </div>
       <div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <div class="text-[11px] tracking-[.14em] uppercase text-muted">not-before</div>
-            <div class="text-body mono text-sm mt-1">2026-03-12 10:14 UTC</div>
+            <div id="cert-not-before" class="text-body mono text-sm mt-1">2026-03-12 10:14 UTC</div>
           </div>
           <div>
             <div class="text-[11px] tracking-[.14em] uppercase text-muted">not-after</div>
-            <div class="text-body mono text-sm mt-1">2026-06-10 10:14 UTC</div>
+            <div id="cert-not-after" class="text-body mono text-sm mt-1">2026-06-10 10:14 UTC</div>
           </div>
           <div>
             <div class="text-[11px] tracking-[.14em] uppercase text-muted">last renew</div>
-            <div class="mt-1 text-sm"><span class="badge badge-ok"><span class="dot ok"></span>OK</span> <span class="text-muted mono">· 5d ago</span></div>
+            <div id="cert-last-renew" class="mt-1 text-sm"><span class="badge badge-ok"><span class="dot ok"></span>OK</span> <span class="text-muted mono">· 5d ago</span></div>
           </div>
           <div>
             <div class="text-[11px] tracking-[.14em] uppercase text-muted">cron</div>
@@ -1019,24 +917,12 @@
         </div>
       </div>
       <div class="text-center md:text-right">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">days remaining</div>
-        <div class="text-[48px] leading-none font-bold text-white mono mt-1">51</div>
+        <div id="cert-days-left-label" class="text-[11px] tracking-[.14em] uppercase text-muted">days remaining</div>
+        <div id="cert-days-left" class="text-[48px] leading-none font-bold text-white mono mt-1">51</div>
         <div class="mt-2 gauge ok"><span style="width:56%"></span></div>
         <div class="text-[11px] text-muted mono mt-1">renews at ≤30d</div>
       </div>
     </div>
-  </section>
-
-
-  <!-- ─── 7b. RECOMMENDATIONS (GCP Active Assist) ──────────────────────── -->
-  <div class="section-head">
-    <span class="crumb">astral / oci / <span class="cur">recommendations</span></span>
-    <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">active assist · <span id="reco-count">4</span> open</span>
-  </div>
-
-  <section class="card p-4 sm:p-5">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="reco-grid"></div>
   </section>
 
 
@@ -1073,11 +959,11 @@
   <!-- ─── FOOTER ──────────────────────────────────────────────────────── -->
   <footer class="mt-10 pt-4 border-t border-border/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] text-muted mono">
     <div class="flex items-center gap-3 flex-wrap">
-      <span>build <span class="copy" data-copy="a7f3c9d">a7f3c9d</span></span>
+      <span>build <span id="ftr-build" class="copy" data-copy="—">—</span></span>
       <span>·</span>
-      <span>tenancy <span class="copy" data-copy="ocid1.tenancy.oc1..aaaaaaaa3kf7sjr2...qlwzx4">ocid1.tenancy.oc1..aaaaaaaa3kf7…qlwzx4</span></span>
+      <span>tenancy <span id="ftr-tenancy" class="copy" data-copy="—">—</span></span>
       <span>·</span>
-      <span>instance <span class="copy" data-copy="ocid1.instance.oc1.ap-mumbai-1.an2g6ljrhu...pmdq">ocid1.instance.oc1…pmdq</span></span>
+      <span>instance <span id="ftr-instance" class="copy" data-copy="—">—</span></span>
     </div>
     <div class="flex items-center gap-3">
       <span>data as of <span id="asof">—</span></span>
@@ -1437,12 +1323,13 @@ function genDataMock(range){
    SPARKLINE / CHART HELPERS
    ========================================================================= */
 function sparkSvg(points, {w=100, h=28, tone=''}={}){
-  if(!points.length) return '';
+  if(!points || !points.length) return '';
   const min = Math.min(...points), max = Math.max(...points), range = (max-min)||1;
-  const step = w/(points.length-1);
+  // length-1 case would divide by zero → NaN coordinates; degenerate to a flat line at x=0..w
+  const step = points.length > 1 ? w/(points.length-1) : 0;
   let d = '';
   points.forEach((p,i)=>{
-    const x = i*step;
+    const x = points.length > 1 ? i*step : w/2;
     const y = h - ((p-min)/range)*(h-2) - 1;
     d += (i===0?'M':'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
   });
@@ -1616,7 +1503,7 @@ function renderServices(){
         ${sparkSvg(s.spark,{tone:tone==='ok'?'':tone})}
       </div>
       <div class="mt-1 flex justify-between items-center">
-        <span class="copy" data-copy="${s.name === 'certbot' ? 'ab12cd34ef56' : 'abc'+s.name.slice(0,2)+'f9d1b2'}">${s.name === 'certbot' ? 'ab12cd34ef56' : 'abc'+s.name.slice(0,2)+'f9d1b2'} <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+        <span class="copy" data-copy="${s.container_id || ''}">${(s.container_id || '').slice(0,12)} <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
         ${footer}
       </div>
     </div>`;
@@ -1625,6 +1512,31 @@ function renderServices(){
 
 function renderRequests(){
   const r = STATE.data.requests;
+  const sc = r.status_codes || {};
+  const totalReqs = (sc['2xx']||0) + (sc['3xx']||0) + (sc['4xx']||0) + (sc['5xx']||0);
+  const chartEl = document.getElementById('reqChart');
+
+  if(totalReqs === 0){
+    // No traffic in this window — show placeholder instead of a flat-zero chart.
+    if(chartEl){
+      chartEl.innerHTML = `<text x="50%" y="50%" text-anchor="middle"
+        fill="var(--muted)" font-family="JetBrains Mono" font-size="12">
+        (no traffic in this window)</text>`;
+    }
+    document.getElementById('rps-now').textContent = '0.00';
+    document.getElementById('p95-now').innerHTML = `0<span class="text-muted text-sm ml-0.5">ms</span>`;
+    document.getElementById('req-total').textContent = '0';
+    document.getElementById('req-window').textContent = RANGE_LABELS[STATE.range];
+    document.getElementById('sc-2').textContent = '0';
+    document.getElementById('sc-3').textContent = '0';
+    document.getElementById('sc-4').textContent = '0';
+    document.getElementById('sc-5').textContent = '0';
+    document.getElementById('statusBars').innerHTML = '';
+    document.getElementById('slowest').innerHTML =
+      '<tr><td colspan="3" class="text-muted mono text-[12px] py-3 text-center">no requests to rank</td></tr>';
+    return;
+  }
+
   drawRequestChart(r.series_rps, r.series_p95_ms);
   document.getElementById('rps-now').textContent = r.series_rps.at(-1).toFixed(2);
   document.getElementById('p95-now').innerHTML = `${Math.round(r.series_p95_ms.at(-1))}<span class="text-muted text-sm ml-0.5">ms</span>`;
@@ -1663,6 +1575,12 @@ function renderArq(){
   document.getElementById('qd').textContent = a.queue_depth;
   document.getElementById('qd-bar').style.width = Math.min(100, a.queue_depth*15) + '%';
   document.getElementById('inflight').textContent = a.in_flight;
+  document.getElementById('completed-24h').textContent = (a.completed_24h ?? 0).toLocaleString();
+  document.getElementById('failed-24h').textContent = (a.failed_24h ?? 0).toLocaleString();
+  const done = a.completed_24h ?? 0;
+  const bad = a.failed_24h ?? 0;
+  const total = done + bad;
+  document.getElementById('failed-24h-sub').textContent = total ? ((bad/total*100).toFixed(1) + '% rate') : '0% rate';
 
   // active
   document.getElementById('active-jobs').innerHTML = a.active.length === 0
@@ -1733,6 +1651,96 @@ function renderBackups(){
   document.getElementById('bk-next').textContent = `${h}h ${pad2(m)}m`;
 }
 
+function renderCost(){
+  setDegradedDot('sec-cost', STATE.data.cost_meta);
+  const c = STATE.data.cost;
+  if(!c) return;
+  const af = c.always_free || {};
+
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if(el && val != null) el.textContent = val;
+  };
+
+  // Spend block
+  set('cost-spend-mtd',      '$' + Number(c.month_to_date || 0).toFixed(2));
+  set('cost-spend-budget',   '$' + Number(c.budget || 0).toFixed(2));
+  set('cost-spend-forecast', '$' + Number(c.forecast || 0).toFixed(2));
+
+  // Gauges — each entry is [used-id, cap-id, gauge-fill-id, usageObj, formatter]
+  const rows = [
+    ['ocpu-used',   'ocpu-cap',   'gauge-ocpu',   af.a1_ocpu,       v => String(Math.round(v))],
+    ['ram-used',    'ram-cap',    'gauge-ram',    af.a1_ram_gb,     v => String(Math.round(v))],
+    ['vol-used',    'vol-cap',    'gauge-vol',    af.block_vol_gb,  v => String(Math.round(v))],
+    ['egress-used', 'egress-cap', 'gauge-egress', af.egress_tb,     v => Number(v).toFixed(2)],
+  ];
+
+  let worstPct = 0;
+  for(const [usedId, capId, gaugeId, usage, fmt] of rows){
+    if(!usage) continue;
+    set(usedId, fmt(usage.used));
+    set(capId,  fmt(usage.cap));
+    const pct = usage.cap > 0 ? (usage.used / usage.cap) * 100 : 0;
+    worstPct = Math.max(worstPct, pct);
+    const gauge = document.getElementById(gaugeId);
+    if(gauge){ gauge.style.width = Math.min(100, pct).toFixed(1) + '%'; }
+  }
+
+  // Section-header badge: escalate from WITHIN CAPS (green) to APPROACHING CAP (amber) at 80%
+  const head = document.getElementById('sec-cost');
+  if(head){
+    const badge = head.querySelector('.badge');
+    if(badge){
+      if(worstPct >= 80){
+        badge.className = 'badge badge-warn';
+        const dot = badge.querySelector('.dot'); if(dot) dot.className = 'dot warn';
+        const txt = badge.childNodes[badge.childNodes.length - 1];
+        if(txt && txt.nodeType === Node.TEXT_NODE) txt.nodeValue = 'APPROACHING CAP';
+      } else {
+        badge.className = 'badge badge-ok';
+        const dot = badge.querySelector('.dot'); if(dot) dot.className = 'dot ok';
+        const txt = badge.childNodes[badge.childNodes.length - 1];
+        if(txt && txt.nodeType === Node.TEXT_NODE) txt.nodeValue = 'WITHIN CAPS';
+      }
+    }
+  }
+}
+
+function renderCert(){
+  setDegradedDot('sec-cert', STATE.data.cert_meta);
+  const c = STATE.data.cert;
+  if(!c) return;
+
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if(el && val != null) el.textContent = val;
+  };
+
+  set('cert-domain',     c.domain || '—');
+  set('cert-issuer',     c.issuer || '—');
+  set('cert-not-before', c.not_before ? new Date(c.not_before).toUTCString().replace('GMT','UTC') : '—');
+  set('cert-not-after',  c.not_after  ? new Date(c.not_after).toUTCString().replace('GMT','UTC')  : '—');
+
+  const renew = c.last_renew || {};
+  const renewText = renew.at
+    ? `${renew.status.toUpperCase()}  ${new Date(renew.at).toUTCString().replace('GMT','UTC')}`
+    : (renew.status ? renew.status.toUpperCase() : '—');
+  set('cert-last-renew', renewText);
+
+  // Big days-remaining number with color band
+  const dEl = document.getElementById('cert-days-left');
+  if(dEl){
+    const d = c.days_left;
+    if(d == null){
+      dEl.textContent = '—';
+      dEl.style.color = 'var(--muted)';
+    } else {
+      dEl.textContent = d;
+      dEl.style.color = d > 30 ? 'var(--success)' : (d >= 14 ? 'var(--warning)' : 'var(--error)');
+    }
+  }
+}
+
 function renderLogs(){
   const lvlToSvc = s => 'svc-'+s.replace('arq_worker','arq');
   const filterText = STATE.logFilter.toLowerCase();
@@ -1760,30 +1768,153 @@ function renderLogs(){
   document.getElementById('log-count').textContent = Math.min(visible.length, 100);
 }
 
+function renderIdentity(){
+  const d = STATE.data || {};
+  const region   = d.region || 'unknown';
+  const tenancy  = d.tenancy_ocid || 'unknown';
+  const instance = d.instance_ocid || 'unknown';
+  const build    = d.build || 'unknown';
+
+  const hdr = document.getElementById('hdr-region');
+  if(hdr) hdr.textContent = `${region} · VM.Standard.A1.Flex`;
+
+  const setCopy = (id, val) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = val.length > 40 ? val.slice(0,20) + '…' + val.slice(-8) : val;
+    el.setAttribute('data-copy', val);
+  };
+  setCopy('ftr-build',    build);
+  setCopy('ftr-tenancy',  tenancy);
+  setCopy('ftr-instance', instance);
+}
+
 function renderAll(){
+  renderCost();
   renderServices();
   renderRequests();
   renderArq();
   renderStorage();
   renderBackups();
+  renderCert();
   renderLogs();
-  // egress gauge
-  const eg = STATE.data.cost.always_free.egress_tb;
-  document.getElementById('egress-used').textContent = eg.used.toFixed(2);
-  document.getElementById('egress-forecast').textContent = (eg.used*1.55).toFixed(2);
-  document.getElementById('gauge-egress').style.width = (eg.used/eg.cap*100).toFixed(1)+'%';
+  renderIdentity();
   // as-of
   document.getElementById('asof').textContent = new Date(STATE.data.generated_at).toUTCString().replace('GMT','UTC');
   // degraded-mode amber dots on section headers
-  setDegradedDot('sec-cost',     STATE.data.cost_meta);
   setDegradedDot('sec-services', STATE.data.services_meta);
   setDegradedDot('sec-requests', STATE.data.requests_meta);
   setDegradedDot('sec-arq',      STATE.data.arq_meta);
   setDegradedDot('sec-storage',  STATE.data.storage_meta);
   setDegradedDot('sec-backups',  STATE.data.backups_meta);
-  setDegradedDot('sec-cert',     STATE.data.cert_meta);
   setDegradedDot('sec-logs',     STATE.data.logs_meta);
 }
+
+// ─── DIAGNOSTIC DUMP ───────────────────────────────────────────────────────
+// Call `__diag()` from the console → copies a compact per-metric report to
+// the clipboard (and prints it). Use when something in the UI looks off and
+// you want to see the raw payload bucketed by panel without pasting the
+// entire /metrics JSON.
+window.__diag = async function(){
+  const d = STATE.data || {};
+  const metaLabel = m => !m ? 'fresh'
+    : m.fallback === 'last_good' ? `DEGRADED (last_good age=${m.age_s ?? '?'}s)`
+    : m.fallback === 'empty'     ? `EMPTY (${m.error ?? 'no last_good'})`
+    : `meta=${JSON.stringify(m)}`;
+  const lines = [];
+  const p = (...xs) => lines.push(xs.join(' '));
+
+  p('─── MONITOR DIAG ───', new Date().toISOString());
+  p('generated_at:', d.generated_at, '· range:', STATE.range, '· build:', d.build);
+  p('');
+
+  // cost
+  p('## cost ·', metaLabel(d.cost_meta));
+  if(d.cost){
+    p('  mtd:', d.cost.month_to_date, d.cost.currency, '· forecast:', d.cost.forecast, '· budget:', d.cost.budget);
+    const af = d.cost.always_free || {};
+    ['a1_ocpu','a1_ram_gb','block_vol_gb','egress_tb','object_std_gb'].forEach(k=>{
+      const u = af[k]; if(u) p(`  af.${k}: ${u.used}/${u.cap} ${u.unit}`);
+    });
+  } else p('  (null)');
+  p('');
+
+  // services
+  p('## services ·', metaLabel(d.services_meta), '·', (d.services||[]).length, 'svc');
+  (d.services||[]).forEach(s=>{
+    const ex = JSON.stringify(s.extra||{});
+    p(`  ${s.name.padEnd(14)} ${s.health.padEnd(9)} up=${s.uptime_s}s cpu=${s.cpu}% mem=${s.mem}MB restarts=${s.restarts} extra=${ex}`);
+  });
+  p('');
+
+  // requests
+  p('## requests ·', metaLabel(d.requests_meta));
+  if(d.requests){
+    const r = d.requests, s = r.status_codes || {};
+    p(`  window: ${r.window} · rps_pts=${(r.series_rps||[]).length} p95_pts=${(r.series_p95_ms||[]).length}`);
+    p(`  codes: 2xx=${s['2xx']} 3xx=${s['3xx']} 4xx=${s['4xx']} 5xx=${s['5xx']} · slowest=${(r.slowest||[]).length}`);
+    if((r.series_rps||[]).length){
+      const rps = r.series_rps;
+      p(`  rps min=${Math.min(...rps)} max=${Math.max(...rps)} last=${rps[rps.length-1]}`);
+    }
+  } else p('  (null)');
+  p('');
+
+  // arq
+  p('## arq ·', metaLabel(d.arq_meta));
+  if(d.arq){
+    p(`  queue_depth=${d.arq.queue_depth} in_flight=${d.arq.in_flight} workers=${d.arq.workers}`);
+    p(`  completed_24h=${d.arq.completed_24h} failed_24h=${d.arq.failed_24h}`);
+    p(`  active=${(d.arq.active||[]).length} recent_completed=${(d.arq.recent_completed||[]).length} recent_failed=${(d.arq.recent_failed||[]).length}`);
+    (d.arq.active||[]).forEach(j => p(`    active: ${j.job_id} ${j.fn} ${j.target} · ${j.elapsed_s}s`));
+    (d.arq.recent_completed||[]).slice(0,3).forEach(j => p(`    done:   ${j.job_id} ${j.fn} ${j.target} · ${j.duration_s}s`));
+    (d.arq.recent_failed||[]).slice(0,3).forEach(j => p(`    failed: ${j.job_id} ${j.fn} ${j.target} · ${j.error}`));
+  } else p('  (null)');
+  p('');
+
+  // storage
+  p('## storage ·', metaLabel(d.storage_meta));
+  if(d.storage){
+    const s = d.storage;
+    const mb = b => b == null ? '—' : (b/1024/1024).toFixed(1) + 'MB';
+    p(`  postgres=${mb(s.postgres_bytes)} media=${mb(s.media_bytes)}`);
+    if(s.block_vol) p(`  block_vol: used=${mb(s.block_vol.used_bytes)} free=${mb(s.block_vol.free_bytes)}`);
+    if(s.object_storage) p(`  object:    used=${mb(s.object_storage.used_bytes)}`);
+    const t = s.trend_7d || {};
+    p(`  trend_pts: postgres=${(t.postgres||[]).length} media=${(t.media||[]).length} block_free=${(t.block_free||[]).length} object_used=${(t.object_used||[]).length}`);
+  } else p('  (null)');
+  p('');
+
+  // backups
+  p('## backups ·', metaLabel(d.backups_meta));
+  if(d.backups){
+    const b = d.backups;
+    p(`  status=${b.status} · last_pg_dump=${b.last_pg_dump || '—'} · last_size=${b.last_size_bytes ?? '—'}`);
+    p(`  next_in=${b.next_run_in_s}s · bucket=${b.bucket} · retention=${b.retention_days}d · runs=${(b.recent_runs||[]).length}`);
+  } else p('  (null)');
+  p('');
+
+  // cert
+  p('## cert ·', metaLabel(d.cert_meta));
+  if(d.cert){
+    p(`  domain=${d.cert.domain} issuer=${d.cert.issuer || '—'}`);
+    p(`  not_after=${d.cert.not_after || '—'} · days_left=${d.cert.days_left ?? '—'}`);
+    const r = d.cert.last_renew || {};
+    p(`  last_renew: ${r.status || '—'} @ ${r.at || '—'}`);
+  } else p('  (null)');
+  p('');
+
+  // logs
+  p('## logs ·', metaLabel(d.logs_meta), '·', (d.logs||[]).length, 'lines');
+  const last = (d.logs||[]).slice(-3);
+  last.forEach(l => p(`  ${l.ts} [${l.lvl}] ${l.svc}: ${l.msg.slice(0,100)}`));
+
+  const out = lines.join('\n');
+  console.log(out);
+  try { await navigator.clipboard.writeText(out); console.log('(copied to clipboard)'); }
+  catch(e) { console.log('(clipboard write failed — select and copy manually)'); }
+  return out;
+};
 
 /* =========================================================================
    INTERACTIONS
