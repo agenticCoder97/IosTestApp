@@ -514,7 +514,7 @@
     <!-- Live indicator -->
     <span class="hidden md:inline-flex items-center gap-1.5 mono text-[11px] text-muted">
       <span class="dot ok live-dot"></span>
-      <span>ap-mumbai-1 · VM.Standard.A1.Flex</span>
+      <span id="hdr-region">— · VM.Standard.A1.Flex</span>
     </span>
 
     <div class="flex-1"></div>
@@ -959,11 +959,11 @@
   <!-- ─── FOOTER ──────────────────────────────────────────────────────── -->
   <footer class="mt-10 pt-4 border-t border-border/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] text-muted mono">
     <div class="flex items-center gap-3 flex-wrap">
-      <span>build <span class="copy" data-copy="a7f3c9d">a7f3c9d</span></span>
+      <span>build <span id="ftr-build" class="copy" data-copy="—">—</span></span>
       <span>·</span>
-      <span>tenancy <span class="copy" data-copy="ocid1.tenancy.oc1..aaaaaaaa3kf7sjr2...qlwzx4">ocid1.tenancy.oc1..aaaaaaaa3kf7…qlwzx4</span></span>
+      <span>tenancy <span id="ftr-tenancy" class="copy" data-copy="—">—</span></span>
       <span>·</span>
-      <span>instance <span class="copy" data-copy="ocid1.instance.oc1.ap-mumbai-1.an2g6ljrhu...pmdq">ocid1.instance.oc1…pmdq</span></span>
+      <span>instance <span id="ftr-instance" class="copy" data-copy="—">—</span></span>
     </div>
     <div class="flex items-center gap-3">
       <span>data as of <span id="asof">—</span></span>
@@ -1768,6 +1768,27 @@ function renderLogs(){
   document.getElementById('log-count').textContent = Math.min(visible.length, 100);
 }
 
+function renderIdentity(){
+  const d = STATE.data || {};
+  const region   = d.region || 'unknown';
+  const tenancy  = d.tenancy_ocid || 'unknown';
+  const instance = d.instance_ocid || 'unknown';
+  const build    = d.build || 'unknown';
+
+  const hdr = document.getElementById('hdr-region');
+  if(hdr) hdr.textContent = `${region} · VM.Standard.A1.Flex`;
+
+  const setCopy = (id, val) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = val.length > 40 ? val.slice(0,20) + '…' + val.slice(-8) : val;
+    el.setAttribute('data-copy', val);
+  };
+  setCopy('ftr-build',    build);
+  setCopy('ftr-tenancy',  tenancy);
+  setCopy('ftr-instance', instance);
+}
+
 function renderAll(){
   renderCost();
   renderServices();
@@ -1777,6 +1798,7 @@ function renderAll(){
   renderBackups();
   renderCert();
   renderLogs();
+  renderIdentity();
   // as-of
   document.getElementById('asof').textContent = new Date(STATE.data.generated_at).toUTCString().replace('GMT','UTC');
   // degraded-mode amber dots on section headers
