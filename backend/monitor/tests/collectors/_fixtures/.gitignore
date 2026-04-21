@@ -1,0 +1,2 @@
+# Allow test fixture certs — these are self-signed with no private key material
+!*.pem
