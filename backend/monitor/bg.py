@@ -138,16 +138,16 @@ import re as __re_for_logs
 from datetime import datetime as __dt_for_logs, timezone as __tz_for_logs
 
 _LOG_LEVEL_RE = __re_for_logs.compile(r"\b(DEBUG|INFO|WARN|ERROR)\b", __re_for_logs.IGNORECASE)
-_REDACT_RES = [
-    __re_for_logs.compile(r"(Authorization:\s*[^\s]+)", __re_for_logs.IGNORECASE),
-    __re_for_logs.compile(r"(Cookie:\s*[^\s]+)", __re_for_logs.IGNORECASE),
-    __re_for_logs.compile(r"(token=[^&\s]+)", __re_for_logs.IGNORECASE),
+_REDACT_SUBS = [
+    (__re_for_logs.compile(r"Authorization:\s*\S+", __re_for_logs.IGNORECASE), "Authorization: REDACTED"),
+    (__re_for_logs.compile(r"Cookie:\s*\S+", __re_for_logs.IGNORECASE),        "Cookie: REDACTED"),
+    (__re_for_logs.compile(r"token=\S+", __re_for_logs.IGNORECASE),            "token=REDACTED"),
 ]
 
 
 def _redact(msg: str) -> str:
-    for r in _REDACT_RES:
-        msg = r.sub(r"\1=REDACTED", msg)
+    for pattern, replacement in _REDACT_SUBS:
+        msg = pattern.sub(replacement, msg)
     return msg
 
 

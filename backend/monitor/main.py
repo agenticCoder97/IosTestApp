@@ -62,7 +62,7 @@ async def lifespan(_app: FastAPI):
         asyncio.create_task(bg.supervise(bg.nginx_access_sampler, "nginx_access_sampler")),
         asyncio.create_task(bg.supervise(bg.storage_trend_hoister, "storage_trend_hoister")),
     ]
-    logger.info("monitor started: 3 bg tasks, redis=%s", _REDIS_URL)
+    logger.info("monitor started: %d bg tasks, redis=%s", len(tasks), _REDIS_URL)
 
     try:
         yield
@@ -93,18 +93,18 @@ async def index() -> FileResponse:
 async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> JSONResponse:
     redis = cache.get_cache_redis_or_none()
     collectors = [
-        ("cost", cost.collect),
-        ("services", services_coll.collect),
-        ("requests", partial(requests_coll.collect, range)),
-        ("arq", arq.collect),
-        ("storage", storage.collect),
-        ("backups", backups.collect),
-        ("cert", cert.collect),
-        ("logs", partial(logs_coll.collect, 100)),
+        ("cost", cost.collect, _empty_cost),
+        ("services", services_coll.collect, lambda: []),
+        ("requests", partial(requests_coll.collect, range), lambda: _empty_requests(range)),
+        ("arq", arq.collect, _empty_arq),
+        ("storage", storage.collect, _empty_storage),
+        ("backups", backups.collect, _empty_backups),
+        ("cert", cert.collect, _empty_cert),
+        ("logs", partial(logs_coll.collect, 100), lambda: []),
     ]
     results = await asyncio.gather(
-        *[cache.safe(c, name, redis=redis, timeout=2.0, fallback=None)
-          for name, c in collectors],
+        *[cache.safe(c, name, redis=redis, timeout=2.0, fallback=fb())
+          for name, c, fb in collectors],
     )
     payload: dict = {
         "schema_version": "1.0.0",
@@ -114,15 +114,74 @@ async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> J
         "region": os.getenv("OCI_REGION", "unknown"),
         "instance_ocid": os.getenv("OCI_INSTANCE_OCID", "unknown"),
     }
-    for (name, _), (data, meta) in zip(collectors, results):
-        if data is None and name in ("services", "logs"):
-            data = []
+    for (name, _c, _fb), (data, meta) in zip(collectors, results):
         payload[name] = _serialize(data)
         if meta is not None:
             payload[f"{name}_meta"] = meta
 
     validated = MetricsResponse.model_validate(payload)
     return JSONResponse(validated.model_dump(mode="json", by_alias=True))
+
+
+# ── empty / fallback builders used when a collector fails and has no last_good ──
+
+def _empty_cost():
+    from monitor.schema import CostBlock, AlwaysFree, CapUsage
+    zero = CapUsage(used=0, cap=0, unit="")
+    return CostBlock(
+        currency="USD", month_to_date=0.0, forecast=0.0, budget=1.0, last_alert=None,
+        always_free=AlwaysFree(
+            a1_ocpu=CapUsage(used=4, cap=4, unit="ocpu"),
+            a1_ram_gb=CapUsage(used=24, cap=24, unit="GB"),
+            block_vol_gb=CapUsage(used=0, cap=200, unit="GB"),
+            egress_tb=CapUsage(used=0, cap=10, unit="TB"),
+            object_std_gb=CapUsage(used=0, cap=20, unit="GB"),
+        ),
+    )
+
+
+def _empty_requests(window: str):
+    from monitor.schema import RequestsBlock
+    win = window if window in ("1h", "6h", "24h", "7d", "30d") else "6h"
+    return RequestsBlock(
+        window=win, series_rps=[], series_p95_ms=[],
+        status_codes={"2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0}, slowest=[],
+    )
+
+
+def _empty_arq():
+    from monitor.schema import ArqBlock
+    return ArqBlock(
+        queue_depth=0, in_flight=0, workers=3,
+        completed_24h=0, failed_24h=0,
+        active=[], recent_completed=[], recent_failed=[],
+    )
+
+
+def _empty_storage():
+    from monitor.schema import StorageBlock, StorageTrend
+    return StorageBlock(
+        postgres_bytes=None, media_bytes=None, block_vol=None, object_storage=None,
+        trend_7d=StorageTrend(postgres=[0], media=[0], block_free=[0], object_used=[0]),
+    )
+
+
+def _empty_backups():
+    from monitor.schema import BackupsBlock
+    return BackupsBlock(
+        last_pg_dump=None, last_size_bytes=None, status="stale",
+        next_run_in_s=0, bucket="astral-backups",
+        retention_days=56, recent_runs=[],
+    )
+
+
+def _empty_cert():
+    from monitor.schema import CertBlock, CertRenew
+    return CertBlock(
+        domain="astral-reader.duckdns.org", issuer=None,
+        not_before=None, not_after=None, days_left=None,
+        last_renew=CertRenew(at=None, status="failed"),
+    )
 
 
 @app.get("/metrics/service/{name}")
