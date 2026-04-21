@@ -25,6 +25,14 @@ RUN pip install \
 RUN useradd -r -u 1001 -m monitor
 WORKDIR /app
 COPY --chown=monitor:monitor monitor /app/monitor
+
+# Bake the git SHA into the image so /metrics reports a real build.
+# _build_sha() in monitor/main.py reads MONITOR_BUILD_SHA first; the
+# fallback tries `git rev-parse` which can't work inside the container
+# (no git binary, no .git dir).
+ARG MONITOR_BUILD_SHA=unknown
+ENV MONITOR_BUILD_SHA=${MONITOR_BUILD_SHA}
+
 USER monitor
 
 EXPOSE 8001

@@ -1885,7 +1885,7 @@ window.__diag = async function(){
   // logs
   p('## logs ·', metaLabel(d.logs_meta), '·', (d.logs||[]).length, 'lines');
   const last = (d.logs||[]).slice(-3);
-  last.forEach(l => p(`  ${l.ts} [${l.level}] ${l.svc}: ${l.msg.slice(0,100)}`));
+  last.forEach(l => p(`  ${l.ts} [${l.lvl}] ${l.svc}: ${l.msg.slice(0,100)}`));
 
   const out = lines.join('\n');
   console.log(out);
