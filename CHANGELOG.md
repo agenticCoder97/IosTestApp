@@ -6,6 +6,10 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ## 2026-04-21
 
+### iOS
+
+- **AST-56** — Fix library refresh false-positive "Backend unreachable": both `ComicLibraryViewModel` and `FanficLibraryViewModel` caught `URLError` as a blanket unreachable state, which incorrectly flagged `URLError.cancelled` (fired by SwiftUI when `.refreshable` cancels an in-flight `.task`) as a backend failure. Discriminate `.cancelled` (silent, expected) from real URLErrors (surface the underlying `localizedDescription`). Also updates the user-facing message from the dev-flavored "check Docker is running" to "Couldn't reach the server — <reason>". ([PR #47](https://github.com/agenticCoder97/IosTestApp/pull/47))
+
 ### Backend
 
 - **AST-51** — Weekly pg_dump backup cron to OCI Object Storage: new `backend/scripts/astral-backup.sh` pipes `pg_dump --format=custom | gzip | oci os object put` to the private `astral-backups` bucket (Standard tier, Always Free). Auth via OCI **instance principal** — no API keys on disk; IAM dynamic group + policy scope the A1 (`astral-server`) to manage only that bucket, and Object Storage gets a lifecycle rule that auto-deletes objects older than 56 days (8 weekly snapshots). Script features: `set -euo pipefail`, `--dry-run` + `--help` flags, tee-to-log, post-upload `os object head` verification. Runbook at `backend/scripts/astral-backup-setup.md` covers one-time OCI provisioning, A1-host install, and restore via `pg_restore`. Post-merge install on A1 still pending (oci-cli, `/etc/cron.d/astral-backup`). ([PR #46](https://github.com/agenticCoder97/IosTestApp/pull/46))
