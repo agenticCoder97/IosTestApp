@@ -67,6 +67,10 @@ services:
       - "8001"
     env_file:
       - .env.oci
+    # Add supplementary group so the monitor (uid 1001) can read /var/run/docker.sock
+    # which is root:docker 0660 on the A1 host. DOCKER_GID is set in .env.oci.
+    group_add:
+      - "${DOCKER_GID:-988}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/etc/letsencrypt:ro
