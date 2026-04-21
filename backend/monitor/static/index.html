@@ -648,86 +648,6 @@
   </section>
 
 
-  <!-- ─── 1b. SLO & ERROR BUDGET  (GCP Cloud Monitoring) ───────────────── -->
-  <div class="section-head">
-    <span class="crumb">astral / oci / <span class="cur">slo &amp; error budget</span></span>
-    <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">rolling 30d · target 99.5%</span>
-  </div>
-
-  <section class="grid grid-cols-1 lg:grid-cols-[320px_1fr_1fr] gap-3">
-    <!-- Availability SLO dial -->
-    <div class="card p-4 sm:p-5 flex items-center gap-5">
-      <div class="ring-wrap">
-        <svg width="112" height="112" viewBox="0 0 112 112">
-          <circle cx="56" cy="56" r="48" fill="none" stroke="#2A2A30" stroke-width="8"/>
-          <circle id="slo-ring" cx="56" cy="56" r="48" fill="none" stroke="#4CAF50" stroke-width="8"
-                  stroke-linecap="round" stroke-dasharray="301.6 301.6" stroke-dashoffset="1.5"
-                  transform="rotate(-90 56 56)"/>
-        </svg>
-        <div class="pct"><span class="n" id="slo-pct">99.82%</span><span class="l">availability</span></div>
-      </div>
-      <div class="flex-1 min-w-0">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">slo</div>
-        <div class="text-white font-semibold mt-0.5">API availability</div>
-        <div class="text-[11px] text-muted mono mt-1">2xx+3xx ÷ total · last 30d</div>
-        <div class="mt-3 flex items-center gap-2">
-          <span class="badge badge-ok"><span class="dot ok"></span>HEALTHY</span>
-          <span class="mono text-[11px] text-muted">target 99.5%</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Error budget remaining -->
-    <div class="card p-4 sm:p-5">
-      <div class="flex items-baseline justify-between">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Error budget · 30d</div>
-        <span class="badge badge-ok" id="eb-badge">64% LEFT</span>
-      </div>
-      <div class="flex items-end gap-2 mt-2">
-        <div class="text-[44px] leading-none font-bold text-white mono" id="eb-remaining">2h 18m</div>
-        <div class="text-muted mono text-sm pb-1.5">/ 3h 36m</div>
-      </div>
-      <div class="burn-track mt-4" id="burn-track"></div>
-      <div class="flex justify-between text-[11px] text-muted mono mt-1.5">
-        <span>day 1</span><span>day 15</span><span>day 30</span>
-      </div>
-      <div class="hr mt-3 pt-3 grid grid-cols-3 gap-2 text-center">
-        <div>
-          <div class="text-[11px] uppercase tracking-[.14em] text-muted">burn 1h</div>
-          <div class="mono text-sm text-white mt-0.5" id="burn-1h">0.2×</div>
-        </div>
-        <div>
-          <div class="text-[11px] uppercase tracking-[.14em] text-muted">burn 6h</div>
-          <div class="mono text-sm text-white mt-0.5" id="burn-6h">0.4×</div>
-        </div>
-        <div>
-          <div class="text-[11px] uppercase tracking-[.14em] text-muted">burn 24h</div>
-          <div class="mono text-sm text-white mt-0.5" id="burn-24h">0.6×</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Latency SLO -->
-    <div class="card p-4 sm:p-5">
-      <div class="flex items-baseline justify-between">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Latency SLO · p95 &lt; 500ms</div>
-        <span class="badge badge-ok"><span class="dot ok"></span>ON TRACK</span>
-      </div>
-      <div class="flex items-end gap-2 mt-2">
-        <div class="text-[44px] leading-none font-bold text-white mono" id="lat-slo-pct">98.4%</div>
-        <div class="text-muted mono text-sm pb-1.5">of requests</div>
-      </div>
-      <div class="mt-3 text-[11px] tracking-[.14em] uppercase text-muted mb-1">p95 trend · 7d</div>
-      <svg id="lat-spark" viewBox="0 0 300 44" preserveAspectRatio="none" class="w-full" style="height:44px;"></svg>
-      <div class="flex justify-between text-[11px] text-muted mono mt-1">
-        <span>min <span class="text-body" id="lat-min">88ms</span></span>
-        <span>avg <span class="text-body" id="lat-avg">142ms</span></span>
-        <span>max <span class="text-body" id="lat-max">412ms</span></span>
-      </div>
-    </div>
-  </section>
-
   <!-- ─── 2. SERVICE HEALTH GRID ───────────────────────────────────────── -->
   <div class="section-head" id="sec-services">
     <span class="crumb">astral / oci / <span class="cur">service health</span></span>
@@ -833,91 +753,6 @@
   </section>
 
 
-  <!-- ─── 3b. UPTIME CHECKS (GCP Uptime Monitoring) ─────────────────────── -->
-  <div class="section-head">
-    <span class="crumb">astral / oci / <span class="cur">uptime checks</span></span>
-    <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">synthetic probes · 1m interval · last 60m</span>
-  </div>
-
-  <section class="card p-4 sm:p-5">
-    <div class="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-4 items-start mb-4">
-      <div>
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">overall uptime · 7d</div>
-        <div class="text-[32px] font-bold text-white mono leading-none mt-1">99.94%</div>
-        <div class="text-[11px] text-muted mono mt-1">3 checks · 5 regions · 1 failure</div>
-      </div>
-      <div class="flex gap-4 flex-wrap text-[11px] text-muted mono">
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:var(--success);display:inline-block;"></span>2xx &lt; 500ms</span>
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:var(--warning);display:inline-block;"></span>2xx 500-2000ms</span>
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:var(--error);display:inline-block;"></span>non-2xx / timeout</span>
-        <span class="flex items-center gap-1.5"><span class="cell" style="width:10px;height:10px;border-radius:2px;background:rgba(107,107,122,.18);display:inline-block;"></span>no data</span>
-      </div>
-    </div>
-    <div id="uptime-rows" class="space-y-3"></div>
-  </section>
-  <div class="section-head" id="sec-arq">
-    <span class="crumb">astral / oci / <span class="cur">arq worker</span></span>
-    <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">ARQ_MAX_JOBS=3 · redis://:6379/0</span>
-  </div>
-
-  <section class="grid grid-cols-1 lg:grid-cols-3 gap-3">
-    <!-- KPIs + active -->
-    <div class="card p-4 sm:p-5 lg:col-span-1">
-      <div class="grid grid-cols-2 gap-3">
-        <div class="elevated p-3">
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">queue depth</div>
-          <div class="text-2xl font-semibold text-white mono mt-1" id="qd">2</div>
-          <div class="bar-track mt-2"><span id="qd-bar" style="width:20%"></span></div>
-        </div>
-        <div class="elevated p-3">
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">in flight</div>
-          <div class="text-2xl font-semibold text-white mono mt-1" id="inflight">1</div>
-          <div class="bar-track mt-2"><span style="width:33%; background:var(--success)"></span></div>
-        </div>
-        <div class="elevated p-3">
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">completed 24h</div>
-          <div class="text-2xl font-semibold text-white mono mt-1">184</div>
-          <div class="text-[11px] text-muted mt-1 mono">avg 14.2s</div>
-        </div>
-        <div class="elevated p-3">
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">failed 24h</div>
-          <div class="text-2xl font-semibold mono mt-1" style="color:var(--warning)">2</div>
-          <div class="text-[11px] text-muted mt-1 mono">1.1% rate</div>
-        </div>
-      </div>
-
-      <div class="hr mt-4 pt-4">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-2">Active jobs</div>
-        <div id="active-jobs" class="space-y-2"></div>
-      </div>
-    </div>
-
-    <!-- Completed -->
-    <div class="card p-4 sm:p-5">
-      <div class="flex items-baseline justify-between mb-3">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Recent completed</div>
-        <span class="badge badge-ok">5 last</span>
-      </div>
-      <table class="z">
-        <thead><tr><th>job</th><th>source</th><th class="text-right">took</th></tr></thead>
-        <tbody id="completed"></tbody>
-      </table>
-    </div>
-
-    <!-- Failed -->
-    <div class="card p-4 sm:p-5">
-      <div class="flex items-baseline justify-between mb-3">
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Recent failed</div>
-        <span class="badge badge-warn">5 last</span>
-      </div>
-      <table class="z">
-        <thead><tr><th>job</th><th>source</th><th>err</th></tr></thead>
-        <tbody id="failed"></tbody>
-      </table>
-    </div>
-  </section>
 
 
   <!-- ─── 5. STORAGE ──────────────────────────────────────────────────── -->
@@ -1025,18 +860,6 @@
         <div class="text-[11px] text-muted mono mt-1">renews at ≤30d</div>
       </div>
     </div>
-  </section>
-
-
-  <!-- ─── 7b. RECOMMENDATIONS (GCP Active Assist) ──────────────────────── -->
-  <div class="section-head">
-    <span class="crumb">astral / oci / <span class="cur">recommendations</span></span>
-    <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">active assist · <span id="reco-count">4</span> open</span>
-  </div>
-
-  <section class="card p-4 sm:p-5">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="reco-grid"></div>
   </section>
 
 
