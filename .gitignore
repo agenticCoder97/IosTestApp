@@ -53,3 +53,6 @@ scratchpad/
 .claude/
 .claire/
 .playwright-mcp/
+
+# Monitor auth
+backend/nginx/htpasswd
