@@ -12,11 +12,12 @@ let package = Package(
         .package(path: "../Core"),
         .package(path: "../Networking"),
         .package(path: "../DesignSystem"),
+        .package(path: "../StatsUI"),
     ],
     targets: [
         .target(
             name: "FanficFeature",
-            dependencies: ["Core", "Networking", "DesignSystem"]
+            dependencies: ["Core", "Networking", "DesignSystem", "StatsUI"]
         ),
         .testTarget(
             name: "FanficFeatureTests",

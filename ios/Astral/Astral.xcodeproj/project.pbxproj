@@ -47,6 +47,7 @@
 
 /* Begin PBXFileReference section */
 		05B1DF98688D60271CD07DC2 /* NavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationTests.swift; sourceTree = "<group>"; };
+		06807FEED455485DDF760003 /* StatsUI */ = {isa = PBXFileReference; lastKnownFileType = folder; name = StatsUI; path = Packages/StatsUI; sourceTree = SOURCE_ROOT; };
 		314DF25DE88BCEFBBD46A1F7 /* FanficFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanficFlowTests.swift; sourceTree = "<group>"; };
 		3182A02E1B20D874EA2108DD /* XCUIElement+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "XCUIElement+Helpers.swift"; sourceTree = "<group>"; };
 		360FB630357D9A69C8036FEB /* OpenSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "OpenSans-Regular.ttf"; sourceTree = "<group>"; };
@@ -173,6 +174,7 @@
 				A57BD5599808F2BDABDAC55B /* DesignSystem */,
 				6DB180592EF785D58D54D45E /* FanficFeature */,
 				F9BCC98FD654510C722BD4D0 /* Networking */,
+				06807FEED455485DDF760003 /* StatsUI */,
 			);
 			path = Packages;
 			sourceTree = "<group>";
@@ -286,6 +288,7 @@
 				F18BB3F9FE4F4ABA80992BBD /* XCLocalSwiftPackageReference "Packages/DesignSystem" */,
 				675D9D415BBB7B9751D78E82 /* XCLocalSwiftPackageReference "Packages/FanficFeature" */,
 				07A9EB249C51C00683A480EF /* XCLocalSwiftPackageReference "Packages/Networking" */,
+				0FFCE57D6CA293263F2B7017 /* XCLocalSwiftPackageReference "Packages/StatsUI" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B7B5CCF6B53707A8797EFCA /* Products */;
@@ -590,6 +593,10 @@
 		07A9EB249C51C00683A480EF /* XCLocalSwiftPackageReference "Packages/Networking" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/Networking;
+		};
+		0FFCE57D6CA293263F2B7017 /* XCLocalSwiftPackageReference "Packages/StatsUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/StatsUI;
 		};
 		675D9D415BBB7B9751D78E82 /* XCLocalSwiftPackageReference "Packages/FanficFeature" */ = {
 			isa = XCLocalSwiftPackageReference;
