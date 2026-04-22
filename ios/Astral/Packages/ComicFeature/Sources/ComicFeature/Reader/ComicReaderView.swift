@@ -656,12 +656,29 @@ struct ComicReaderView: View {
 
                 Spacer()
 
-                Text("\(currentPage + 1) / \(pages.count)")
-                    .font(AstralTypography.captionMedium)
-                    .foregroundStyle(AstralColors.white)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                Menu {
+                    ForEach(0..<pages.count, id: \.self) { idx in
+                        Button("Page \(idx + 1)") {
+                            withAnimation(ReaderMotion.pageTurn) { currentPage = idx }
+                            Haptics.play(.pageTurn)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("\(currentPage + 1) / \(pages.count)")
+                            .font(AstralTypography.captionMedium)
+                            .foregroundStyle(AstralColors.white)
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(AstralColors.muted)
+                    }
                     .animation(AstralAnimation.quick, value: currentPage)
+                }
+                .menuStyle(.button)
+                .buttonStyle(PressButtonStyle(scale: 0.94))
+                .disabled(pages.isEmpty)
 
                 Spacer()
 
