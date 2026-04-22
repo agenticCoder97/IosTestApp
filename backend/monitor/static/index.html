@@ -2122,7 +2122,11 @@ refreshAll();
 setAuto(true);
 </script>
 
-<!-- control plane UI — decorated after the main renderer settles -->
-<script src="/static/controls.js"></script>
+<!-- control plane UI — decorated after the main renderer settles.
+     Relative path so the browser resolves against /monitor/ and hits the
+     FastAPI app.mount("/static", ...) inside astral_monitor. An absolute
+     "/static/..." path collides with nginx's `location /static/` block
+     (aliased to the media volume) and returns 404. -->
+<script src="static/controls.js"></script>
 </body>
 </html>
