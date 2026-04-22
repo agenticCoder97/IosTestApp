@@ -38,6 +38,7 @@ struct FanficReaderView: View {
     @State private var scrollTargetIndex: Int?
     @State private var offlineError = false
     @State private var horizontalPage: String? = "current"
+    @State private var scrollPercentThrottle = ThrottledSetter<Double>(interval: 0.08)
 
     var body: some View {
         ZStack {
@@ -125,7 +126,8 @@ struct FanficReaderView: View {
                                                 .onAppear {
                                                     guard hasRestoredScroll else { return }
                                                     if paragraphs.count > 1 {
-                                                        fanfic.scrollOffsetPercent = Double(index) / Double(paragraphs.count - 1)
+                                                        let pct = Double(index) / Double(paragraphs.count - 1)
+                                                        scrollPercentThrottle.set(pct) { fanfic.scrollOffsetPercent = $0 }
                                                     }
                                                 }
                                                 .simultaneousGesture(
@@ -241,7 +243,10 @@ struct FanficReaderView: View {
             }
             Haptics.play(.chromeToggle)
         }
-        .task(id: currentChapter.id) { await loadChapter() }
+        .task(id: currentChapter.id) {
+            scrollPercentThrottle.reset()
+            await loadChapter()
+        }
         .onAppear {
             // Track reading session
             let session = LocalReadingSession(contentType: "fanfic", storyId: fanfic.id)
