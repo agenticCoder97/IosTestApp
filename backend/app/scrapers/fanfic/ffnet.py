@@ -45,7 +45,11 @@ class FanfictionNetScraper(BaseScraper):
             return self._fichub_cache
 
         primary_err: Exception | None = None
-        if not settings.ffnet_new_scraper_disabled:
+        from app.core.runtime_flags import flag_enabled
+        ffnet_disabled = await flag_enabled(
+            "FFNET_NEW_SCRAPER_DISABLED", default=settings.ffnet_new_scraper_disabled,
+        )
+        if not ffnet_disabled:
             try:
                 cookies, ua = await self._get_cookies()
                 meta, chapters = await _fanficfare_runner.fetch_via_fanficfare(url, cookies, ua)

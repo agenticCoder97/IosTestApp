@@ -23,16 +23,18 @@ from functools import partial
 from pathlib import Path
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from monitor import bg, cache
-from monitor.collectors import arq, backups, cert, cost, logs as logs_coll
+from monitor import bg, cache, logs_stream
+from monitor.collectors import arq, backups, cert, cost, deploys as deploys_coll
+from monitor.collectors import logs as logs_coll
 from monitor.collectors import requests_ as requests_coll
 from monitor.collectors import services as services_coll
 from monitor.collectors import storage
-from monitor.schema import MetricsResponse
+from monitor.control.routes import router as control_router
+from monitor.schema import EndpointDetail, MetricsResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("monitor")
@@ -103,6 +105,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="astral-monitor", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+app.include_router(control_router)
 
 
 @app.get("/healthz")
@@ -133,6 +136,7 @@ async def metrics(range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$")) -> J
         ("backups",  backups.collect,                             _empty_backups,          12.0),
         ("cert",     cert.collect,                                _empty_cert,             2.0),
         ("logs",     partial(logs_coll.collect, bg.LOG_METRICS_LIMIT),             lambda: [],              2.0),
+        ("deploys",  deploys_coll.collect,                        _empty_deploys,          2.0),
     ]
     results = await asyncio.gather(
         *[cache.safe(c, name, redis=redis, timeout=t, fallback=fb())
@@ -216,6 +220,11 @@ def _empty_cert():
     )
 
 
+def _empty_deploys():
+    from monitor.schema import DeploysBlock
+    return DeploysBlock(recent=[])
+
+
 @app.get("/metrics/service/{name}")
 async def metrics_service(name: str) -> JSONResponse:
     entry = bg.SERVICE_CACHE.get(name)
@@ -227,8 +236,57 @@ async def metrics_service(name: str) -> JSONResponse:
 
 
 @app.get("/metrics/logs/stream")
-async def metrics_logs_stream() -> JSONResponse:
-    raise HTTPException(status_code=501, detail="log stream is a phase-2 feature")
+async def metrics_logs_stream(
+    request: Request,
+    service: str | None = Query(default=None),
+    level: str = Query(default="debug", pattern="^(debug|info|warn|error)$"),
+    q: str | None = Query(default=None),
+) -> StreamingResponse:
+    services = {s.strip() for s in service.split(",") if s.strip()} if service else None
+    filt = logs_stream.LogFilter(services=services, min_level=level, q=q or None)
+
+    async def gen():
+        async for frame in logs_stream.subscribe(filt):
+            if await request.is_disconnected():
+                break
+            yield frame
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.get("/metrics/endpoint")
+async def metrics_endpoint(
+    path: str = Query(..., min_length=1),
+    method: str = Query("GET"),
+    range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$"),
+) -> JSONResponse:
+    cache_for_window = bg.NGINX_ENDPOINT_CACHE.get(range, {})
+    buckets = cache_for_window.get((method, path))
+    if not buckets:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no data for {method} {path} in window {range}",
+        )
+    total = sum(b["count"] for b in buckets)
+    err = sum(b["status_4xx"] + b["status_5xx"] for b in buckets)
+    error_rate = (err / total * 100.0) if total else 0.0
+    peak_p99 = max((b["p99_ms"] for b in buckets), default=0)
+    detail = EndpointDetail(
+        method=method, path=path, window=range,  # type: ignore[arg-type]
+        total_requests=total,
+        error_rate_pct=round(error_rate, 2),
+        peak_p99_ms=int(peak_p99),
+        buckets=buckets,  # type: ignore[arg-type]
+    )
+    return JSONResponse(detail.model_dump(mode="json"))
 
 
 def _serialize(data):

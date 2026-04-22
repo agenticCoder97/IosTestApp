@@ -77,10 +77,16 @@ services:
     group_add:
       - "${DOCKER_GID:-988}"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # read-write so /control/* endpoints can restart containers
+      # (AST-71) and exec pg_dump (AST-74). All mutating routes are
+      # gated behind MONITOR_CONTROL_TOKEN.
+      - /var/run/docker.sock:/var/run/docker.sock
       - letsencrypt:/etc/letsencrypt:ro
       - astral_media:/mnt/astral-media:ro
       - nginx_access_logs:/var/log/nginx:ro
+      # persistent state for audit log, on-demand pg_dump output,
+      # and the deploy hook's deploys.jsonl.
+      - monitor_state:/var/lib/astral-monitor
     depends_on:
       postgres:
         condition: service_healthy
@@ -144,6 +150,7 @@ volumes:
       device: /mnt/astral-media/postgres
   letsencrypt:
   nginx_access_logs:
+  monitor_state:
 
 networks:
   astral_net:

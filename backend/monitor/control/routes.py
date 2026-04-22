@@ -1,0 +1,166 @@
+"""FastAPI router wiring every /control/* endpoint.
+
+Auth: every route checks X-Monitor-Auth against MONITOR_CONTROL_TOKEN.
+Missing/mismatched → 401. Token absent from env → every mutating
+request is rejected (dashboard shows an actionable error).
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
+
+from monitor.control import arq_ops, backup, docker_ops, flags, sql_console
+from monitor.control.audit import record as audit_record, tail as audit_tail
+
+logger = logging.getLogger("monitor.control.routes")
+
+router = APIRouter(prefix="/control", tags=["control"])
+
+
+async def require_auth(
+    request: Request,
+    x_monitor_auth: Optional[str] = Header(default=None, alias="X-Monitor-Auth"),
+) -> str:
+    expected = os.getenv("MONITOR_CONTROL_TOKEN")
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="MONITOR_CONTROL_TOKEN is unset — control endpoints disabled",
+        )
+    if not x_monitor_auth or x_monitor_auth != expected:
+        raise HTTPException(status_code=401, detail="invalid control token")
+    return request.client.host if request.client else "unknown"
+
+
+# ── flags (AST-70) ────────────────────────────────────────────────────
+
+class FlagPut(BaseModel):
+    key: str
+    value: bool
+
+
+@router.get("/flags")
+async def get_flags(_ip: str = Depends(require_auth)) -> JSONResponse:
+    states = await flags.read_all()
+    return JSONResponse({"flags": [s.__dict__ for s in states]})
+
+
+@router.post("/flags")
+async def put_flag(body: FlagPut, ip: str = Depends(require_auth)) -> JSONResponse:
+    try:
+        state = await flags.set_flag(body.key, body.value, changed_by=f"ui@{ip}")
+    except ValueError as e:
+        audit_record("flags.set", ok=False, detail=str(e), source_ip=ip)
+        raise HTTPException(status_code=400, detail=str(e))
+    audit_record("flags.set", ok=True, detail={"key": body.key, "value": body.value}, source_ip=ip)
+    return JSONResponse(state.__dict__)
+
+
+# ── service restart (AST-71) ──────────────────────────────────────────
+
+@router.post("/restart/{service}")
+async def restart(service: str, ip: str = Depends(require_auth)) -> JSONResponse:
+    try:
+        result = await docker_ops.restart_service(service)
+    except ValueError as e:
+        audit_record("service.restart", ok=False, detail=str(e), source_ip=ip)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        audit_record("service.restart", ok=False, detail=f"{service}: {e}", source_ip=ip)
+        raise HTTPException(status_code=500, detail=str(e))
+    audit_record("service.restart", ok=True, detail=result, source_ip=ip)
+    return JSONResponse(result)
+
+
+# ── arq retry (AST-72) ────────────────────────────────────────────────
+
+@router.post("/retry-job/{job_id}")
+async def retry_job(job_id: str, ip: str = Depends(require_auth)) -> JSONResponse:
+    try:
+        result = await arq_ops.retry_failed_job(job_id)
+    except LookupError as e:
+        audit_record("arq.retry", ok=False, detail=str(e), source_ip=ip)
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        audit_record("arq.retry", ok=False, detail=f"{job_id}: {e}", source_ip=ip)
+        raise HTTPException(status_code=500, detail=str(e))
+    audit_record("arq.retry", ok=True, detail=result, source_ip=ip)
+    return JSONResponse(result)
+
+
+# ── backup (AST-74) ───────────────────────────────────────────────────
+
+@router.post("/backup")
+async def start_backup(ip: str = Depends(require_auth)) -> JSONResponse:
+    try:
+        job = await backup.start_backup()
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    audit_record("backup.start", ok=True, detail={"job_id": job.job_id}, source_ip=ip)
+    return JSONResponse({
+        "job_id": job.job_id,
+        "status": job.status,
+        "started": job.started_iso,
+    })
+
+
+@router.get("/backup/{job_id}")
+async def backup_status(job_id: str, _ip: str = Depends(require_auth)) -> JSONResponse:
+    job = backup.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown backup job")
+    return JSONResponse({
+        "job_id": job.job_id,
+        "status": job.status,
+        "started": job.started_iso,
+        "duration_s": job.duration_s,
+        "size_bytes": job.size_bytes,
+        "error": job.error,
+    })
+
+
+@router.get("/backup/download/latest")
+async def backup_download_latest(_ip: str = Depends(require_auth)) -> FileResponse:
+    path = backup.latest_backup_path()
+    if path is None:
+        raise HTTPException(status_code=404, detail="no backups available")
+    return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+
+
+# ── SQL console (AST-75) ──────────────────────────────────────────────
+
+class QueryBody(BaseModel):
+    sql: str
+
+
+@router.post("/query")
+async def run_query(body: QueryBody, ip: str = Depends(require_auth)) -> JSONResponse:
+    try:
+        result = await asyncio.wait_for(
+            sql_console.run_query(body.sql), timeout=sql_console.TIMEOUT_S + 2.0,
+        )
+    except sql_console.SQLValidationError as e:
+        audit_record("sql.query", ok=False, detail=str(e), source_ip=ip)
+        raise HTTPException(status_code=400, detail=str(e))
+    except asyncio.TimeoutError:
+        audit_record("sql.query", ok=False, detail="timeout", source_ip=ip)
+        raise HTTPException(status_code=504, detail="query exceeded timeout")
+    audit_record(
+        "sql.query", ok=True,
+        detail={"row_count": result["row_count"], "duration_ms": result["duration_ms"]},
+        source_ip=ip,
+    )
+    return JSONResponse(result)
+
+
+# ── audit log tail (read-only, shown in UI) ───────────────────────────
+
+@router.get("/audit")
+async def audit(limit: int = 30, _ip: str = Depends(require_auth)) -> JSONResponse:
+    return JSONResponse({"entries": audit_tail(limit=min(max(limit, 1), 200))})

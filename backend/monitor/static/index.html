@@ -924,6 +924,73 @@
   </section>
 
 
+  <!-- ─── KILL SWITCHES (AST-70) ───────────────────────────────────── -->
+  <div class="section-head" id="sec-flags">
+    <span class="crumb">astral / ops / <span class="cur">kill switches</span></span>
+    <span class="rule"></span>
+    <span class="mono text-[11px] text-muted">redis-backed · no restart required</span>
+  </div>
+  <section class="card p-4 sm:p-5">
+    <div id="flags-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div class="text-muted text-sm mono">Loading flags…</div>
+    </div>
+  </section>
+
+
+  <!-- ─── DEPLOYS (AST-77) ─────────────────────────────────────────── -->
+  <div class="section-head" id="sec-deploys">
+    <span class="crumb">astral / ops / <span class="cur">recent deploys</span></span>
+    <span class="rule"></span>
+    <span class="mono text-[11px] text-muted">from <code>/var/lib/astral-monitor/deploys.jsonl</code></span>
+  </div>
+  <section class="card overflow-hidden">
+    <table class="z">
+      <thead>
+        <tr>
+          <th>when</th><th>commit</th><th>images pulled</th><th>duration</th><th>outcome</th>
+        </tr>
+      </thead>
+      <tbody id="deploys-rows"><tr><td colspan="5" class="text-muted text-sm mono">No deploys recorded yet.</td></tr></tbody>
+    </table>
+  </section>
+
+
+  <!-- ─── SQL CONSOLE (AST-75) ─────────────────────────────────────── -->
+  <div class="section-head" id="sec-sql">
+    <span class="crumb">astral / ops / <span class="cur">sql console</span></span>
+    <span class="rule"></span>
+    <span class="mono text-[11px] text-muted">read-only · SELECT / WITH only · 10s timeout · 500 row cap</span>
+  </div>
+  <section class="card p-4 sm:p-5">
+    <textarea id="sql-input" rows="5" class="w-full bg-bg mono text-sm p-3 rounded-lg hairline" placeholder="SELECT id, title FROM comics ORDER BY added_at DESC LIMIT 10;"></textarea>
+    <div class="flex items-center gap-3 mt-3">
+      <button id="sql-run" class="ibtn">Run (Cmd/Ctrl+Enter)</button>
+      <span id="sql-status" class="text-[11px] text-muted mono"></span>
+      <div class="flex-1"></div>
+      <select id="sql-history" class="ibtn">
+        <option value="">History…</option>
+      </select>
+    </div>
+    <div id="sql-result" class="mt-3 overflow-auto" style="max-height:420px;"></div>
+  </section>
+
+
+  <!-- ─── AUDIT LOG ────────────────────────────────────────────────── -->
+  <div class="section-head" id="sec-audit">
+    <span class="crumb">astral / ops / <span class="cur">audit log</span></span>
+    <span class="rule"></span>
+    <span class="mono text-[11px] text-muted">last control-plane actions</span>
+  </div>
+  <section class="card overflow-hidden">
+    <table class="z">
+      <thead>
+        <tr><th>when</th><th>action</th><th>ok</th><th>detail</th><th>source</th></tr>
+      </thead>
+      <tbody id="audit-rows"><tr><td colspan="5" class="text-muted text-sm mono">No actions recorded.</td></tr></tbody>
+    </table>
+  </section>
+
+
   <!-- ─── FOOTER ──────────────────────────────────────────────────────── -->
   <footer class="mt-10 pt-4 border-t border-border/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] text-muted mono">
     <div class="flex items-center gap-3 flex-wrap">
@@ -937,6 +1004,8 @@
       <span>data as of <span id="asof">—</span></span>
       <span>·</span>
       <span><kbd>r</kbd> refresh · <kbd>1</kbd>–<kbd>4</kbd> range · <kbd>/</kbd> search</span>
+      <span>·</span>
+      <a id="ctrl-logout" href="#" class="text-muted hover:text-white" title="forget control token">🔑 clear token</a>
     </div>
   </footer>
 
@@ -946,6 +1015,78 @@
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--success)"><path d="M20 6 9 17l-5-5"/></svg>
   <span id="toast-msg">copied</span>
 </div>
+
+
+<!-- ─── ENDPOINT DRILL-DOWN MODAL (AST-76) ──────────────────────────── -->
+<div id="endpoint-modal" class="endpoint-modal" style="display:none;">
+  <div class="endpoint-dialog card p-5">
+    <div class="flex items-start justify-between mb-3">
+      <div>
+        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Endpoint</div>
+        <div id="ep-title" class="text-white font-semibold mono text-lg mt-1">—</div>
+      </div>
+      <button class="ibtn" id="ep-close" title="close">✕</button>
+    </div>
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="elevated p-3">
+        <div class="text-[11px] uppercase tracking-[.14em] text-muted">requests</div>
+        <div class="text-xl font-semibold text-white mono mt-1" id="ep-total">—</div>
+      </div>
+      <div class="elevated p-3">
+        <div class="text-[11px] uppercase tracking-[.14em] text-muted">error rate</div>
+        <div class="text-xl font-semibold mono mt-1" id="ep-err">—</div>
+      </div>
+      <div class="elevated p-3">
+        <div class="text-[11px] uppercase tracking-[.14em] text-muted">peak p99</div>
+        <div class="text-xl font-semibold text-white mono mt-1" id="ep-peak">—</div>
+      </div>
+    </div>
+    <svg id="ep-chart" viewBox="0 0 800 220" preserveAspectRatio="none" class="w-full" style="height:220px"></svg>
+    <div id="ep-status-bars" class="mt-3"></div>
+  </div>
+</div>
+
+
+<!-- ─── TOKEN PROMPT ───────────────────────────────────────────────── -->
+<div id="token-modal" class="endpoint-modal" style="display:none;">
+  <div class="endpoint-dialog card p-5" style="max-width:480px;">
+    <div class="text-[11px] tracking-[.14em] uppercase text-muted">Auth required</div>
+    <div class="text-white font-semibold mt-1 mb-3">Monitor control token</div>
+    <div class="text-muted text-sm mb-3">This action requires the control token (set in <code>MONITOR_CONTROL_TOKEN</code>). It's stored in your browser's localStorage — clear it by running <code>localStorage.removeItem('monitor_control_token')</code> in the console.</div>
+    <input id="token-input" type="password" class="search w-full" placeholder="paste token…">
+    <div class="flex gap-2 justify-end mt-3">
+      <button id="token-cancel" class="ibtn">Cancel</button>
+      <button id="token-save"   class="ibtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .endpoint-modal{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .endpoint-dialog{ width:100%; max-width:920px; max-height:90vh; overflow:auto; background:var(--surface); }
+  .svc-ctrl-btn{ display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:500; color:var(--muted); background:transparent; border:0.5px solid var(--border); cursor:pointer; }
+  .svc-ctrl-btn:hover{ color:var(--white); background:var(--elevated); }
+  .flag-card{ background:var(--elevated); border-radius:8px; padding:14px; box-shadow: inset 0 0 0 0.5px var(--border); }
+  .flag-card .flag-key{ font-family:"JetBrains Mono",monospace; font-size:13px; font-weight:600; color:var(--white); }
+  .flag-card .flag-source{ display:inline-block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-left:6px; }
+  .flag-card .flag-desc{ font-size:12px; color:var(--body); margin-top:6px; line-height:1.4; }
+  .flag-card .flag-changed{ font-size:11px; color:var(--muted); margin-top:8px; font-family:"JetBrains Mono",monospace; }
+  .toggle{ position:relative; display:inline-block; width:42px; height:22px; cursor:pointer; }
+  .toggle input{ opacity:0; width:0; height:0; }
+  .toggle .slider{ position:absolute; inset:0; background:rgba(107,107,122,.3); border-radius:22px; transition:.2s; }
+  .toggle .slider:before{ content:""; position:absolute; width:16px; height:16px; left:3px; bottom:3px; background:var(--white); border-radius:50%; transition:.2s; }
+  .toggle input:checked + .slider{ background:var(--success); }
+  .toggle input:checked + .slider:before{ transform:translateX(20px); }
+  .live-dot.on{ animation: pulse 1.3s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.3;} }
+  #log-controls{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+  #log-controls .ibtn.on{ background:var(--gold-soft); color:var(--gold); border-color:var(--gold); }
+  .sql-table{ width:100%; border-collapse:collapse; font-size:12px; }
+  .sql-table th, .sql-table td{ padding:6px 10px; border-bottom: 1px solid rgba(42,42,48,.5); text-align:left; }
+  .sql-table th{ color:var(--muted); text-transform:uppercase; font-size:10px; letter-spacing:.1em; }
+  .sql-table td{ color:var(--body); font-family:"JetBrains Mono",monospace; }
+  .sql-error{ color:var(--error); font-family:"JetBrains Mono",monospace; font-size:12px; padding:10px; background:rgba(239,83,80,.08); border-radius:6px; }
+</style>
 
 <script>
 /* =========================================================================
@@ -975,6 +1116,9 @@ const STATE = {
   data: null,
   autoTimer: null,
 };
+// Expose STATE so the controls.js companion can read the current
+// range / service filter without duplicating state.
+window.STATE = STATE;
 
 /* ---------- deterministic-ish PRNG seeded per refresh --------------- */
 let RNG_SEED = Date.now() & 0xffff;
@@ -1439,8 +1583,8 @@ function renderServices(){
     else if(s.name === 'certbot') footer = `<span class="mono text-[11px] text-muted">next check ${extra.next_check_in}</span>`;
 
     return `
-    <div class="card svc-card p-4">
-      <div class="flex items-start gap-3">
+    <div class="card svc-card p-4" data-service-card="${s.name}">
+      <div class="flex items-start gap-3 svc-card-header">
         <div class="elevated w-8 h-8 flex items-center justify-center text-muted" style="border-radius:8px">${svcIcon(s.name)}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
@@ -1576,7 +1720,7 @@ function renderArq(){
 
   // failed
   document.getElementById('failed').innerHTML = a.recent_failed.map(j=>`
-    <tr>
+    <tr data-job-id="${j.job_id}">
       <td class="mono"><span class="copy" data-copy="${j.job_id}">${shortId(j.job_id)}</span></td>
       <td><span class="badge badge-muted" style="padding:2px 6px; font-size:10.5px;">${j.source}</span></td>
       <td class="mono text-[color:var(--error)] text-[11px] truncate" style="max-width:140px">${j.error}</td>
@@ -1977,5 +2121,8 @@ document.addEventListener('keydown', e=>{
 refreshAll();
 setAuto(true);
 </script>
+
+<!-- control plane UI — decorated after the main renderer settles -->
+<script src="/static/controls.js"></script>
 </body>
 </html>

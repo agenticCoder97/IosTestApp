@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## 2026-04-22
+
+### Backend
+
+- **AST-70..77** — Monitor dashboard control plane. Eight new developer-facing interactions on the OCI monitor: kill-switch panel for `MANGADEX_DISABLED` / `FFNET_NEW_SCRAPER_DISABLED` / `MANGADEX_AUTO_SWITCH_SOURCE` (Redis-backed overrides at `mon:flag:*`, consumed via new `app.core.runtime_flags.flag_enabled()` with 5s cache — no worker restart needed); one-click service restart (`/control/restart/{service}`, confirmation gate for stateful services); ARQ failed-job retry via fresh `enqueue_job`; SSE live log stream at `/metrics/logs/stream` (previously stubbed 501) with per-subscriber service/level/q filters fed off `LOG_DEQUE`; on-demand `pg_dump` via `docker exec postgres` writing to a new `monitor_state` named volume with polling + download endpoints; read-only SQL console against a new `astral_readonly` Postgres role (SELECT/WITH only, 10s statement_timeout, 500-row cap, history in localStorage); endpoint latency drill-down at `/metrics/endpoint` backed by per-endpoint buckets in `NGINX_ENDPOINT_CACHE` (top 20 per window); recent-deploy block reading `deploys.jsonl` appended by a new `backend/scripts/deploy-hook.sh`. All mutating endpoints gated on `X-Monitor-Auth` header / `MONITOR_CONTROL_TOKEN` env — 503 when unset, 401 on mismatch. Every action written to an append-only audit log surfaced in the dashboard. Docker socket widened to `rw`; new Alembic migration `a3b4c5d6e7f8` creates the `astral_readonly` role with SELECT grants + 10s timeout. UI augmented non-invasively via a new `/static/controls.js` companion that decorates the existing renderer via MutationObserver. Fixes [AST-70](https://linear.app/nnetraganti/issue/AST-70), [AST-71](https://linear.app/nnetraganti/issue/AST-71), [AST-72](https://linear.app/nnetraganti/issue/AST-72), [AST-73](https://linear.app/nnetraganti/issue/AST-73), [AST-74](https://linear.app/nnetraganti/issue/AST-74), [AST-75](https://linear.app/nnetraganti/issue/AST-75), [AST-76](https://linear.app/nnetraganti/issue/AST-76), [AST-77](https://linear.app/nnetraganti/issue/AST-77).
+
 ## 2026-04-21
 
 ### Backend
