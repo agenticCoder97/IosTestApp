@@ -158,7 +158,7 @@ struct ComicReaderView: View {
             }
             .offset(y: showHUD ? 0 : -110)
             .opacity(showHUD ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showHUD)
+            .animation(ReaderMotion.chrome, value: showHUD)
             .allowsHitTesting(showHUD)
 
             // Chapter + favourite overlay — top right, below the top bar
@@ -171,7 +171,7 @@ struct ComicReaderView: View {
             .padding(.trailing, 16)
             .offset(y: showHUD ? 0 : -110)
             .opacity(showHUD ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showHUD)
+            .animation(ReaderMotion.chrome, value: showHUD)
             .allowsHitTesting(showHUD)
 
             // Bottom HUD — slides in from below, swaps between settings and nav bar
@@ -196,7 +196,7 @@ struct ComicReaderView: View {
             }
             .offset(y: showHUD ? 0 : 130)
             .opacity(showHUD ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showHUD)
+            .animation(ReaderMotion.chrome, value: showHUD)
             .allowsHitTesting(showHUD)
         }
         .ignoresSafeArea()
@@ -492,7 +492,7 @@ struct ComicReaderView: View {
                 Rectangle()
                     .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .onTapGesture { toggleHUD() }
+                    .pressReveal { toggleHUD() }
 
                 Rectangle()
                     .fill(.clear)
@@ -527,8 +527,11 @@ struct ComicReaderView: View {
     }
 
     private func toggleHUD() {
-        showHUD.toggle()
-        if !showHUD { showSettings = false }
+        withAnimation(ReaderMotion.chrome) {
+            showHUD.toggle()
+            if !showHUD { showSettings = false }
+        }
+        Haptics.play(.chromeToggle)
     }
 
     private func setLandscape(_ landscape: Bool) {
