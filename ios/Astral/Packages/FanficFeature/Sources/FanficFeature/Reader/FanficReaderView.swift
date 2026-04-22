@@ -163,11 +163,11 @@ struct FanficReaderView: View {
                                 proxy.scrollTo(target, anchor: .top)
                                 hasRestoredScroll = true
                             }
+                            .id(currentChapter.id)
+                            .transition(.opacity.animation(ReaderMotion.chapterCrossfade))
                         }
                         .containerRelativeFrame([.horizontal, .vertical])
                         .id("current")
-                        .id(currentChapter.id)
-                        .transition(.opacity.animation(ReaderMotion.chapterCrossfade))
 
                         // Next chapter placeholder
                         if let next = nextChapter {

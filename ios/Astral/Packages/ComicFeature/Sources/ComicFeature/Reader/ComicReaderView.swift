@@ -984,17 +984,15 @@ struct ComicReaderView: View {
     /// Kicks off a best-effort network fetch of the next chapter's page list
     /// and warms URLSession's cache with the first two page images. Silent on
     /// failure — AsyncImage / URLSession handle the "never actually fetched" case.
-    private func prefetchNextChapter() async {
-        guard currentChapterIndex + 1 < chapters.count else { return }
-        let nextChapter = chapters[currentChapterIndex + 1]
+    /// UUIDs passed in so the non-Sendable @Model (`comic`, `chapters[i]`) never
+    /// crosses an actor boundary.
+    private static func prefetchNextChapter(comicId: UUID, chapterId: UUID) async {
         do {
             let response: [PageResponse] = try await APIClient.shared.request(
-                .chapterPages(comicId: comic.id, chapterId: nextChapter.id)
+                .chapterPages(comicId: comicId, chapterId: chapterId)
             )
             let urls = response.prefix(2).compactMap { URL(string: AppConfig.staticBaseURL + $0.filePath) }
             for url in urls {
-                // Fire a raw URLSession fetch — result goes into URLCache, which
-                // AsyncImage reads from when the user navigates here.
                 _ = try? await URLSession.shared.data(from: url)
             }
         } catch {
@@ -1084,7 +1082,14 @@ struct ComicReaderView: View {
             offlineError = true
         }
         isLoading = false
-        Task.detached(priority: .background) { await prefetchNextChapter() }
+        let nextIdx = currentChapterIndex + 1
+        if nextIdx < chapters.count {
+            let nextChapterId = chapters[nextIdx].id
+            let comicId = comic.id
+            Task(priority: .background) {
+                await Self.prefetchNextChapter(comicId: comicId, chapterId: nextChapterId)
+            }
+        }
     }
 }
 

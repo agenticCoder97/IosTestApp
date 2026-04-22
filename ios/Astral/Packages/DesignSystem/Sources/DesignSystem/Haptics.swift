@@ -13,7 +13,8 @@ public enum HapticEvent {
 
 public enum Haptics {
     /// Plays the haptic feedback for the given semantic event.
-    /// Safe to call from any thread — `UIImpactFeedbackGenerator` handles dispatch.
+    /// Must be called on the main actor (UIImpactFeedbackGenerator is UIKit).
+    @MainActor
     public static func play(_ event: HapticEvent) {
         switch event {
         case .chromeToggle, .triggerArmed:
