@@ -166,6 +166,8 @@ struct FanficReaderView: View {
                         }
                         .containerRelativeFrame([.horizontal, .vertical])
                         .id("current")
+                        .id(currentChapter.id)
+                        .transition(.opacity.animation(ReaderMotion.chapterCrossfade))
 
                         // Next chapter placeholder
                         if let next = nextChapter {
@@ -559,6 +561,23 @@ struct FanficReaderView: View {
             .reduce(0) { $0 + $1.split(separator: " ").count }
     }
 
+    /// Kicks off background fetches of the immediately-previous and
+    /// immediately-next chapter content. Success primes the HTTP cache;
+    /// failures are silent (prefetch is best-effort).
+    private func prefetchAdjacentChapters() async {
+        let fanficId: UUID = fanfic.id
+        let chapterIds: [UUID] = [previousChapter, nextChapter].compactMap { $0?.id }
+        await withTaskGroup(of: Void.self) { group in
+            for chapterId in chapterIds {
+                group.addTask {
+                    let _: FanficChapterResponse? = try? await APIClient.shared.request(
+                        .fanficChapter(fanficId: fanficId, chapterId: chapterId)
+                    )
+                }
+            }
+        }
+    }
+
     private func loadChapter() async {
         AstralLogger.info("loadChapter: ch \(currentChapter.chapterNumber) (id=\(currentChapter.id)) for '\(fanfic.title)'", context: "FanficReader")
         offlineError = false
@@ -608,6 +627,7 @@ struct FanficReaderView: View {
 
         calculateScrollTarget()
         isLoading = false
+        Task(priority: .background) { await prefetchAdjacentChapters() }
     }
 
     private var chapterNavigationFooter: some View {
