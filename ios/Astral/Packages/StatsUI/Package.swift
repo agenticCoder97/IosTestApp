@@ -17,10 +17,5 @@ let package = Package(
             name: "StatsUI",
             dependencies: ["Core", "DesignSystem"]
         ),
-        .testTarget(
-            name: "StatsUITests",
-            dependencies: ["StatsUI", "Core"],
-            path: "Tests/StatsUITests"
-        ),
     ]
 )

@@ -38,6 +38,7 @@ struct FanficReaderView: View {
     @State private var scrollTargetIndex: Int?
     @State private var offlineError = false
     @State private var horizontalPage: String? = "current"
+    @State private var scrollPercentThrottle = ThrottledSetter<Double>(interval: 0.08)
 
     var body: some View {
         ZStack {
@@ -125,7 +126,8 @@ struct FanficReaderView: View {
                                                 .onAppear {
                                                     guard hasRestoredScroll else { return }
                                                     if paragraphs.count > 1 {
-                                                        fanfic.scrollOffsetPercent = Double(index) / Double(paragraphs.count - 1)
+                                                        let pct = Double(index) / Double(paragraphs.count - 1)
+                                                        scrollPercentThrottle.set(pct) { fanfic.scrollOffsetPercent = $0 }
                                                     }
                                                 }
                                                 .simultaneousGesture(
@@ -161,6 +163,8 @@ struct FanficReaderView: View {
                                 proxy.scrollTo(target, anchor: .top)
                                 hasRestoredScroll = true
                             }
+                            .id(currentChapter.id)
+                            .transition(.opacity.animation(ReaderMotion.chapterCrossfade))
                         }
                         .containerRelativeFrame([.horizontal, .vertical])
                         .id("current")
@@ -212,14 +216,14 @@ struct FanficReaderView: View {
             }
             .offset(y: showReaderBar ? 0 : -110)
             .opacity(showReaderBar ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showReaderBar)
+            .animation(ReaderMotion.chrome, value: showReaderBar)
             .allowsHitTesting(showReaderBar)
 
             // Chapter + favourite overlay — top right
             if showReaderBar {
                 chapterFavOverlay
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, 56)
+                    .padding(.top, 44)
                     .padding(.trailing, 16)
                     .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .topTrailing)))
                     .allowsHitTesting(showReaderBar)
@@ -235,12 +239,16 @@ struct FanficReaderView: View {
             }
 
         }
-        .onTapGesture {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
+        .pressReveal {
+            withAnimation(ReaderMotion.chrome) {
                 showReaderBar.toggle()
             }
+            Haptics.play(.chromeToggle)
         }
-        .task(id: currentChapter.id) { await loadChapter() }
+        .task(id: currentChapter.id) {
+            scrollPercentThrottle.reset()
+            await loadChapter()
+        }
         .onAppear {
             // Track reading session
             let session = LocalReadingSession(contentType: "fanfic", storyId: fanfic.id)
@@ -300,6 +308,7 @@ struct FanficReaderView: View {
                     )
                     modelContext.insert(bookmark)
                     try? modelContext.save()
+                    Haptics.play(.bookmark)
                 }
             )
             .presentationDetents([.medium])
@@ -335,22 +344,22 @@ struct FanficReaderView: View {
     }
 
     private var chapterFavOverlay: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             ZStack {
                 Circle()
                     .fill(.ultraThinMaterial)
-                    .frame(width: 58, height: 58)
+                    .frame(width: 48, height: 48)
                 VStack(spacing: 1) {
                     Text(chapterDisplayNum)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(AstralColors.white)
                         .monospacedDigit()
                     Capsule()
                         .fill(AstralColors.muted)
-                        .frame(width: 22, height: 1.5)
+                        .frame(width: 18, height: 1.5)
                         .rotationEffect(.degrees(-45))
                     Text("\(fanfic.totalChapters)")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AstralColors.muted)
                         .monospacedDigit()
                 }
@@ -362,9 +371,9 @@ struct FanficReaderView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 40, height: 40)
                     Image(systemName: "list.bullet")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(AstralColors.white)
                 }
             }
@@ -379,9 +388,9 @@ struct FanficReaderView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 40, height: 40)
                     Image(systemName: fanfic.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(fanfic.isFavorite ? AstralColors.error : AstralColors.white)
                         .symbolEffect(.bounce, value: fanfic.isFavorite)
                 }
@@ -411,8 +420,8 @@ struct FanficReaderView: View {
             Spacer()
         }
         .padding(.horizontal, 16)
-        .padding(.top, 56)
-        .padding(.bottom, 12)
+        .padding(.top, 44)
+        .padding(.bottom, 10)
         .background(.ultraThinMaterial)
     }
 
@@ -552,6 +561,23 @@ struct FanficReaderView: View {
             .reduce(0) { $0 + $1.split(separator: " ").count }
     }
 
+    /// Kicks off background fetches of the immediately-previous and
+    /// immediately-next chapter content. Success primes the HTTP cache;
+    /// failures are silent (prefetch is best-effort).
+    private func prefetchAdjacentChapters() async {
+        let fanficId: UUID = fanfic.id
+        let chapterIds: [UUID] = [previousChapter, nextChapter].compactMap { $0?.id }
+        await withTaskGroup(of: Void.self) { group in
+            for chapterId in chapterIds {
+                group.addTask {
+                    let _: FanficChapterResponse? = try? await APIClient.shared.request(
+                        .fanficChapter(fanficId: fanficId, chapterId: chapterId)
+                    )
+                }
+            }
+        }
+    }
+
     private func loadChapter() async {
         AstralLogger.info("loadChapter: ch \(currentChapter.chapterNumber) (id=\(currentChapter.id)) for '\(fanfic.title)'", context: "FanficReader")
         offlineError = false
@@ -601,6 +627,7 @@ struct FanficReaderView: View {
 
         calculateScrollTarget()
         isLoading = false
+        Task(priority: .background) { await prefetchAdjacentChapters() }
     }
 
     private var chapterNavigationFooter: some View {
@@ -619,6 +646,7 @@ struct FanficReaderView: View {
                 // Previous chapter
                 if let prev = previousChapter {
                     Button {
+                        Haptics.play(.chapterNav)
                         navigateTo(prev)
                     } label: {
                         HStack(spacing: 6) {
@@ -648,6 +676,7 @@ struct FanficReaderView: View {
                 // Next chapter
                 if let next = nextChapter {
                     Button {
+                        Haptics.play(.chapterNav)
                         navigateTo(next)
                     } label: {
                         HStack(spacing: 6) {

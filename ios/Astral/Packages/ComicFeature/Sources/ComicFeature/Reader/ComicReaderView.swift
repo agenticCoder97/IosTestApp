@@ -51,6 +51,14 @@ struct ComicReaderView: View {
     @State private var localPageURLs: [URL]?
     @State private var prevChapterPull: CGFloat = 0
     @State private var prevChapterTriggered = false
+    // AST-65 arming: edge-visibility timestamps drive a 0.5s arm delay.
+    // nil = edge not visible. Once armed, pull can fire the trigger.
+    @State private var topEdgeVisibleSince: Date? = nil
+    @State private var topEdgeArmedAt: Date? = nil
+    @State private var bottomEdgeVisibleSince: Date? = nil
+    @State private var bottomEdgeArmedAt: Date? = nil
+    @State private var hasCompletedInitialLayout = false
+    @State private var pageThrottle = ThrottledSetter<Int>(interval: 0.08)
     @State private var showChapterList = false
     @State private var autoScrollActive = false
     @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
@@ -107,6 +115,8 @@ struct ComicReaderView: View {
                 .foregroundStyle(AstralColors.white)
             } else {
                 pageContent
+                    .id(currentChapterIndex)
+                    .transition(.opacity.animation(ReaderMotion.chapterCrossfade))
             }
 
             if offlineError && pages.isEmpty && localPageURLs == nil {
@@ -158,7 +168,7 @@ struct ComicReaderView: View {
             }
             .offset(y: showHUD ? 0 : -110)
             .opacity(showHUD ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showHUD)
+            .animation(ReaderMotion.chrome, value: showHUD)
             .allowsHitTesting(showHUD)
 
             // Chapter + favourite overlay — top right, below the top bar
@@ -171,7 +181,7 @@ struct ComicReaderView: View {
             .padding(.trailing, 16)
             .offset(y: showHUD ? 0 : -110)
             .opacity(showHUD ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showHUD)
+            .animation(ReaderMotion.chrome, value: showHUD)
             .allowsHitTesting(showHUD)
 
             // Bottom HUD — slides in from below, swaps between settings and nav bar
@@ -196,13 +206,26 @@ struct ComicReaderView: View {
             }
             .offset(y: showHUD ? 0 : 130)
             .opacity(showHUD ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showHUD)
+            .animation(ReaderMotion.chrome, value: showHUD)
             .allowsHitTesting(showHUD)
         }
         .ignoresSafeArea()
         .navigationBarHidden(true)
         .statusBarHidden(!showHUD)
-        .task(id: currentChapterIndex) { await loadPages() }
+        .task(id: currentChapterIndex) {
+            // Reset arming state so new chapter starts disarmed.
+            topEdgeVisibleSince = nil
+            topEdgeArmedAt = nil
+            bottomEdgeVisibleSince = nil
+            bottomEdgeArmedAt = nil
+            hasCompletedInitialLayout = false
+            prevChapterPull = 0
+            nextChapterPull = 0
+            prevChapterTriggered = false
+            nextChapterTriggered = false
+            pageThrottle.reset()
+            await loadPages()
+        }
         .onAppear {
             let session = LocalReadingSession(contentType: "comic", storyId: comic.id)
             modelContext.insert(session)
@@ -344,20 +367,31 @@ struct ComicReaderView: View {
                 // Previous chapter pull trigger at top of scroll content
                 if !isFirstChapter {
                     PrevChapterTrigger(
+                        onVisibilityChange: { visible in
+                            guard hasCompletedInitialLayout else { return }
+                            if visible {
+                                topEdgeVisibleSince = .now
+                            } else {
+                                topEdgeVisibleSince = nil
+                                topEdgeArmedAt = nil
+                                prevChapterPull = 0
+                            }
+                        },
                         onProgressChange: { progress in
                             prevChapterPull = progress
                             if progress >= 1.0 && !prevChapterTriggered {
                                 prevChapterTriggered = true
-                                let generator = UIImpactFeedbackGenerator(style: .medium)
-                                generator.impactOccurred()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                Haptics.play(.triggerFire)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(300))
                                     goToPrevChapter()
                                     prevChapterTriggered = false
                                     prevChapterPull = 0
                                 }
                             }
                         },
-                        progress: prevChapterPull
+                        progress: prevChapterPull,
+                        isArmed: topEdgeArmedAt != nil
                     )
                 }
 
@@ -368,7 +402,10 @@ struct ComicReaderView: View {
                             LocalPageView(fileURL: url)
                         }
                         .id(index)
-                        .onAppear { currentPage = index }
+                        .onAppear {
+                            hasCompletedInitialLayout = true
+                            pageThrottle.set(index) { currentPage = $0 }
+                        }
                     }
                 } else {
                     // Network pages
@@ -377,27 +414,41 @@ struct ComicReaderView: View {
                             ComicPageView(page: page)
                         }
                         .id(index)
-                        .onAppear { currentPage = index }
+                        .onAppear {
+                            hasCompletedInitialLayout = true
+                            pageThrottle.set(index) { currentPage = $0 }
+                        }
                     }
                 }
 
                 // Next chapter pull trigger at bottom of scroll content
                 if !isLastChapter {
                     NextChapterTrigger(
+                        onVisibilityChange: { visible in
+                            guard hasCompletedInitialLayout else { return }
+                            if visible {
+                                bottomEdgeVisibleSince = .now
+                            } else {
+                                bottomEdgeVisibleSince = nil
+                                bottomEdgeArmedAt = nil
+                                nextChapterPull = 0
+                            }
+                        },
                         onProgressChange: { progress in
                             nextChapterPull = progress
                             if progress >= 1.0 && !nextChapterTriggered {
                                 nextChapterTriggered = true
-                                let generator = UIImpactFeedbackGenerator(style: .medium)
-                                generator.impactOccurred()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                Haptics.play(.triggerFire)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(300))
                                     goToNextChapter()
                                     nextChapterTriggered = false
                                     nextChapterPull = 0
                                 }
                             }
                         },
-                        progress: nextChapterPull
+                        progress: nextChapterPull,
+                        isArmed: bottomEdgeArmedAt != nil
                     )
                 }
             }
@@ -408,6 +459,20 @@ struct ComicReaderView: View {
             }
         )
         .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
+        .task(id: topEdgeVisibleSince) {
+            guard let since = topEdgeVisibleSince else { return }
+            try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
+            guard topEdgeVisibleSince == since, topEdgeArmedAt == nil else { return }
+            withAnimation(ReaderMotion.triggerRing) { topEdgeArmedAt = .now }
+            Haptics.play(.triggerArmed)
+        }
+        .task(id: bottomEdgeVisibleSince) {
+            guard let since = bottomEdgeVisibleSince else { return }
+            try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
+            guard bottomEdgeVisibleSince == since, bottomEdgeArmedAt == nil else { return }
+            withAnimation(ReaderMotion.triggerRing) { bottomEdgeArmedAt = .now }
+            Haptics.play(.triggerArmed)
+        }
     }
 
     /// Sentinel IDs for chapter-transition pages in the paged reader.
@@ -492,7 +557,7 @@ struct ComicReaderView: View {
                 Rectangle()
                     .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .onTapGesture { toggleHUD() }
+                    .pressReveal { toggleHUD() }
 
                 Rectangle()
                     .fill(.clear)
@@ -527,8 +592,11 @@ struct ComicReaderView: View {
     }
 
     private func toggleHUD() {
-        showHUD.toggle()
-        if !showHUD { showSettings = false }
+        withAnimation(ReaderMotion.chrome) {
+            showHUD.toggle()
+            if !showHUD { showSettings = false }
+        }
+        Haptics.play(.chromeToggle)
     }
 
     private func setLandscape(_ landscape: Bool) {
@@ -627,7 +695,13 @@ struct ComicReaderView: View {
                     Slider(
                         value: Binding(
                             get: { Double(currentPage) },
-                            set: { currentPage = Int($0.rounded()) }
+                            set: { newValue in
+                                let newPage = Int(newValue.rounded())
+                                if newPage != currentPage {
+                                    currentPage = newPage
+                                    Haptics.play(.pageTurn)
+                                }
+                            }
                         ),
                         in: 0...Double(pages.count - 1),
                         step: 1
@@ -653,12 +727,29 @@ struct ComicReaderView: View {
 
                 Spacer()
 
-                Text("\(currentPage + 1) / \(pages.count)")
-                    .font(AstralTypography.captionMedium)
-                    .foregroundStyle(AstralColors.white)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
+                Menu {
+                    ForEach(0..<pages.count, id: \.self) { idx in
+                        Button("Page \(idx + 1)") {
+                            withAnimation(ReaderMotion.pageTurn) { currentPage = idx }
+                            Haptics.play(.pageTurn)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("\(currentPage + 1) / \(pages.count)")
+                            .font(AstralTypography.captionMedium)
+                            .foregroundStyle(AstralColors.white)
+                            .monospacedDigit()
+                            .contentTransition(.numericText())
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(AstralColors.muted)
+                    }
                     .animation(AstralAnimation.quick, value: currentPage)
+                }
+                .menuStyle(.button)
+                .buttonStyle(PressButtonStyle(scale: 0.94))
+                .disabled(pages.isEmpty)
 
                 Spacer()
 
@@ -820,6 +911,7 @@ struct ComicReaderView: View {
 
     private func goToPrevChapter() {
         guard !isFirstChapter else { return }
+        Haptics.play(.chapterNav)
         withAnimation(AstralAnimation.quick) {
             currentChapterIndex -= 1
             currentPage = 0
@@ -828,6 +920,7 @@ struct ComicReaderView: View {
 
     private func goToNextChapter() {
         guard !isLastChapter else { return }
+        Haptics.play(.chapterNav)
         withAnimation(AstralAnimation.quick) {
             currentChapterIndex += 1
             currentPage = 0
@@ -873,6 +966,7 @@ struct ComicReaderView: View {
             AstralLogger.info("Bookmark added: ch \(chapter.chapterNumber) page \(currentPage + 1)", context: "ComicReader")
         }
         try? modelContext.save()
+        Haptics.play(.bookmark)
     }
 
     // MARK: - Long Press Actions
@@ -885,6 +979,25 @@ struct ComicReaderView: View {
     private func applyPageSkip(_ allPages: [PageResponse]) -> [PageResponse] {
         guard comic.skipFirstNPages > 0 else { return allPages }
         return Array(allPages.dropFirst(comic.skipFirstNPages))
+    }
+
+    /// Kicks off a best-effort network fetch of the next chapter's page list
+    /// and warms URLSession's cache with the first two page images. Silent on
+    /// failure — AsyncImage / URLSession handle the "never actually fetched" case.
+    /// UUIDs passed in so the non-Sendable @Model (`comic`, `chapters[i]`) never
+    /// crosses an actor boundary.
+    private static func prefetchNextChapter(comicId: UUID, chapterId: UUID) async {
+        do {
+            let response: [PageResponse] = try await APIClient.shared.request(
+                .chapterPages(comicId: comicId, chapterId: chapterId)
+            )
+            let urls = response.prefix(2).compactMap { URL(string: AppConfig.staticBaseURL + $0.filePath) }
+            for url in urls {
+                _ = try? await URLSession.shared.data(from: url)
+            }
+        } catch {
+            // Prefetch is best-effort — no surface.
+        }
     }
 
     private func loadPages() async {
@@ -969,6 +1082,14 @@ struct ComicReaderView: View {
             offlineError = true
         }
         isLoading = false
+        let nextIdx = currentChapterIndex + 1
+        if nextIdx < chapters.count {
+            let nextChapterId = chapters[nextIdx].id
+            let comicId = comic.id
+            Task(priority: .background) {
+                await Self.prefetchNextChapter(comicId: comicId, chapterId: nextChapterId)
+            }
+        }
     }
 }
 
@@ -1217,21 +1338,28 @@ private extension Array {
 // MARK: - Chapter Triggers
 
 private let chapterTriggerHeight: CGFloat = 260
+private let chapterArmDelay: TimeInterval = 0.5
 
 /// Placed at the top of webtoon scroll content — scroll up to load previous chapter.
+/// Reports its visibility and pull progress upward; progress is gated on arming.
 private struct PrevChapterTrigger: View {
+    let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
     let progress: CGFloat
+    let isArmed: Bool
 
     var body: some View {
         GeometryReader { geo in
             let frame = geo.frame(in: .global)
-            // How much the trigger is pulled down below the top edge
             let visible = max(0, frame.maxY)
             let pct = min(visible / chapterTriggerHeight, 1.0)
+            let isVisible = visible > 0
             Color.clear
-                .onChange(of: pct) { _, newPct in
-                    onProgressChange(newPct)
+                .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
+                .onChange(of: pct) { _, new in
+                    // Only forward progress when the trigger is armed.
+                    // Reports 0 otherwise so the parent resets any cached pull.
+                    onProgressChange(isArmed ? new : 0)
                 }
         }
         .frame(height: chapterTriggerHeight)
@@ -1256,15 +1384,18 @@ private struct PrevChapterTrigger: View {
                     .font(AstralTypography.caption)
                     .foregroundStyle(AstralColors.muted)
             }
-            .opacity(progress > 0.02 ? 1 : 0.3)
+            .opacity(isArmed ? (progress > 0.02 ? 1 : 0.3) : 0)
+            .animation(ReaderMotion.triggerRing, value: isArmed)
         }
     }
 }
 
 /// Placed at the bottom of webtoon scroll content — scroll down to load next chapter.
 private struct NextChapterTrigger: View {
+    let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
     let progress: CGFloat
+    let isArmed: Bool
 
     var body: some View {
         GeometryReader { geo in
@@ -1272,9 +1403,11 @@ private struct NextChapterTrigger: View {
             let screenH = UIScreen.main.bounds.height
             let visible = max(0, screenH - frame.minY)
             let pct = min(visible / chapterTriggerHeight, 1.0)
+            let isVisible = visible > 0
             Color.clear
-                .onChange(of: pct) { _, newPct in
-                    onProgressChange(newPct)
+                .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
+                .onChange(of: pct) { _, new in
+                    onProgressChange(isArmed ? new : 0)
                 }
         }
         .frame(height: chapterTriggerHeight)
@@ -1299,7 +1432,8 @@ private struct NextChapterTrigger: View {
                     .font(AstralTypography.caption)
                     .foregroundStyle(AstralColors.muted)
             }
-            .opacity(progress > 0.02 ? 1 : 0.3)
+            .opacity(isArmed ? (progress > 0.02 ? 1 : 0.3) : 0)
+            .animation(ReaderMotion.triggerRing, value: isArmed)
         }
     }
 }

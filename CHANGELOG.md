@@ -4,6 +4,10 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/ast-reader-smoothness-pass — 2026-04-22
+
+- [ios] Reader smoothness pass: touch-down chrome reveal, tappable page Menu, armed next-chapter trigger with 0.5s delay, unified reader motion + haptics, throttled scroll writes, chapter crossfade + prefetch, tightened fanfic chrome padding. Closes AST-62, AST-63, AST-64, AST-65.
+
 ## 2026-04-22
 
 ### iOS
