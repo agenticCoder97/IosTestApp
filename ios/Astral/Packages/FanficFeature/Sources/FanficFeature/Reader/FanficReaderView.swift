@@ -212,7 +212,7 @@ struct FanficReaderView: View {
             }
             .offset(y: showReaderBar ? 0 : -110)
             .opacity(showReaderBar ? 1 : 0)
-            .animation(.easeInOut(duration: 0.22), value: showReaderBar)
+            .animation(ReaderMotion.chrome, value: showReaderBar)
             .allowsHitTesting(showReaderBar)
 
             // Chapter + favourite overlay — top right
@@ -235,10 +235,11 @@ struct FanficReaderView: View {
             }
 
         }
-        .onTapGesture {
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
+        .pressReveal {
+            withAnimation(ReaderMotion.chrome) {
                 showReaderBar.toggle()
             }
+            Haptics.play(.chromeToggle)
         }
         .task(id: currentChapter.id) { await loadChapter() }
         .onAppear {
@@ -300,6 +301,7 @@ struct FanficReaderView: View {
                     )
                     modelContext.insert(bookmark)
                     try? modelContext.save()
+                    Haptics.play(.bookmark)
                 }
             )
             .presentationDetents([.medium])
@@ -619,6 +621,7 @@ struct FanficReaderView: View {
                 // Previous chapter
                 if let prev = previousChapter {
                     Button {
+                        Haptics.play(.chapterNav)
                         navigateTo(prev)
                     } label: {
                         HStack(spacing: 6) {
@@ -648,6 +651,7 @@ struct FanficReaderView: View {
                 // Next chapter
                 if let next = nextChapter {
                     Button {
+                        Haptics.play(.chapterNav)
                         navigateTo(next)
                     } label: {
                         HStack(spacing: 6) {
