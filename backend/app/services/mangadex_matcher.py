@@ -126,10 +126,13 @@ async def find_mangadex_match(
     source_title: str,
 ) -> Optional[MangaDexMatch]:
     """Return a MangaDexMatch if best score >= threshold, else None."""
-    if settings.mangadex_disabled:
+    from app.core.runtime_flags import flag_enabled
+    if await flag_enabled("MANGADEX_DISABLED", default=settings.mangadex_disabled):
         logger.info("find_mangadex_match skipped — kill switch on")
         return None
-    if not settings.mangadex_auto_switch_source:
+    if not await flag_enabled(
+        "MANGADEX_AUTO_SWITCH_SOURCE", default=settings.mangadex_auto_switch_source,
+    ):
         logger.info("find_mangadex_match skipped — auto-switch disabled")
         return None
     if source not in _EXPECTED_LANG:

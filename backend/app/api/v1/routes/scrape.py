@@ -20,12 +20,18 @@ router = APIRouter(prefix="/scrape", tags=["scrape"])
 async def initiate_comic_scrape(body: ScrapeRequest, db: AsyncSession = Depends(get_db)):
     from fastapi.responses import JSONResponse
     from app.core.config import settings
+    from app.core.runtime_flags import flag_enabled
     from app.services.mangadex_matcher import find_mangadex_match
 
     body_with_type = body.model_copy(update={"content_type": "comic"})
 
-    # Kill switch: hard-stop direct MangaDex scrapes.
-    if body_with_type.source_key == "mangadex" and settings.mangadex_disabled:
+    # Kill switch: hard-stop direct MangaDex scrapes. The Redis
+    # override (managed via the monitor dashboard) wins over the
+    # settings default — lets ops flip the switch without a restart.
+    mangadex_disabled = await flag_enabled(
+        "MANGADEX_DISABLED", default=settings.mangadex_disabled,
+    )
+    if body_with_type.source_key == "mangadex" and mangadex_disabled:
         return JSONResponse(
             status_code=503,
             content={"detail": "MangaDex temporarily disabled"},
@@ -35,7 +41,7 @@ async def initiate_comic_scrape(body: ScrapeRequest, db: AsyncSession = Depends(
     if (
         body_with_type.source_key in ("toongod", "hentai20")
         and not body_with_type.skip_match
-        and not settings.mangadex_disabled
+        and not mangadex_disabled
     ):
         # Prime the cookie cache BEFORE the matcher's source-meta fetch — without
         # this, the source scraper reads stale Redis cookies and gets 403'd by

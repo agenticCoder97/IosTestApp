@@ -18,6 +18,12 @@ SERVICE_CACHE: dict[str, dict[str, Any]] = {}
 LOG_DEQUE: Deque[dict[str, Any]] = deque(maxlen=_LOG_DEQUE_MAXLEN)
 NGINX_WINDOW_CACHE: dict[str, dict[str, Any]] = {}
 
+# Per-endpoint bucketed series, keyed by (method, path) → {window: [buckets]}.
+# Populated by nginx_access_sampler alongside NGINX_WINDOW_CACHE.
+# Capped at the top 20 endpoints per window by request count to keep
+# memory bounded.
+NGINX_ENDPOINT_CACHE: dict[str, dict[tuple[str, str], list[dict[str, Any]]]] = {}
+
 
 async def supervise(factory: Callable[[], Awaitable[Any]], name: str) -> None:
     """Restart factory() on non-Cancelled exceptions with exponential backoff."""
@@ -299,7 +305,13 @@ async def _follow_one(client, container, svc: str) -> None:
             ts = __dt_for_logs.now(__tz_for_logs.utc)
         msg = _redact(rest)
         lvl = _classify_level(msg, svc)
-        LOG_DEQUE.append({"ts": ts, "svc": svc, "lvl": lvl, "msg": msg[:500]})
+        entry = {"ts": ts, "svc": svc, "lvl": lvl, "msg": msg[:500]}
+        LOG_DEQUE.append(entry)
+        try:
+            from monitor import logs_stream
+            logs_stream.publish(entry)
+        except Exception:
+            pass
 
 
 async def log_tailer() -> None:
@@ -378,16 +390,30 @@ def _compute_window(records: list[dict], window: str) -> dict:
     series_rps_buckets: dict[int, int] = {}
     series_p95_buckets: dict[int, list[int]] = {}
 
+    # Per-endpoint bucketed latency + status accumulators, used to feed
+    # the endpoint drill-down view (AST-76).
+    endpoint_buckets: dict[tuple[str, str], dict[int, dict]] = {}
+
     for r in records:
         s = r["status"]
-        if   200 <= s < 300: status_codes["2xx"] += 1
-        elif 300 <= s < 400: status_codes["3xx"] += 1
-        elif 400 <= s < 500: status_codes["4xx"] += 1
-        elif 500 <= s < 600: status_codes["5xx"] += 1
+        if   200 <= s < 300: band = "2xx"
+        elif 300 <= s < 400: band = "3xx"
+        elif 400 <= s < 500: band = "4xx"
+        elif 500 <= s < 600: band = "5xx"
+        else:                band = "5xx"
+        status_codes[band] += 1
         by_path.setdefault((r["method"], r["path"]), []).append(r["rt_ms"])
         bucket = (r["ts_ms"] // bucket_ms) * bucket_ms
         series_rps_buckets[bucket] = series_rps_buckets.get(bucket, 0) + 1
         series_p95_buckets.setdefault(bucket, []).append(r["rt_ms"])
+
+        ep = endpoint_buckets.setdefault((r["method"], r["path"]), {})
+        b = ep.setdefault(bucket, {
+            "rts": [],
+            "status_2xx": 0, "status_3xx": 0, "status_4xx": 0, "status_5xx": 0,
+        })
+        b["rts"].append(r["rt_ms"])
+        b[f"status_{band}"] += 1
 
     series_rps = [[b, series_rps_buckets[b] / (bucket_ms / 1000)] for b in sorted(series_rps_buckets)]
     series_p95 = [[b, _pct(series_p95_buckets[b], 95)] for b in sorted(series_p95_buckets)]
@@ -402,14 +428,39 @@ def _compute_window(records: list[dict], window: str) -> dict:
             "count": len(rts),
         })
     slowest.sort(key=lambda r: r["p95_ms"], reverse=True)
-    slowest = slowest[:10]
+    top_slowest = slowest[:10]
+
+    # Keep only the top 20 endpoints per window by request count for
+    # drill-down — memory bound. by_count ≠ by_latency: both high-traffic
+    # and slow endpoints are useful drill-down targets.
+    top_by_count = sorted(by_path.items(), key=lambda kv: len(kv[1]), reverse=True)[:20]
+    endpoint_cache: dict[tuple[str, str], list[dict]] = {}
+    for key, _rts in top_by_count:
+        if key not in endpoint_buckets:
+            continue
+        buckets_sorted = sorted(endpoint_buckets[key].items())
+        endpoint_cache[key] = [
+            {
+                "ts_ms": ts,
+                "p50_ms": _pct(b["rts"], 50),
+                "p95_ms": _pct(b["rts"], 95),
+                "p99_ms": _pct(b["rts"], 99),
+                "count": len(b["rts"]),
+                "status_2xx": b["status_2xx"],
+                "status_3xx": b["status_3xx"],
+                "status_4xx": b["status_4xx"],
+                "status_5xx": b["status_5xx"],
+            }
+            for ts, b in buckets_sorted
+        ]
+    NGINX_ENDPOINT_CACHE[window] = endpoint_cache
 
     return {
         "window": window,
         "series_rps": series_rps,
         "series_p95_ms": series_p95,
         "status_codes": status_codes,
-        "slowest": slowest,
+        "slowest": top_slowest,
     }
 
 

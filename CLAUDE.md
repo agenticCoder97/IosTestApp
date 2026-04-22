@@ -59,6 +59,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - OAuth2 personal-client login for the `pornographic` content rating is tracked in AST-35 (not in v1).
 - FFNet scraper (AST-29) — env vars:
   - `FFNET_NEW_SCRAPER_DISABLED=true|false` — kill switch. Set to `true` to skip FanFicFare and serve all FFNet scrapes through FicHub (the fallback tier). Default `false`. Useful when FFF breaks on a future site change.
+- Monitor dashboard control plane (AST-70..77) — env vars:
+  - `MONITOR_CONTROL_TOKEN` — **required** on the monitor container to enable all `/control/*` endpoints (kill switches, service restart, ARQ retry, on-demand backup, SQL console). Absent → endpoints return HTTP 503. Paste the same token into the dashboard on first use; it's saved in browser localStorage.
+  - `MONITOR_READONLY_DSN` — Postgres DSN for the read-only SQL console. Defaults to `postgresql://astral_readonly:astral_readonly@postgres:5432/astral`. The `astral_readonly` role is created by the `a3b4c5d6e7f8` migration and has SELECT-only grants + a 10s statement_timeout.
+  - `ASTRAL_READONLY_PASSWORD` — password baked into the role at migration time. Default `astral_readonly`; rotate in prod.
+  - `MONITOR_STATE_DIR` — audit log, on-demand backup dumps, and `deploys.jsonl` live here. Defaults to `/var/lib/astral-monitor`. Mounted via the `monitor_state` named volume.
+- Kill-switch persistence: the three boolean flags (`MANGADEX_DISABLED`, `FFNET_NEW_SCRAPER_DISABLED`, `MANGADEX_AUTO_SWITCH_SOURCE`) can be toggled live from the monitor dashboard. Values stored at `mon:flag:<KEY>` in Redis. Main app + scrapers read via `app.core.runtime_flags.flag_enabled()` — Redis override wins, falls back to `settings.<flag>` (5s in-process cache).
+- Monitor `/var/run/docker.sock` mount: now **read-write** (not `:ro`) so the control plane can restart containers and exec `pg_dump`. Every mutating endpoint is gated by `MONITOR_CONTROL_TOKEN`.
+- Deploy hook: `backend/scripts/deploy-hook.sh` is called at the end of a successful `docker-compose up -d`. Polls `/healthz` + `/health`, then appends a record to `/var/lib/astral-monitor/deploys.jsonl`. Surfaced in the "Recent deploys" block.
 
 ## SwiftData Gotchas
 

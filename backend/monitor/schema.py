@@ -187,6 +187,42 @@ class LogLine(BaseModel):
     msg: str
 
 
+class DeployEvent(BaseModel):
+    ts: datetime
+    images_pulled: list[str]
+    healthy: bool
+    duration_s: int
+    commit_sha: Optional[str] = None
+    actor: Optional[str] = None
+
+
+class DeploysBlock(BaseModel):
+    recent: list[DeployEvent]
+
+
+class EndpointBucket(BaseModel):
+    """Per-bucket latency for one endpoint, used by /metrics/endpoint."""
+    ts_ms: int
+    p50_ms: int
+    p95_ms: int
+    p99_ms: int
+    count: int
+    status_2xx: int = 0
+    status_3xx: int = 0
+    status_4xx: int = 0
+    status_5xx: int = 0
+
+
+class EndpointDetail(BaseModel):
+    method: str
+    path: str
+    window: Literal["1h", "6h", "24h", "7d", "30d"]
+    total_requests: int
+    error_rate_pct: float
+    peak_p99_ms: int
+    buckets: list[EndpointBucket]
+
+
 class MetricsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -205,6 +241,7 @@ class MetricsResponse(BaseModel):
     backups:  BackupsBlock
     cert:     CertBlock
     logs:     list[LogLine]
+    deploys:  DeploysBlock
 
     cost_meta:     Optional[DegradedMeta] = None
     services_meta: Optional[DegradedMeta] = None
@@ -214,3 +251,4 @@ class MetricsResponse(BaseModel):
     backups_meta:  Optional[DegradedMeta] = None
     cert_meta:     Optional[DegradedMeta] = None
     logs_meta:     Optional[DegradedMeta] = None
+    deploys_meta:  Optional[DegradedMeta] = None
