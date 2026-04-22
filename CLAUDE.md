@@ -148,7 +148,7 @@ main                    ← production releases (god branch, protected)
   - `Fixes AST-123`
   - `Closes AST-123`
   - `Resolves AST-123`
-- Multiple issues: one magic-word line per issue (`Fixes AST-123`, `Fixes AST-124`).
+- Multiple issues: one magic-word line per issue (`Fixes AST-123`, `Fixes AST-124`). The branch name only auto-closes the issue in its slug (e.g. `feature/ast-123-*` closes AST-123 only) — for a bundled PR that touches several issues, each must appear as its own `Fixes AST-NNN` line in the **PR body** (not just the commit message; Linear parses the PR description, not commit messages, for multi-close).
 
 ### Release log
 
