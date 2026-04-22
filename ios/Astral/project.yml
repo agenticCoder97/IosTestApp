@@ -20,6 +20,8 @@ packages:
     path: Packages/Networking
   DesignSystem:
     path: Packages/DesignSystem
+  StatsUI:
+    path: Packages/StatsUI
   ComicFeature:
     path: Packages/ComicFeature
   FanficFeature:
