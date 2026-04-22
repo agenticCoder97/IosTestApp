@@ -68,6 +68,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Monitor `/var/run/docker.sock` mount: now **read-write** (not `:ro`) so the control plane can restart containers and exec `pg_dump`. Every mutating endpoint is gated by `MONITOR_CONTROL_TOKEN`.
 - Deploy hook: `backend/scripts/deploy-hook.sh` is called at the end of a successful `docker-compose up -d`. Polls `/healthz` + `/health`, then appends a record to `/var/lib/astral-monitor/deploys.jsonl`. Surfaced in the "Recent deploys" block.
 
+## Production (OCI) Access
+
+- **SSH:** `ssh -i ~/.ssh/astral_oci ubuntu@astral-reader.duckdns.org` (user `ubuntu`, NOT `opc` — OCI rejects `opc` and prints "Please login as the user 'ubuntu'").
+- **Host:** `astral-server` (OCI Always Free A1 ARM instance).
+- **Compose root:** `/home/ubuntu/astral/backend/` — all `docker compose` commands must run from there. Containers are named `backend-<service>-1` (e.g., `backend-astral_monitor-1`).
+- **Env file:** `/home/ubuntu/astral/backend/.env` — add new env vars here, then `docker compose up -d --no-deps <service>` to pick them up without restarting the whole stack.
+- **Logs:** `docker compose logs -f <service>` for live tail. The monitor dashboard's Live log panel (/monitor/, AST-73) is the preferred in-browser surface.
+- **Nginx config:** lives under `/home/ubuntu/astral/backend/nginx/` and is volume-mounted into the nginx container. Reload with `docker compose exec nginx nginx -s reload` after edits.
+- **Do not run `alembic upgrade head` on prod without explicit user approval.** Read-only roles (e.g., `astral_readonly` from migration `a3b4c5d6e7f8`) need the `ASTRAL_READONLY_PASSWORD` env var set **before** the migration is applied.
+
 ## SwiftData Gotchas
 
 - **Never name a `@Model` property `description`** — conflicts with `CustomStringConvertible`. Use `comicDescription`, `fanficDescription`, etc.
