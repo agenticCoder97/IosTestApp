@@ -51,6 +51,13 @@ struct ComicReaderView: View {
     @State private var localPageURLs: [URL]?
     @State private var prevChapterPull: CGFloat = 0
     @State private var prevChapterTriggered = false
+    // AST-65 arming: edge-visibility timestamps drive a 0.5s arm delay.
+    // nil = edge not visible. Once armed, pull can fire the trigger.
+    @State private var topEdgeVisibleSince: Date? = nil
+    @State private var topEdgeArmedAt: Date? = nil
+    @State private var bottomEdgeVisibleSince: Date? = nil
+    @State private var bottomEdgeArmedAt: Date? = nil
+    @State private var hasCompletedInitialLayout = false
     @State private var showChapterList = false
     @State private var autoScrollActive = false
     @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
@@ -202,7 +209,19 @@ struct ComicReaderView: View {
         .ignoresSafeArea()
         .navigationBarHidden(true)
         .statusBarHidden(!showHUD)
-        .task(id: currentChapterIndex) { await loadPages() }
+        .task(id: currentChapterIndex) {
+            // Reset arming state so new chapter starts disarmed.
+            topEdgeVisibleSince = nil
+            topEdgeArmedAt = nil
+            bottomEdgeVisibleSince = nil
+            bottomEdgeArmedAt = nil
+            hasCompletedInitialLayout = false
+            prevChapterPull = 0
+            nextChapterPull = 0
+            prevChapterTriggered = false
+            nextChapterTriggered = false
+            await loadPages()
+        }
         .onAppear {
             let session = LocalReadingSession(contentType: "comic", storyId: comic.id)
             modelContext.insert(session)
@@ -344,20 +363,31 @@ struct ComicReaderView: View {
                 // Previous chapter pull trigger at top of scroll content
                 if !isFirstChapter {
                     PrevChapterTrigger(
+                        onVisibilityChange: { visible in
+                            guard hasCompletedInitialLayout else { return }
+                            if visible {
+                                topEdgeVisibleSince = .now
+                            } else {
+                                topEdgeVisibleSince = nil
+                                topEdgeArmedAt = nil
+                                prevChapterPull = 0
+                            }
+                        },
                         onProgressChange: { progress in
                             prevChapterPull = progress
                             if progress >= 1.0 && !prevChapterTriggered {
                                 prevChapterTriggered = true
-                                let generator = UIImpactFeedbackGenerator(style: .medium)
-                                generator.impactOccurred()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                Haptics.play(.triggerFire)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(300))
                                     goToPrevChapter()
                                     prevChapterTriggered = false
                                     prevChapterPull = 0
                                 }
                             }
                         },
-                        progress: prevChapterPull
+                        progress: prevChapterPull,
+                        isArmed: topEdgeArmedAt != nil
                     )
                 }
 
@@ -368,7 +398,10 @@ struct ComicReaderView: View {
                             LocalPageView(fileURL: url)
                         }
                         .id(index)
-                        .onAppear { currentPage = index }
+                        .onAppear {
+                            hasCompletedInitialLayout = true
+                            currentPage = index
+                        }
                     }
                 } else {
                     // Network pages
@@ -377,27 +410,41 @@ struct ComicReaderView: View {
                             ComicPageView(page: page)
                         }
                         .id(index)
-                        .onAppear { currentPage = index }
+                        .onAppear {
+                            hasCompletedInitialLayout = true
+                            currentPage = index
+                        }
                     }
                 }
 
                 // Next chapter pull trigger at bottom of scroll content
                 if !isLastChapter {
                     NextChapterTrigger(
+                        onVisibilityChange: { visible in
+                            guard hasCompletedInitialLayout else { return }
+                            if visible {
+                                bottomEdgeVisibleSince = .now
+                            } else {
+                                bottomEdgeVisibleSince = nil
+                                bottomEdgeArmedAt = nil
+                                nextChapterPull = 0
+                            }
+                        },
                         onProgressChange: { progress in
                             nextChapterPull = progress
                             if progress >= 1.0 && !nextChapterTriggered {
                                 nextChapterTriggered = true
-                                let generator = UIImpactFeedbackGenerator(style: .medium)
-                                generator.impactOccurred()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                Haptics.play(.triggerFire)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(300))
                                     goToNextChapter()
                                     nextChapterTriggered = false
                                     nextChapterPull = 0
                                 }
                             }
                         },
-                        progress: nextChapterPull
+                        progress: nextChapterPull,
+                        isArmed: bottomEdgeArmedAt != nil
                     )
                 }
             }
@@ -408,6 +455,20 @@ struct ComicReaderView: View {
             }
         )
         .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
+        .task(id: topEdgeVisibleSince) {
+            guard let since = topEdgeVisibleSince else { return }
+            try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
+            guard topEdgeVisibleSince == since, topEdgeArmedAt == nil else { return }
+            withAnimation(ReaderMotion.triggerRing) { topEdgeArmedAt = .now }
+            Haptics.play(.triggerArmed)
+        }
+        .task(id: bottomEdgeVisibleSince) {
+            guard let since = bottomEdgeVisibleSince else { return }
+            try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
+            guard bottomEdgeVisibleSince == since, bottomEdgeArmedAt == nil else { return }
+            withAnimation(ReaderMotion.triggerRing) { bottomEdgeArmedAt = .now }
+            Haptics.play(.triggerArmed)
+        }
     }
 
     /// Sentinel IDs for chapter-transition pages in the paged reader.
@@ -1237,21 +1298,28 @@ private extension Array {
 // MARK: - Chapter Triggers
 
 private let chapterTriggerHeight: CGFloat = 260
+private let chapterArmDelay: TimeInterval = 0.5
 
 /// Placed at the top of webtoon scroll content — scroll up to load previous chapter.
+/// Reports its visibility and pull progress upward; progress is gated on arming.
 private struct PrevChapterTrigger: View {
+    let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
     let progress: CGFloat
+    let isArmed: Bool
 
     var body: some View {
         GeometryReader { geo in
             let frame = geo.frame(in: .global)
-            // How much the trigger is pulled down below the top edge
             let visible = max(0, frame.maxY)
             let pct = min(visible / chapterTriggerHeight, 1.0)
+            let isVisible = visible > 0
             Color.clear
-                .onChange(of: pct) { _, newPct in
-                    onProgressChange(newPct)
+                .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
+                .onChange(of: pct) { _, new in
+                    // Only forward progress when the trigger is armed.
+                    // Reports 0 otherwise so the parent resets any cached pull.
+                    onProgressChange(isArmed ? new : 0)
                 }
         }
         .frame(height: chapterTriggerHeight)
@@ -1276,15 +1344,18 @@ private struct PrevChapterTrigger: View {
                     .font(AstralTypography.caption)
                     .foregroundStyle(AstralColors.muted)
             }
-            .opacity(progress > 0.02 ? 1 : 0.3)
+            .opacity(isArmed ? (progress > 0.02 ? 1 : 0.3) : 0)
+            .animation(ReaderMotion.triggerRing, value: isArmed)
         }
     }
 }
 
 /// Placed at the bottom of webtoon scroll content — scroll down to load next chapter.
 private struct NextChapterTrigger: View {
+    let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
     let progress: CGFloat
+    let isArmed: Bool
 
     var body: some View {
         GeometryReader { geo in
@@ -1292,9 +1363,11 @@ private struct NextChapterTrigger: View {
             let screenH = UIScreen.main.bounds.height
             let visible = max(0, screenH - frame.minY)
             let pct = min(visible / chapterTriggerHeight, 1.0)
+            let isVisible = visible > 0
             Color.clear
-                .onChange(of: pct) { _, newPct in
-                    onProgressChange(newPct)
+                .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
+                .onChange(of: pct) { _, new in
+                    onProgressChange(isArmed ? new : 0)
                 }
         }
         .frame(height: chapterTriggerHeight)
@@ -1319,7 +1392,8 @@ private struct NextChapterTrigger: View {
                     .font(AstralTypography.caption)
                     .foregroundStyle(AstralColors.muted)
             }
-            .opacity(progress > 0.02 ? 1 : 0.3)
+            .opacity(isArmed ? (progress > 0.02 ? 1 : 0.3) : 0)
+            .animation(ReaderMotion.triggerRing, value: isArmed)
         }
     }
 }
