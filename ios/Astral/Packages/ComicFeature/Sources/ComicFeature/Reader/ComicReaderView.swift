@@ -58,6 +58,7 @@ struct ComicReaderView: View {
     @State private var bottomEdgeVisibleSince: Date? = nil
     @State private var bottomEdgeArmedAt: Date? = nil
     @State private var hasCompletedInitialLayout = false
+    @State private var pageThrottle = ThrottledSetter<Int>(interval: 0.08)
     @State private var showChapterList = false
     @State private var autoScrollActive = false
     @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
@@ -220,6 +221,7 @@ struct ComicReaderView: View {
             nextChapterPull = 0
             prevChapterTriggered = false
             nextChapterTriggered = false
+            pageThrottle.reset()
             await loadPages()
         }
         .onAppear {
@@ -400,7 +402,7 @@ struct ComicReaderView: View {
                         .id(index)
                         .onAppear {
                             hasCompletedInitialLayout = true
-                            currentPage = index
+                            pageThrottle.set(index) { currentPage = $0 }
                         }
                     }
                 } else {
@@ -412,7 +414,7 @@ struct ComicReaderView: View {
                         .id(index)
                         .onAppear {
                             hasCompletedInitialLayout = true
-                            currentPage = index
+                            pageThrottle.set(index) { currentPage = $0 }
                         }
                     }
                 }
