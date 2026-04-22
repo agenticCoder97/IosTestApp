@@ -219,7 +219,7 @@ struct FanficReaderView: View {
             if showReaderBar {
                 chapterFavOverlay
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, 56)
+                    .padding(.top, 44)
                     .padding(.trailing, 16)
                     .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .topTrailing)))
                     .allowsHitTesting(showReaderBar)
@@ -335,22 +335,22 @@ struct FanficReaderView: View {
     }
 
     private var chapterFavOverlay: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             ZStack {
                 Circle()
                     .fill(.ultraThinMaterial)
-                    .frame(width: 58, height: 58)
+                    .frame(width: 48, height: 48)
                 VStack(spacing: 1) {
                     Text(chapterDisplayNum)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(AstralColors.white)
                         .monospacedDigit()
                     Capsule()
                         .fill(AstralColors.muted)
-                        .frame(width: 22, height: 1.5)
+                        .frame(width: 18, height: 1.5)
                         .rotationEffect(.degrees(-45))
                     Text("\(fanfic.totalChapters)")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AstralColors.muted)
                         .monospacedDigit()
                 }
@@ -362,9 +362,9 @@ struct FanficReaderView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 40, height: 40)
                     Image(systemName: "list.bullet")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(AstralColors.white)
                 }
             }
@@ -379,9 +379,9 @@ struct FanficReaderView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 40, height: 40)
                     Image(systemName: fanfic.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(fanfic.isFavorite ? AstralColors.error : AstralColors.white)
                         .symbolEffect(.bounce, value: fanfic.isFavorite)
                 }
@@ -411,8 +411,8 @@ struct FanficReaderView: View {
             Spacer()
         }
         .padding(.horizontal, 16)
-        .padding(.top, 56)
-        .padding(.bottom, 12)
+        .padding(.top, 44)
+        .padding(.bottom, 10)
         .background(.ultraThinMaterial)
     }
 
