@@ -693,7 +693,13 @@ struct ComicReaderView: View {
                     Slider(
                         value: Binding(
                             get: { Double(currentPage) },
-                            set: { currentPage = Int($0.rounded()) }
+                            set: { newValue in
+                                let newPage = Int(newValue.rounded())
+                                if newPage != currentPage {
+                                    currentPage = newPage
+                                    Haptics.play(.pageTurn)
+                                }
+                            }
                         ),
                         in: 0...Double(pages.count - 1),
                         step: 1
@@ -903,6 +909,7 @@ struct ComicReaderView: View {
 
     private func goToPrevChapter() {
         guard !isFirstChapter else { return }
+        Haptics.play(.chapterNav)
         withAnimation(AstralAnimation.quick) {
             currentChapterIndex -= 1
             currentPage = 0
@@ -911,6 +918,7 @@ struct ComicReaderView: View {
 
     private func goToNextChapter() {
         guard !isLastChapter else { return }
+        Haptics.play(.chapterNav)
         withAnimation(AstralAnimation.quick) {
             currentChapterIndex += 1
             currentPage = 0
@@ -956,6 +964,7 @@ struct ComicReaderView: View {
             AstralLogger.info("Bookmark added: ch \(chapter.chapterNumber) page \(currentPage + 1)", context: "ComicReader")
         }
         try? modelContext.save()
+        Haptics.play(.bookmark)
     }
 
     // MARK: - Long Press Actions
