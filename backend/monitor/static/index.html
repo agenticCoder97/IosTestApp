@@ -361,12 +361,17 @@
     display: flex; flex-direction: column; gap: 8px;
   }
   .svc-face.back .term-body{
-    flex: 1;
+    flex: 1; min-height: 0;
     background: #0a0a0b; border: 1px solid var(--border); border-radius: 6px;
     padding: 10px; font-family: "JetBrains Mono", monospace; font-size: 12px;
-    color: var(--body);
-    overflow: auto;
+    line-height: 1.55; color: var(--body);
+    overflow-y: scroll; overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
+  .svc-face.back .term-body::-webkit-scrollbar{ width: 8px; }
+  .svc-face.back .term-body::-webkit-scrollbar-track{ background: transparent; }
+  .svc-face.back .term-body::-webkit-scrollbar-thumb{ background: var(--border); border-radius: 4px; }
+  .svc-face.back .term-body::-webkit-scrollbar-thumb:hover{ background: var(--muted); }
   .svc-face.back .term-close{
     position: absolute; top: 8px; right: 8px;
     width: 22px; height: 22px;
