@@ -37,8 +37,6 @@ struct ComicReaderView: View {
     @State private var showSettings = false
     @AppStorage("comicReaderMode") private var readingMode: ReadingMode = .webtoon
     @AppStorage("comicReaderBrightness") private var brightnessOverlay: Double = 0.0
-    @State private var showPageActions = false
-    @State private var longPressedPage: PageResponse?
     @Query private var bookmarks: [LocalBookmark]
     @State private var nextChapterPull: CGFloat = 0
     @State private var nextChapterTriggered = false
@@ -262,15 +260,6 @@ struct ComicReaderView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .confirmationDialog(
-            "Page \(currentPage + 1)",
-            isPresented: $showPageActions,
-            titleVisibility: .visible
-        ) {
-            Button("Save to Photos") { saveCurrentPage() }
-            Button("Share")          { shareCurrentPage() }
-            Button("Cancel", role: .cancel) {}
-        }
         .sheet(isPresented: $showChapterList) {
             ComicChapterListSheet(
                 chapters: chapters,
@@ -475,54 +464,6 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(TapGesture().onEnded { toggleHUD() })
-    }
-
-    // MARK: - Tap Zones
-
-    private var tapZoneOverlay: some View {
-        GeometryReader { geo in
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(.clear)
-                    .frame(width: geo.size.width / 3)
-                    .onTapGesture { handleLeftTap() }
-
-                Rectangle()
-                    .fill(.clear)
-                    .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
-                    .onTapGesture { toggleHUD() }
-
-                Rectangle()
-                    .fill(.clear)
-                    .frame(width: geo.size.width / 3)
-                    .onTapGesture { handleRightTap() }
-            }
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                    longPressedPage = pages[safe: currentPage]
-                    showPageActions = true
-                }
-            )
-        }
-        .allowsHitTesting(true)
-    }
-
-    private func handleLeftTap() {
-        switch readingMode {
-        case .webtoon:     toggleHUD()
-        case .leftToRight: prevPage()
-        case .rightToLeft: nextPage()
-        }
-    }
-
-    private func handleRightTap() {
-        switch readingMode {
-        case .webtoon:     toggleHUD()
-        case .leftToRight: nextPage()
-        case .rightToLeft: prevPage()
-        }
     }
 
     private func toggleHUD() {
@@ -938,8 +879,6 @@ struct ComicReaderView: View {
 
     // MARK: - Long Press Actions
 
-    private func saveCurrentPage() {}
-    private func shareCurrentPage() {}
 
     // MARK: - Loading
 
