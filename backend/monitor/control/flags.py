@@ -10,12 +10,15 @@ flag changes on its next job tick with no restart needed.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
 from monitor.cache import get_cache_redis
+
+logger = logging.getLogger("monitor.flags")
 
 # Ordered: the UI renders toggles in this order.
 MANAGED_FLAGS: list[str] = [
@@ -68,8 +71,8 @@ async def read_all() -> list[FlagState]:
                     changed_by=data.get("changed_by"),
                 ))
                 continue
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("flag override for %s failed to parse, falling back to env: %s", key, e)
         env_raw = os.getenv(key)
         if env_raw is not None:
             out.append(FlagState(
