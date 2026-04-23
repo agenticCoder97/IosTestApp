@@ -38,6 +38,18 @@ async def require_auth(
     return request.client.host if request.client else "unknown"
 
 
+# ── config bootstrap ──────────────────────────────────────────────────
+# Serves the control token to the browser so the dashboard can seed
+# localStorage without prompting. Gated only by nginx Basic Auth on
+# /monitor/ — fine for this single-user deployment since holding the
+# Basic Auth password already grants full control-plane access.
+
+@router.get("/config")
+async def get_config() -> JSONResponse:
+    token = os.getenv("MONITOR_CONTROL_TOKEN")
+    return JSONResponse({"token": token or None})
+
+
 # ── flags (AST-70) ────────────────────────────────────────────────────
 
 class FlagPut(BaseModel):

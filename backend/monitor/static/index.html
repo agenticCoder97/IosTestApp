@@ -1082,8 +1082,6 @@
       <span>data as of <span id="asof">—</span></span>
       <span>·</span>
       <span><kbd>r</kbd> refresh · <kbd>1</kbd>–<kbd>4</kbd> range · <kbd>/</kbd> search</span>
-      <span>·</span>
-      <a id="ctrl-logout" href="#" class="text-muted hover:text-white" title="forget control token">🔑 clear token</a>
     </div>
   </footer>
 
@@ -1124,20 +1122,6 @@
   </div>
 </div>
 
-
-<!-- ─── TOKEN PROMPT ───────────────────────────────────────────────── -->
-<div id="token-modal" class="endpoint-modal" style="display:none;">
-  <div class="endpoint-dialog card p-5" style="max-width:480px;">
-    <div class="text-[11px] tracking-[.14em] uppercase text-muted">Auth required</div>
-    <div class="text-white font-semibold mt-1 mb-3">Monitor control token</div>
-    <div class="text-muted text-sm mb-3">This action requires the control token (set in <code>MONITOR_CONTROL_TOKEN</code>). It's stored in your browser's localStorage — clear it by running <code>localStorage.removeItem('monitor_control_token')</code> in the console.</div>
-    <input id="token-input" type="password" class="search w-full" placeholder="paste token…">
-    <div class="flex gap-2 justify-end mt-3">
-      <button id="token-cancel" class="ibtn">Cancel</button>
-      <button id="token-save"   class="ibtn">Save</button>
-    </div>
-  </div>
-</div>
 
 <style>
   .endpoint-modal{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; }

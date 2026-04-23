@@ -25,40 +25,31 @@
   function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
   function clearToken() { localStorage.removeItem(TOKEN_KEY); }
 
-  function promptForToken() {
-    return new Promise((resolve) => {
-      const modal = document.getElementById('token-modal');
-      const input = document.getElementById('token-input');
-      const save = document.getElementById('token-save');
-      const cancel = document.getElementById('token-cancel');
-      modal.style.display = 'flex';
-      input.value = '';
-      input.focus();
-      const done = (value) => {
-        modal.style.display = 'none';
-        save.onclick = null;
-        cancel.onclick = null;
-        input.onkeydown = null;
-        resolve(value);
-      };
-      save.onclick = () => { const v = input.value.trim(); if (v) { setToken(v); done(v); } };
-      cancel.onclick = () => done(null);
-      input.onkeydown = (e) => { if (e.key === 'Enter') save.click(); if (e.key === 'Escape') cancel.click(); };
-    });
+  // Seeds localStorage from the server's MONITOR_CONTROL_TOKEN. Nginx Basic
+  // Auth on /monitor/ is the real gate — the in-browser token is just a
+  // convenience so the user never sees a token-paste modal.
+  async function seedTokenFromServer() {
+    try {
+      const resp = await fetch('control/config');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data && data.token) setToken(data.token);
+    } catch (_) { /* offline / CSP / 404 — leave token as-is */ }
   }
 
   async function authFetch(url, opts) {
     opts = opts || {};
-    let token = getToken();
-    if (!token) {
-      token = await promptForToken();
-      if (!token) throw new Error('control token required');
-    }
+    if (!getToken()) await seedTokenFromServer();
+    const token = getToken();
     opts.headers = Object.assign({}, opts.headers, { 'X-Monitor-Auth': token });
     const resp = await fetch(url, opts);
     if (resp.status === 401) {
       clearToken();
-      throw new Error('invalid control token — cleared, try again');
+      await seedTokenFromServer();
+      throw new Error('control token rejected — refreshed, retry');
+    }
+    if (resp.status === 503) {
+      throw new Error('control plane disabled (MONITOR_CONTROL_TOKEN unset)');
     }
     return resp;
   }
@@ -677,8 +668,9 @@
     const epModal = document.getElementById('endpoint-modal');
     if (epModal) epModal.addEventListener('click', (e) => { if (e.target.id === 'endpoint-modal') closeEndpointModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEndpointModal(); });
-    const logoutLink = document.getElementById('ctrl-logout');
-    if (logoutLink) logoutLink.addEventListener('click', (e) => { e.preventDefault(); clearToken(); toast('token cleared'); });
+
+    // One-time seed from the server so control actions never trigger a prompt.
+    seedTokenFromServer();
 
     ensureLogToolbar();
     ensureBackupButton();
