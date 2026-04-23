@@ -717,12 +717,6 @@
             </div>
           </div>
         </div>
-        <div class="flex gap-2 text-[11px] text-muted mono">
-          <span class="badge badge-ok">2xx <span id="sc-2" class="mono text-body ml-1">18,421</span></span>
-          <span class="badge badge-muted">3xx <span id="sc-3" class="mono text-body ml-1">320</span></span>
-          <span class="badge badge-warn">4xx <span id="sc-4" class="mono text-body ml-1">87</span></span>
-          <span class="badge badge-crit">5xx <span id="sc-5" class="mono text-body ml-1">3</span></span>
-        </div>
       </div>
 
       <div class="chart-wrap mt-4">
@@ -1207,6 +1201,9 @@ STATE.collapsed = (() => {
     return Object.assign({}, COLLAPSE_DEFAULTS);
   }
 })();
+
+// AST-84 — codes present in the Set are DIMMED in the Status Codes panel.
+STATE.statusFilter = new Set();
 
 function applyCollapsed(id){
   const head = document.getElementById(id);
@@ -1745,10 +1742,6 @@ function renderRequests(){
     document.getElementById('p95-now').innerHTML = `0<span class="text-muted text-sm ml-0.5">ms</span>`;
     document.getElementById('req-total').textContent = '0';
     document.getElementById('req-window').textContent = RANGE_LABELS[STATE.range];
-    document.getElementById('sc-2').textContent = '0';
-    document.getElementById('sc-3').textContent = '0';
-    document.getElementById('sc-4').textContent = '0';
-    document.getElementById('sc-5').textContent = '0';
     document.getElementById('statusBars').innerHTML = '';
     document.getElementById('slowest').innerHTML =
       '<tr><td colspan="3" class="text-muted mono text-[12px] py-3 text-center">no requests to rank</td></tr>';
@@ -1760,17 +1753,14 @@ function renderRequests(){
   document.getElementById('p95-now').innerHTML = `${Math.round(r.series_p95_ms.at(-1))}<span class="text-muted text-sm ml-0.5">ms</span>`;
   document.getElementById('req-total').textContent = r.total.toLocaleString();
   document.getElementById('req-window').textContent = RANGE_LABELS[STATE.range];
-  document.getElementById('sc-2').textContent = r.status_codes['2xx'].toLocaleString();
-  document.getElementById('sc-3').textContent = r.status_codes['3xx'].toLocaleString();
-  document.getElementById('sc-4').textContent = r.status_codes['4xx'].toLocaleString();
-  document.getElementById('sc-5').textContent = r.status_codes['5xx'].toLocaleString();
 
-  // status bars (right panel)
+  // AST-84 — status bars (right panel) become click-to-dim toggles.
   const total = Object.values(r.status_codes).reduce((a,b)=>a+b,0);
   const colors = { '2xx':'var(--success)', '3xx':'var(--muted)', '4xx':'var(--warning)', '5xx':'var(--error)' };
   document.getElementById('statusBars').innerHTML = Object.entries(r.status_codes).map(([k,v])=>{
     const pct = (v/total*100).toFixed(v>total*0.1?0:2);
-    return `<div>
+    const dim = STATE.statusFilter.has(k) ? ' svc-dim' : '';
+    return `<div class="sc-row${dim}" data-code="${k}" style="cursor:pointer">
       <div class="flex justify-between text-[12px] mono">
         <span style="color:${colors[k]}">${k}</span>
         <span class="text-body">${v.toLocaleString()} <span class="text-muted">· ${pct}%</span></span>
@@ -1778,6 +1768,14 @@ function renderRequests(){
       <div class="bar-track mt-1"><span style="width:${Math.max(0.5,(v/total*100))}%; background:${colors[k]}"></span></div>
     </div>`;
   }).join('');
+  document.querySelectorAll('#statusBars .sc-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const code = row.dataset.code;
+      if (STATE.statusFilter.has(code)) STATE.statusFilter.delete(code);
+      else STATE.statusFilter.add(code);
+      row.classList.toggle('svc-dim', STATE.statusFilter.has(code));
+    });
+  });
 
   // slowest table
   document.getElementById('slowest').innerHTML = r.slowest.map(e=>`
