@@ -4,6 +4,10 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/ast-92-docker-exec-terminal — 2026-04-23
+
+- **[AST-92](https://linear.app/nnetraganti/issue/AST-92)** — Monitor dashboard docker-exec terminal channel. Terminal icon on each service card now opens a real xterm.js shell backed by `docker exec` inside the container, brokered by the monitor FastAPI over WebSocket. New `POST /control/exec/start` + `WS /control/exec/{session_id}` endpoints, gated by `MONITOR_CONTROL_TOKEN` (header for POST, subprotocol for WS), Origin allowlist, and compose-service allowlist (`postgres, redis, fastapi, arq_worker, nginx, certbot` — `astral_monitor` deliberately excluded). Binary WS frames carry stdio; text frames carry JSON control (`resize` / `ping` / `pong` / `closed`). Minimize (−) keeps scroll-back and the live shell across flip-back/flip-forward; close (✕) fully tears down and releases the session cap. 10-minute idle watchdog + 1 MB/s stdout rate cap. Audit rows `exec.start`/`exec.close` with duration + orphan flag. Nginx `/monitor/` gains WebSocket upgrade headers (`map`, `proxy_http_version 1.1`, Upgrade/Connection, `proxy_read_timeout 3600s`, `proxy_buffering off`). Cache-busted to `controls.js?v=5`. Fixes [AST-92](https://linear.app/nnetraganti/issue/AST-92).
+
 ## fix/reader-tap-trigger-and-topbar-consolidation — 2026-04-23
 
 - [ios] Reader trigger + top-bar consolidation. Swapped chrome reveal from `.pressReveal` (touch-down) to `.onTapGesture` on both readers so the finger-down that begins a scroll no longer flashes the top bar. Folded the circular chapter-badge + heart overlay into each reader's top bar as a tight `X / Y` label next to the chapter-list button; deleted the now-redundant `chapterFavOverlay` property and its mount points.
