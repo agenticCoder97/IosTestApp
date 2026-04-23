@@ -123,14 +123,6 @@
   .seg button:hover{ color:var(--body); }
   .seg button.active{ background: var(--surface); color: var(--white); box-shadow: inset 0 0 0 0.5px var(--border); }
 
-  /* Env pill (PROD) — uses gold tint */
-  .env-pill{
-    display:inline-flex; align-items:center; gap:6px;
-    padding: 3px 9px; border-radius:999px;
-    background: var(--gold-tint); color: var(--gold);
-    font: 600 11px/1 "Inter",sans-serif; letter-spacing:.1em;
-  }
-
   /* Kbd */
   kbd{
     display:inline-block; padding: 1px 6px; border-radius:4px;
@@ -188,12 +180,6 @@
   /* Refresh spin */
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { animation: spin 700ms linear; }
-
-  /* Toggle */
-  .tgl{ width:30px; height:18px; background:var(--elevated); border-radius:999px; position:relative; cursor:pointer; box-shadow: inset 0 0 0 0.5px var(--border); transition: background 200ms ease; }
-  .tgl::after{ content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--muted); transition: all 200ms cubic-bezier(0.22,1,0.36,1); }
-  .tgl.on{ background: var(--gold-tint); }
-  .tgl.on::after{ left:14px; background: var(--gold); }
 
   /* Chart containers */
   .chart-wrap{ width:100%; aspect-ratio: 16 / 6; min-height:160px; }
@@ -275,35 +261,6 @@
   .burn-track > span{ flex:1; background: rgba(107,107,122,.2); border-radius:2px; }
   .burn-track > span.used{ background: var(--gold); }
   .burn-track > span.over{ background: var(--error); }
-
-  /* Incidents timeline strip */
-  .timeline{
-    position:relative; height:38px;
-    background: repeating-linear-gradient(to right,
-      transparent 0, transparent calc(100%/24 - 1px),
-      rgba(42,42,48,.6) calc(100%/24 - 1px), rgba(42,42,48,.6) calc(100%/24));
-    border-radius:6px; box-shadow: inset 0 0 0 0.5px var(--border);
-    overflow:hidden;
-  }
-  .timeline .ev{
-    position:absolute; top:6px; height:26px; border-radius:3px; cursor:pointer;
-    transition: transform 180ms cubic-bezier(0.22,1,0.36,1), box-shadow 180ms ease;
-    display:flex; align-items:center; padding:0 6px; overflow:hidden;
-    font: 500 10px/1 "JetBrains Mono",monospace; color:rgba(10,10,11,.85); white-space:nowrap;
-  }
-  .timeline .ev:hover{ transform: scaleY(1.08); box-shadow: 0 0 0 1px rgba(255,255,255,.15); z-index:2; }
-  .timeline .ev.warn{ background: rgba(255,167,38,.75); }
-  .timeline .ev.ok{   background: rgba(76,175,80,.7); }
-  .timeline .ev.crit{ background: rgba(239,83,80,.8); }
-  .timeline .ev.info{ background: rgba(201,168,76,.7); }
-  .timeline .hr-label{
-    position:absolute; bottom:2px; font: 400 9px/1 "JetBrains Mono",monospace;
-    color: var(--muted); transform: translateX(-50%); pointer-events:none;
-  }
-  .timeline .now-line{
-    position:absolute; top:0; bottom:0; width:1px; background: var(--gold);
-    box-shadow: 0 0 6px rgba(201,168,76,.6);
-  }
 
   /* Uptime probe grid */
   .uptime-grid{ display:grid; grid-template-columns: repeat(60, 1fr); gap:2px; }
@@ -579,8 +536,6 @@
       <span class="text-muted mono text-[11px]">· oci monitor</span>
     </div>
 
-    <span class="env-pill"><span class="dot ok"></span>PROD</span>
-
     <!-- Live indicator -->
     <span class="hidden md:inline-flex items-center gap-1.5 mono text-[11px] text-muted">
       <span class="dot ok live-dot"></span>
@@ -610,11 +565,6 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
     </button>
 
-    <!-- Auto-refresh toggle -->
-    <div class="flex items-center gap-2">
-      <span class="text-[11px] text-muted hidden sm:inline">auto</span>
-      <span id="auto" class="tgl on" role="switch" aria-checked="true"></span>
-    </div>
   </div>
 </header>
 
@@ -646,7 +596,7 @@
         <div class="hr mt-4 pt-4">
           <div class="kv">
             <span class="k">budget alert</span>
-            <span class="v flex items-center gap-1.5"><span class="dot ok"></span>armed</span>
+            <span class="v">armed</span>
           </div>
           <div class="kv">
             <span class="k">billing mode</span>
@@ -722,24 +672,8 @@
   <div class="section-head" id="sec-services">
     <span class="crumb">astral / oci / <span class="cur">service health</span></span>
     <span class="rule"></span>
-    <span class="mono text-[11px] text-muted">docker compose ps · 6 services · <span id="inc-count">3</span> incidents in 24h</span>
+    <span class="mono text-[11px] text-muted">docker compose ps · 6 services</span>
   </div>
-
-  <!-- Incidents timeline (GCP Ops) -->
-  <section class="card p-3 sm:p-4 mb-3">
-    <div class="flex items-center justify-between mb-2">
-      <div class="text-[11px] tracking-[.14em] uppercase text-muted">Incidents · last 24h</div>
-      <div class="flex items-center gap-2 text-[11px] text-muted mono">
-        <span class="flex items-center gap-1"><span class="dot" style="background:var(--warning); width:6px; height:6px;"></span>warn</span>
-        <span class="flex items-center gap-1"><span class="dot crit" style="width:6px; height:6px; box-shadow:none;"></span>crit</span>
-        <span class="flex items-center gap-1"><span class="dot" style="background:var(--gold); width:6px; height:6px;"></span>info</span>
-      </div>
-    </div>
-    <div class="timeline" id="timeline">
-      <div class="now-line" style="right:0"></div>
-    </div>
-    <div class="relative mt-1" style="height:12px;" id="timeline-labels"></div>
-  </section>
 
   <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     <!-- cards injected below -->
@@ -911,7 +845,7 @@
 
       <div class="hr mt-4 pt-4">
         <table class="z">
-          <thead><tr><th>started</th><th>took</th><th>size</th><th>status</th></tr></thead>
+          <thead><tr><th>started</th><th>took</th><th>size</th></tr></thead>
           <tbody id="bk-rows"></tbody>
         </table>
       </div>
@@ -1192,11 +1126,9 @@ const RANGE_LABELS = { '1h':'last 1h', '6h':'last 6h','24h':'last 24h','7d':'las
 
 const STATE = {
   range: '6h',
-  auto: true,
   logFilter: '',
   svcFilter: 'all',
   data: null,
-  autoTimer: null,
 };
 // Expose STATE so the controls.js companion can read the current
 // range / service filter without duplicating state.
@@ -1425,11 +1357,11 @@ function genDataMock(range){
       last_pg_dump:'2026-04-20T03:00:12Z', last_size_bytes:2.05e9, status:'ok', next_run_in_s: 45588,
       bucket:'astral-backups', retention_days:30,
       recent_runs:[
-        { started:'2026-04-20T03:00:00Z', duration_s: 8.4,  size_bytes: 2.05e9, status:'ok' },
-        { started:'2026-04-19T03:00:00Z', duration_s: 7.9,  size_bytes: 1.98e9, status:'ok' },
-        { started:'2026-04-18T03:00:00Z', duration_s: 8.1,  size_bytes: 1.96e9, status:'ok' },
-        { started:'2026-04-17T03:00:00Z', duration_s: 7.7,  size_bytes: 1.93e9, status:'ok' },
-        { started:'2026-04-16T03:00:00Z', duration_s: 9.2,  size_bytes: 1.90e9, status:'ok' },
+        { started:'2026-04-20T03:00:00Z', duration_s: 8.4,  size_bytes: 2.05e9 },
+        { started:'2026-04-19T03:00:00Z', duration_s: 7.9,  size_bytes: 1.98e9 },
+        { started:'2026-04-18T03:00:00Z', duration_s: 8.1,  size_bytes: 1.96e9 },
+        { started:'2026-04-17T03:00:00Z', duration_s: 7.7,  size_bytes: 1.93e9 },
+        { started:'2026-04-16T03:00:00Z', duration_s: 9.2,  size_bytes: 1.90e9 },
       ]
     },
     cert:{ domain:'astral-reader.duckdns.org', issuer:"Let's Encrypt R11",
@@ -1447,16 +1379,6 @@ function genDataMock(range){
         burn: { '1h': +(rnd()*0.6).toFixed(2), '6h': +(rnd()*0.8).toFixed(2), '24h': +(rnd()*1.2).toFixed(2) },
       }
     },
-    incidents: (function(){
-      // 24h timeline (0 = 24h ago, 1 = now); one warn spike + 2 info events
-      return [
-        { id:'inc-0412', startPct: 0.08, endPct: 0.13, sev:'info', title:'certbot restart', svc:'certbot' },
-        { id:'inc-0318', startPct: 0.32, endPct: 0.36, sev:'warn', title:'p95 spike 812ms',  svc:'fastapi' },
-        { id:'inc-0291', startPct: 0.58, endPct: 0.62, sev:'info', title:'pg checkpoint slow', svc:'postgres' },
-        { id:'inc-0144', startPct: 0.78, endPct: 0.81, sev:'warn', title:'ao3 scrape 429',   svc:'arq_worker' },
-        { id:'inc-0098', startPct: 0.93, endPct: 0.96, sev:'info', title:'backup complete',   svc:'postgres' },
-      ];
-    })(),
     uptime_checks: [
       {
         name: 'api.health',
@@ -1836,10 +1758,8 @@ function renderBackups(){
       <td class="mono text-body">${r.started.slice(0,10)} <span class="text-muted">${d.toUTCString().slice(17,25)}</span></td>
       <td class="mono">${r.duration_s}s</td>
       <td class="mono">${fmtBytes(r.size_bytes)}</td>
-      <td><span class="badge ${r.status==='ok'?'badge-ok':'badge-warn'}"><span class="dot ${r.status==='ok'?'ok':'warn'}"></span>${r.status.toUpperCase()}</span></td>
     </tr>`;
   }).join('');
-  // countdown
   const s = b.next_run_in_s;
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
   document.getElementById('bk-next').textContent = `${h}h ${pad2(m)}m`;
@@ -2155,16 +2075,8 @@ function doRefresh(){
 }
 document.getElementById('refresh').addEventListener('click', doRefresh);
 
-// auto toggle
-function setAuto(on){
-  STATE.auto = on;
-  const el = document.getElementById('auto');
-  el.classList.toggle('on', on);
-  el.setAttribute('aria-checked', on);
-  if(STATE.autoTimer){ clearInterval(STATE.autoTimer); STATE.autoTimer=null; }
-  if(on){ STATE.autoTimer = setInterval(()=> { refreshAll(); }, 30_000); }
-}
-document.getElementById('auto').addEventListener('click', ()=> setAuto(!STATE.auto));
+// AST-81 — auto-refresh ticks unconditionally every 30s (no user toggle).
+setInterval(() => { refreshAll(); }, 30_000);
 
 // log filter
 document.getElementById('log-filter').addEventListener('input', e=>{
@@ -2201,7 +2113,6 @@ document.addEventListener('keydown', e=>{
    BOOT
    ========================================================================= */
 refreshAll();
-setAuto(true);
 </script>
 
 <!-- control plane UI — decorated after the main renderer settles.
