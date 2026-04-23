@@ -1633,6 +1633,21 @@ function sparkSvg(points, {w=100, h=28, tone=''}={}){
 function drawRequestChart(rps, p95){
   const svg = document.getElementById('reqChart');
   const W = 800, H = 220, pad = { l: 34, r: 34, t: 14, b: 22 };
+  // Need at least 2 points to draw a line; fewer → divide-by-zero in `step`
+  // below produced NaN path coordinates (`MNaN,14 LNaN,…`) that SVG rejects.
+  if (!rps || rps.length < 2) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', '50%');
+    t.setAttribute('y', '50%');
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('fill', '#6B6B7A');
+    t.setAttribute('font-family', 'JetBrains Mono');
+    t.setAttribute('font-size', '12');
+    t.textContent = '(awaiting data — need ≥2 samples in window)';
+    svg.appendChild(t);
+    return;
+  }
   const maxR = Math.max(...rps), minR = 0;
   const maxL = Math.max(...p95), minL = 0;
   const step = (W - pad.l - pad.r) / (rps.length - 1);
@@ -2450,6 +2465,6 @@ applyAllCollapsed();
      FastAPI app.mount("/static", ...) inside astral_monitor. An absolute
      "/static/..." path collides with nginx's `location /static/` block
      (aliased to the media volume) and returns 404. -->
-<script src="static/controls.js?v=11"></script>
+<script src="static/controls.js?v=12"></script>
 </body>
 </html>
