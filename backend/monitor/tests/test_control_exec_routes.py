@@ -1,6 +1,8 @@
 """HTTP-level tests for POST /control/exec/start (AST-92)."""
 from __future__ import annotations
 
+import json
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -168,10 +170,6 @@ def test_ws_accepts_with_subprotocol_and_allowed_origin(app_with_token):
     ) as ws:
         # Just accept/close — pumps land in Task 5.
         ws.close()
-
-
-import json
-import time
 
 
 def test_ws_passes_binary_stdin_to_docker_socket(app_with_token):

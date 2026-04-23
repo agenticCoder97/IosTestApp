@@ -206,6 +206,7 @@ async def pump_stdout(sess: Session, send_bytes: Callable[[bytes], Awaitable[Non
         if window_bytes > STDOUT_RATE_CAP_BPS:
             sess.overflow_throttled += 1
             await asyncio.sleep(0.05)
+            window_start, window_bytes = time.monotonic(), 0
         try:
             await send_bytes(chunk)
         except Exception:
@@ -225,7 +226,10 @@ async def pump_stdin(
             return
         sess.last_activity = time.monotonic()
         if msg.get("bytes") is not None:
-            await asyncio.to_thread(sess.sock._sock.sendall, msg["bytes"])
+            try:
+                await asyncio.to_thread(sess.sock._sock.sendall, msg["bytes"])
+            except Exception:
+                return
             continue
         text = msg.get("text")
         if not text:
