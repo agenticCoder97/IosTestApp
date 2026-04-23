@@ -20,6 +20,8 @@ def app_with_token(monkeypatch):
     class _Sock:
         _sock = MagicMock()
         def close(self): pass
+    # Ensure recv returns empty bytes so pump_stdout exits cleanly on first read.
+    _Sock._sock.recv.return_value = b""
     api.exec_start.return_value = _Sock()
     api.exec_inspect.return_value = {"Running": False}
 
@@ -166,3 +168,51 @@ def test_ws_accepts_with_subprotocol_and_allowed_origin(app_with_token):
     ) as ws:
         # Just accept/close — pumps land in Task 5.
         ws.close()
+
+
+import json
+import time
+
+
+def test_ws_passes_binary_stdin_to_docker_socket(app_with_token):
+    from monitor.control import exec as exec_mod
+    client = TestClient(app_with_token)
+    sid = _start_session_sync(client)
+    sess = exec_mod._REGISTRY[sid]
+    with client.websocket_connect(
+        f"/control/exec/{sid}",
+        subprotocols=["monitor-token", "s3cret"],
+    ) as ws:
+        ws.send_bytes(b"ls -la\n")
+        time.sleep(0.05)
+    sent = sess.sock._sock.sendall.call_args_list
+    payloads = [call.args[0] for call in sent]
+    assert b"ls -la\n" in payloads
+
+
+def test_ws_resize_frame_calls_exec_resize_height_first(app_with_token):
+    client = TestClient(app_with_token)
+    sid = _start_session_sync(client)
+    with client.websocket_connect(
+        f"/control/exec/{sid}",
+        subprotocols=["monitor-token", "s3cret"],
+    ) as ws:
+        ws.send_text(json.dumps({"type": "resize", "cols": 132, "rows": 50}))
+        time.sleep(0.05)
+    from monitor.control.docker_ops import _docker_client
+    api = _docker_client().api
+    # Initial resize (80x24 from start_session) + our 132x50 frame.
+    calls = api.exec_resize.call_args_list
+    assert calls[-1].kwargs == {"height": 50, "width": 132}
+
+
+def test_ws_ping_receives_pong(app_with_token):
+    client = TestClient(app_with_token)
+    sid = _start_session_sync(client)
+    with client.websocket_connect(
+        f"/control/exec/{sid}",
+        subprotocols=["monitor-token", "s3cret"],
+    ) as ws:
+        ws.send_text(json.dumps({"type": "ping"}))
+        frame = ws.receive_text()
+    assert json.loads(frame) == {"type": "pong"}

@@ -7,12 +7,13 @@ binary-frame-for-stdio + text-JSON-for-control form.
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 import re
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from monitor.control.audit import record as audit_record
 from monitor.control.docker_ops import _find_compose_container
@@ -181,3 +182,70 @@ def token_from_subprotocols(offered: list[str]) -> str | None:
     if len(offered) < 2 or offered[0] != "monitor-token":
         return None
     return offered[1]
+
+
+# ── I/O pumps ─────────────────────────────────────────────────────────
+
+
+async def pump_stdout(sess: Session, send_bytes: Callable[[bytes], Awaitable[None]]) -> None:
+    """Read from docker socket → WS binary frames. Enforces rate cap."""
+    window_start = time.monotonic()
+    window_bytes = 0
+    while not sess._closed:
+        try:
+            chunk = await asyncio.to_thread(sess.sock._sock.recv, 4096)
+        except Exception:
+            return
+        if not chunk:
+            return
+        sess.last_activity = time.monotonic()
+        now = time.monotonic()
+        if now - window_start >= 1.0:
+            window_start, window_bytes = now, 0
+        window_bytes += len(chunk)
+        if window_bytes > STDOUT_RATE_CAP_BPS:
+            sess.overflow_throttled += 1
+            await asyncio.sleep(0.05)
+        try:
+            await send_bytes(chunk)
+        except Exception:
+            return
+
+
+async def pump_stdin(
+    sess: Session,
+    recv: Callable[[], Awaitable[dict]],
+    send_text: Callable[[str], Awaitable[None]],
+) -> None:
+    """WS → docker socket. Binary frames are stdin; text frames are control."""
+    while not sess._closed:
+        try:
+            msg = await recv()
+        except Exception:
+            return
+        sess.last_activity = time.monotonic()
+        if msg.get("bytes") is not None:
+            await asyncio.to_thread(sess.sock._sock.sendall, msg["bytes"])
+            continue
+        text = msg.get("text")
+        if not text:
+            continue
+        try:
+            ctrl = _json.loads(text)
+        except ValueError:
+            continue
+        t = ctrl.get("type")
+        if t == "ping":
+            await send_text(_json.dumps({"type": "pong"}))
+        elif t == "resize":
+            cols = int(ctrl.get("cols", 0))
+            rows = int(ctrl.get("rows", 0))
+            if 1 <= cols <= 500 and 1 <= rows <= 200:
+                def _resize():
+                    _docker_client().api.exec_resize(
+                        sess.exec_id, height=rows, width=cols,
+                    )
+                try:
+                    await asyncio.to_thread(_resize)
+                except Exception:
+                    pass

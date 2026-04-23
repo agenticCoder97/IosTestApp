@@ -222,5 +222,27 @@ async def exec_ws(websocket: WebSocket, session_id: str) -> None:
         await websocket.close(code=1008)
         return
     await websocket.accept(subprotocol="monitor-token")
-    # Pumps land in Task 5 — for now, immediately close so handshake tests pass.
-    await websocket.close(code=1000)
+
+    async def _recv() -> dict:
+        return await websocket.receive()
+
+    stdout_task = asyncio.create_task(
+        exec_mod.pump_stdout(sess, websocket.send_bytes),
+    )
+    stdin_task = asyncio.create_task(
+        exec_mod.pump_stdin(sess, _recv, websocket.send_text),
+    )
+    done, pending = await asyncio.wait(
+        {stdout_task, stdin_task}, return_when=asyncio.FIRST_COMPLETED,
+    )
+    for t in pending:
+        t.cancel()
+    try:
+        await websocket.send_text('{"type":"closed","reason":"exec-exited"}')
+    except Exception:
+        pass
+    try:
+        await websocket.close(code=1000)
+    except Exception:
+        pass
+    await exec_mod.close_session(sess, reason="exec-exited")
