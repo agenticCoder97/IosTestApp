@@ -766,6 +766,28 @@ window.sendPresetCommand = sendPresetCommand;
   try { window.renderServices(); } catch(_){}
 })();
 
+// Close any open preset-command popover menu on outside click or Escape.
+// Bound once globally — the per-render handlers in index.html only open
+// and item-click; they don't need their own outside-click listener.
+document.addEventListener('click', (e) => {
+  if (e.target.closest && e.target.closest('.term-cmd-wrap')) return;
+  document.querySelectorAll('.term-cmd-menu').forEach(m => {
+    if (!m.hidden) {
+      m.hidden = true;
+      const btn = document.querySelector(`[data-cmd-button="${m.dataset.cmdMenu}"]`);
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = document.querySelector('.term-cmd-menu:not([hidden])');
+  if (!open) return;
+  open.hidden = true;
+  const btn = document.querySelector(`[data-cmd-button="${open.dataset.cmdMenu}"]`);
+  if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+});
+
 function _monitorBase(){
   return location.pathname.startsWith('/monitor/') ? '/monitor' : '';
 }

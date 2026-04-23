@@ -412,11 +412,23 @@
   .term-dot-min  { background-color: #ffbd2e; }
   .term-dot-cmd  { background-color: #27c93f;
                    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(0,0,0,.55)' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); }
-  /* The native <select> dropdown when the cmd dot is clicked. */
-  .term-dot-cmd option{ color: var(--white); background: var(--surface);
-                        font-size: 12px;
-                        font-family: "JetBrains Mono", ui-monospace, monospace;
-                        text-transform: none; letter-spacing: 0; }
+  /* Popover menu anchored below the green (commands) dot. */
+  .term-cmd-wrap{ position: relative; display: inline-flex; }
+  .term-cmd-menu{ position: absolute; top: calc(100% + 6px); right: 0;
+                  min-width: 180px; z-index: 50;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.45);
+                  padding: 4px 0;
+                  display: flex; flex-direction: column; }
+  .term-cmd-menu[hidden]{ display: none; }
+  .term-cmd-item{ appearance: none; -webkit-appearance: none;
+                  border: none; background: transparent; cursor: pointer;
+                  color: var(--body);
+                  font: 12px/1.3 "JetBrains Mono", ui-monospace, monospace;
+                  text-align: left; padding: 6px 12px; white-space: nowrap; }
+  .term-cmd-item:hover,
+  .term-cmd-item:focus-visible{ background: var(--elevated); color: var(--white);
+                                outline: none; }
 </style>
 </head>
 
@@ -1839,11 +1851,13 @@ function renderServices(){
             <span class="flex-1"></span>
             <button class="term-dot term-dot-close" data-close-term="${name}" title="close shell" aria-label="close shell"></button>
             <button class="term-dot term-dot-min" data-min-term="${name}" title="minimize — keep session open" aria-label="minimize"></button>
-            <select class="term-dot term-dot-cmd" data-preset-select="${name}" title="commands" aria-label="run a preset command on ${name}">
-              <option value="">commands</option>
-              ${(window.PRESET_CMDS && window.PRESET_CMDS[name] || [])
-                .map((p, i) => `<option value="${i}">${p.label}</option>`).join('')}
-            </select>
+            <div class="term-cmd-wrap">
+              <button type="button" class="term-dot term-dot-cmd" data-cmd-button="${name}" title="commands" aria-label="run a preset command on ${name}" aria-haspopup="menu" aria-expanded="false"></button>
+              <div class="term-cmd-menu" data-cmd-menu="${name}" role="menu" hidden>
+                ${(window.PRESET_CMDS && window.PRESET_CMDS[name] || [])
+                  .map((p, i) => `<button type="button" class="term-cmd-item" data-cmd-idx="${i}" role="menuitem">${p.label}</button>`).join('')}
+              </div>
+            </div>
           </div>
           <div class="term-body" data-term-body="${name}"></div>
         </div>
@@ -1891,25 +1905,42 @@ function renderServices(){
       }
     });
   });
-  document.querySelectorAll('.term-dot-cmd').forEach(sel => {
-    sel.addEventListener('change', (e) => {
+  document.querySelectorAll('.term-dot-cmd[data-cmd-button]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const name = sel.dataset.presetSelect;
-      const idx = sel.value;
-      sel.value = '';  // reset to placeholder immediately
-      if (idx === '' || !window.PRESET_CMDS || !window.PRESET_CMDS[name]) return;
-      const preset = window.PRESET_CMDS[name][Number(idx)];
+      const name = btn.dataset.cmdButton;
+      const menu = document.querySelector(`.term-cmd-menu[data-cmd-menu="${name}"]`);
+      if (!menu) return;
+      // Close every other open menu first.
+      document.querySelectorAll('.term-cmd-menu').forEach(m => {
+        if (m !== menu) {
+          m.hidden = true;
+          const other = document.querySelector(`[data-cmd-button="${m.dataset.cmdMenu}"]`);
+          if (other) other.setAttribute('aria-expanded', 'false');
+        }
+      });
+      const nowOpen = menu.hidden;  // was hidden → will be opened
+      menu.hidden = !menu.hidden;
+      btn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+    });
+  });
+  document.querySelectorAll('.term-cmd-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = item.closest('.term-cmd-menu');
+      if (!menu) return;
+      const name = menu.dataset.cmdMenu;
+      const idx = Number(item.dataset.cmdIdx);
+      menu.hidden = true;
+      const btn = document.querySelector(`[data-cmd-button="${name}"]`);
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      const preset = (window.PRESET_CMDS?.[name] || [])[idx];
       if (!preset) return;
       const entry = STATE.terms && STATE.terms[name];
       if (!entry) return;
-      // Return focus to the terminal so the shell receives the keystrokes
-      // naturally (the select stole focus on click).
       try { entry.term.focus(); } catch(_){}
       window.sendPresetCommand(name, preset.cmd);
     });
-    // Swallow keystrokes inside the dropdown so the dashboard's global
-    // '/' and '⌘K' shortcuts don't hijack option-picking.
-    sel.addEventListener('keydown', (e) => e.stopPropagation());
   });
 }
 
@@ -2410,6 +2441,6 @@ applyAllCollapsed();
      FastAPI app.mount("/static", ...) inside astral_monitor. An absolute
      "/static/..." path collides with nginx's `location /static/` block
      (aliased to the media volume) and returns 404. -->
-<script src="static/controls.js?v=7"></script>
+<script src="static/controls.js?v=8"></script>
 </body>
 </html>
