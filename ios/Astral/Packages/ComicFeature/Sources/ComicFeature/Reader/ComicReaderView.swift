@@ -394,7 +394,7 @@ struct ComicReaderView: View {
                 }
             }
         }
-        .overlay(tapZoneOverlay)
+        .simultaneousGesture(TapGesture().onEnded { toggleHUD() })
         .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
         .task(id: topEdgeVisibleSince) {
             guard let since = topEdgeVisibleSince else { return }
@@ -474,7 +474,7 @@ struct ComicReaderView: View {
                 scrolledPageID = new
             }
         }
-        .overlay(tapZoneOverlay)
+        .simultaneousGesture(TapGesture().onEnded { toggleHUD() })
     }
 
     // MARK: - Tap Zones
