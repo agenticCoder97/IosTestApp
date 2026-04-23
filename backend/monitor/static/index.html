@@ -1147,6 +1147,12 @@
 </style>
 
 <script>
+// AST-86 preview-flag: enables genDataMock in the local preview server.
+// Prod URLs never carry ?preview; this flag is only set by the local preview.
+window.__MONITOR_PREVIEW__ = new URLSearchParams(location.search).has('preview');
+</script>
+
+<script>
 /* =========================================================================
    astral · oci monitor — mock data engine + render
    ---------------------------------------------------------------------------
@@ -1260,11 +1266,33 @@ const shortId = id => id.length > 12 ? id.slice(0,12) : id;
 
 /* ---------- data generator (matches /metrics schema) ---------------- */
 async function genData(range){
+  // AST-86 — preview-server escape hatch. Prod never sets this flag.
+  if (window.__MONITOR_PREVIEW__) return genDataMock(range);
   const resp = await fetch('/metrics?range=' + encodeURIComponent(range), {credentials: 'include'});
   if(!resp.ok){
     throw new Error('metrics fetch failed: ' + resp.status);
   }
   return normalizeMetrics(await resp.json());
+}
+
+// AST-86 — typed-empty data object used when /metrics is unreachable.
+function emptyData(){
+  return {
+    schema_version: '1.0.0',
+    generated_at: new Date().toISOString(),
+    build: '—',
+    region: '—',
+    tenancy_ocid: '—',
+    instance_ocid: '—',
+    cost: null,
+    services: [],
+    requests: { window: '—', series_rps: [], series_p95_ms: [], status_codes: {'2xx':0,'3xx':0,'4xx':0,'5xx':0}, total: 0, slowest: [] },
+    arq: { queue_depth: 0, in_flight: 0, workers: 0, completed_24h: 0, failed_24h: 0, active: [], recent_completed: [], recent_failed: [] },
+    storage: null,
+    backups: { status: '—', recent_runs: [], next_run_in_s: 0, bucket: '—', retention_days: 0 },
+    cert: null,
+    logs: [],
+  };
 }
 
 // Map /metrics schema into the field names the existing renderers expect.
@@ -1661,40 +1689,83 @@ window.refreshService = refreshService;
 async function refreshAll(){
   try {
     STATE.data = await genData(STATE.range);
-    renderAll();
   } catch(e){
     console.error('refreshAll failed', e);
-    toast('metrics unreachable');
+    STATE.data = emptyData();
+    if (!STATE._warnedUnreachable){
+      toast('metrics unreachable');
+      STATE._warnedUnreachable = true;
+    }
   }
+  renderAll();
 }
+
+// AST-86 — six-card skeleton driven by a static list, never by STATE.data.services.
+const SVC_ORDER = ['postgres','redis','fastapi','arq_worker','nginx','certbot'];
+const SVC_IMAGES = {
+  postgres:   'postgres:16-alpine',
+  redis:      'redis:7-alpine',
+  fastapi:    'astral/fastapi:—',
+  arq_worker: 'astral/worker:—',
+  nginx:      'nginx:1.25-alpine',
+  certbot:    'certbot/certbot:latest',
+};
 
 function renderServices(){
   const grid = document.getElementById('svc-grid');
-  const svcs = STATE.data.services;
-  grid.innerHTML = svcs.map(s => {
-    const tone = s.health==='healthy' ? 'ok' : s.health==='starting' ? 'warn' : 'crit';
-    const lbl  = s.health==='healthy' ? 'UP' : s.health==='starting' ? 'STARTING' : 'DOWN';
-    const badge = s.health==='healthy' ? 'badge-ok' : s.health==='starting' ? 'badge-warn' : 'badge-crit';
-    const [imageBase, imageTag] = s.image.split(':');
-    const extra = s.extra || {};
-    let footer = '';
-    if(s.name === 'postgres')  footer = `<span class="mono text-[11px] text-muted">${extra.pg_connections}/${extra.pg_max_connections} conns</span>`;
-    else if(s.name === 'redis') footer = `<span class="mono text-[11px] text-muted">${extra.ops_sec} ops/s · ${extra.keys} keys</span>`;
-    else if(s.name === 'fastapi') footer = `<span class="mono text-[11px] text-muted">${extra.workers}w · ${extra.rps} rps</span>`;
-    else if(s.name === 'arq_worker') footer = `<span class="mono text-[11px] text-muted">${extra.jobs_active}/${extra.max} jobs</span>`;
-    else if(s.name === 'nginx') footer = `<span class="mono text-[11px] text-muted">${extra.active_connections} conns · ${extra.reqs_total.toLocaleString()} req</span>`;
-    else if(s.name === 'certbot') footer = `<span class="mono text-[11px] text-muted">next check ${extra.next_check_in}</span>`;
+  const entries = STATE.data.services || [];
+  grid.innerHTML = SVC_ORDER.map(name => {
+    const s = entries.find(e => e && e.name === name);
+    const hasData = !!s;
+    const hasSpark = hasData && Array.isArray(s.spark) && s.spark.length > 0;
+
+    let badge, tone, lbl;
+    if (!hasData) {
+      badge = 'badge-warn'; tone = 'warn'; lbl = 'NO DATA';
+    } else if (s.health === 'healthy') {
+      badge = 'badge-ok'; tone = 'ok'; lbl = 'UP';
+    } else if (s.health === 'starting') {
+      badge = 'badge-warn'; tone = 'warn'; lbl = 'STARTING';
+    } else {
+      badge = 'badge-crit'; tone = 'crit'; lbl = 'DOWN';
+    }
+
+    const imageStr = hasData ? (s.image || SVC_IMAGES[name]) : SVC_IMAGES[name];
+    const [imageBase, imageTag] = imageStr.split(':');
+
+    const uptime = hasData ? fmtUptime(s.uptime_s) : '—';
+    const cpuMem = hasData
+      ? `${Number(s.cpu || 0).toFixed(1)}% · ${s.mem || 0}MB`
+      : '— · —';
+
+    const sparkMarkup = hasSpark
+      ? sparkSvg(s.spark, {tone: tone === 'ok' ? '' : tone})
+      : `<svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none" style="width:100%;height:30px"><text class="spark-empty" x="4" y="19">no data</text></svg>`;
+
+    let footer = '<span class="mono text-[11px] text-muted">metrics unreachable</span>';
+    if (hasData) {
+      const extra = s.extra || {};
+      if (name === 'postgres')        footer = `<span class="mono text-[11px] text-muted">${extra.pg_connections ?? '—'}/${extra.pg_max_connections ?? '—'} conns</span>`;
+      else if (name === 'redis')      footer = `<span class="mono text-[11px] text-muted">${extra.ops_sec ?? '—'} ops/s · ${extra.keys ?? '—'} keys</span>`;
+      else if (name === 'fastapi')    footer = `<span class="mono text-[11px] text-muted">${extra.workers ?? '—'}w · ${extra.rps ?? '—'} rps</span>`;
+      else if (name === 'arq_worker') footer = `<span class="mono text-[11px] text-muted">${extra.jobs_active ?? '—'}/${extra.max ?? '—'} jobs</span>`;
+      else if (name === 'nginx')      footer = `<span class="mono text-[11px] text-muted">${extra.active_connections ?? '—'} conns · ${(extra.reqs_total ?? 0).toLocaleString()} req</span>`;
+      else if (name === 'certbot')    footer = `<span class="mono text-[11px] text-muted">next check ${extra.next_check_in ?? '—'}</span>`;
+    }
+
+    const bodyClass = hasData ? '' : ' svc-dim';
+    const containerId = hasData ? (s.container_id || '') : '';
 
     return `
-    <div class="card svc-card p-4" data-service-card="${s.name}">
+    <div class="card svc-card p-4${bodyClass}" data-service-card="${name}">
       <div class="flex items-start gap-3 svc-card-header">
-        <div class="elevated w-8 h-8 flex items-center justify-center text-muted" style="border-radius:8px">${svcIcon(s.name)}</div>
+        <div class="elevated w-8 h-8 flex items-center justify-center text-muted" style="border-radius:8px">${svcIcon(name)}</div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
-            <span class="text-white font-semibold tracking-tight truncate">${s.name}</span>
+            <span class="text-white font-semibold tracking-tight truncate">${name}</span>
             <span class="badge ${badge}"><span class="dot ${tone}"></span>${lbl}</span>
             <span class="flex-1"></span>
-            <button class="ibtn svc-refresh" style="width:24px;height:24px;" title="refresh ${s.name}" onclick="event.stopPropagation(); this.classList.add('spin'); setTimeout(()=>this.classList.remove('spin'),700); refreshService('${s.name}');">
+            <button class="ibtn svc-refresh" style="width:24px;height:24px;" title="refresh ${name}" onclick="event.stopPropagation(); this.classList.add('spin'); setTimeout(()=>this.classList.remove('spin'),700); refreshService('${name}');">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
             </button>
           </div>
@@ -1707,18 +1778,18 @@ function renderServices(){
       <div class="mt-3 flex items-baseline justify-between">
         <div>
           <div class="text-[11px] tracking-[.14em] uppercase text-muted">uptime</div>
-          <div class="mono text-sm text-white">${fmtUptime(s.uptime_s)}</div>
+          <div class="mono text-sm text-white">${uptime}</div>
         </div>
         <div class="text-right">
           <div class="text-[11px] tracking-[.14em] uppercase text-muted">cpu · mem</div>
-          <div class="mono text-sm text-white">${s.cpu.toFixed(1)}% · ${s.mem}MB</div>
+          <div class="mono text-sm text-white">${cpuMem}</div>
         </div>
       </div>
       <div class="mt-2">
-        ${sparkSvg(s.spark,{tone:tone==='ok'?'':tone})}
+        ${sparkMarkup}
       </div>
       <div class="mt-1 flex justify-between items-center">
-        <span class="copy" data-copy="${s.container_id || ''}">${(s.container_id || '').slice(0,12)} <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+        <span class="copy" data-copy="${containerId}">${containerId.slice(0,12) || '—'} <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
         ${footer}
       </div>
     </div>`;
