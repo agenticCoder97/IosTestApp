@@ -190,6 +190,7 @@ async def exec_start(body: ExecStartBody, ip: str = Depends(require_auth)) -> JS
     except exec_mod.SessionExists as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
+        logger.exception("exec_start unexpected error for service=%s", body.service)
         raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse({"session_id": sess.session_id})
 
