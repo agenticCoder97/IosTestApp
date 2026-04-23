@@ -335,6 +335,88 @@
     .log{ grid-template-columns: 64px 64px 1fr; gap: 8px; font-size:11px; }
     .chart-wrap{ min-height:140px; }
   }
+
+  /* ─── AST-78 polish-pass helpers ─────────────────────────────── */
+
+  /* AST-87 — solid-accent primary button */
+  .tbtn{
+    background: var(--gold); color: #0a0a0a; border: 1px solid var(--gold);
+    padding: 6px 14px; border-radius: 8px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 12px; letter-spacing: .04em;
+    transition: transform .08s ease, opacity .12s;
+    cursor: pointer;
+  }
+  .tbtn:hover{ opacity: .9; }
+  .tbtn:active{ transform: scale(.97); }
+
+  /* AST-87 — styled native <select> */
+  .sel{
+    background: var(--surface); color: var(--white);
+    border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 8px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    font-size: 12px; cursor: pointer;
+  }
+
+  /* AST-88 — red-tinted SQL error box (supersedes the older .sql-error below) */
+  .sql-error{
+    background: rgba(255,107,107,.08);
+    border: 1px solid rgba(255,107,107,.4);
+    color: #FF9A9A;
+    padding: 10px 12px; border-radius: 8px;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+    white-space: pre-wrap;
+  }
+
+  /* AST-91 — single scroll wrapper for every dashboard table */
+  .table-scroll{ max-height: 360px; overflow: auto; border-radius: 8px; }
+  .table-scroll thead th{
+    position: sticky; top: 0; background: var(--surface); z-index: 1;
+  }
+
+  /* AST-83 — collapsible section heads */
+  .section-head{ cursor: pointer; user-select: none; }
+  .section-head .chev{ transition: transform .18s ease; flex-shrink: 0; }
+  .section-head.collapsed .chev{ transform: rotate(-90deg); }
+  .section-body.collapsed{ display: none; }
+
+  /* AST-78-ext2 — 3D flip wrapper for service cards */
+  .svc-flip{ perspective: 1200px; }
+  .svc-flip-inner{
+    position: relative; transition: transform .5s;
+    transform-style: preserve-3d;
+  }
+  .svc-flip.flipped .svc-flip-inner{ transform: rotateY(180deg); }
+  .svc-face{
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  .svc-face.back{
+    position: absolute; inset: 0; transform: rotateY(180deg);
+    background: var(--surface);
+    border-radius: 8px; padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .svc-face.back .term-body{
+    flex: 1;
+    background: #0a0a0b; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px; font-family: "JetBrains Mono", monospace; font-size: 12px;
+    color: var(--body);
+    overflow: auto;
+  }
+  .svc-face.back .term-close{
+    position: absolute; top: 8px; right: 8px;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted); background: transparent; border: 0; cursor: pointer;
+    border-radius: 4px;
+  }
+  .svc-face.back .term-close:hover{ color: var(--white); background: var(--elevated); }
+
+  /* AST-86 — skeleton / no-data */
+  .svc-dim{ opacity: .5; filter: grayscale(.3); }
+  .spark-empty{ font-size: 10px; color: var(--muted); letter-spacing: .12em; }
 </style>
 </head>
 
