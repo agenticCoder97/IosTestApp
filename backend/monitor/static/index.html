@@ -1876,7 +1876,7 @@ function renderServices(){
       openTerminal(wrap, name);
     });
   });
-  document.querySelectorAll('.term-min').forEach(btn => {
+  document.querySelectorAll('.term-dot-min').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const wrap = btn.closest('.svc-flip');
@@ -1884,7 +1884,7 @@ function renderServices(){
       // Keep ws + xterm alive — that's the whole point of minimize.
     });
   });
-  document.querySelectorAll('.term-close').forEach(btn => {
+  document.querySelectorAll('.term-dot-close').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const name = btn.dataset.closeTerm;
@@ -2450,6 +2450,6 @@ applyAllCollapsed();
      FastAPI app.mount("/static", ...) inside astral_monitor. An absolute
      "/static/..." path collides with nginx's `location /static/` block
      (aliased to the media volume) and returns 404. -->
-<script src="static/controls.js?v=10"></script>
+<script src="static/controls.js?v=11"></script>
 </body>
 </html>
