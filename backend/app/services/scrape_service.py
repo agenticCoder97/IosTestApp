@@ -230,7 +230,6 @@ async def retry_job(db: AsyncSession, job_id: uuid.UUID) -> ScrapeJobResponse:
         logger.info("retry_job ARQ enqueue success | task=%s new_job_id=%s", task_name, retry_job.id)
     except Exception as e:
         logger.warning("retry_job ARQ enqueue failed | new_job_id=%s error=%s", retry_job.id, e)
-        pass
 
     return _job_to_schema(retry_job)
 
@@ -306,6 +305,5 @@ async def delta_update(db: AsyncSession, story_id: uuid.UUID) -> ScrapeJobRespon
         logger.info("delta_update ARQ enqueue success | task=%s job_id=%s", task_name, job.id)
     except Exception as e:
         logger.warning("delta_update ARQ enqueue failed | job_id=%s error=%s", job.id, e)
-        pass
 
     return _job_to_schema(job)

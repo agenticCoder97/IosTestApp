@@ -37,8 +37,6 @@ struct ComicReaderView: View {
     @State private var showSettings = false
     @AppStorage("comicReaderMode") private var readingMode: ReadingMode = .webtoon
     @AppStorage("comicReaderBrightness") private var brightnessOverlay: Double = 0.0
-    @State private var showPageActions = false
-    @State private var longPressedPage: PageResponse?
     @Query private var bookmarks: [LocalBookmark]
     @State private var nextChapterPull: CGFloat = 0
     @State private var nextChapterTriggered = false
@@ -59,6 +57,7 @@ struct ComicReaderView: View {
     @State private var bottomEdgeArmedAt: Date? = nil
     @State private var hasCompletedInitialLayout = false
     @State private var pageThrottle = ThrottledSetter<Int>(interval: 0.08)
+    @State private var pendingScrollToPage: Int?
     @State private var showChapterList = false
     @State private var autoScrollActive = false
     @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
@@ -262,15 +261,6 @@ struct ComicReaderView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .confirmationDialog(
-            "Page \(currentPage + 1)",
-            isPresented: $showPageActions,
-            titleVisibility: .visible
-        ) {
-            Button("Save to Photos") { saveCurrentPage() }
-            Button("Share")          { shareCurrentPage() }
-            Button("Cancel", role: .cancel) {}
-        }
         .sheet(isPresented: $showChapterList) {
             ComicChapterListSheet(
                 chapters: chapters,
@@ -303,6 +293,7 @@ struct ComicReaderView: View {
     }
 
     private var webtoonReader: some View {
+        ScrollViewReader { proxy in
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 // Previous chapter pull trigger at top of scroll content
@@ -320,7 +311,9 @@ struct ComicReaderView: View {
                         },
                         onProgressChange: { progress in
                             prevChapterPull = progress
-                            if progress >= 1.0 && !prevChapterTriggered {
+                            // Fire only when user has held past threshold
+                            // AND the 0.5s arm timer has elapsed.
+                            if progress >= 1.0 && topEdgeArmedAt != nil && !prevChapterTriggered {
                                 prevChapterTriggered = true
                                 Haptics.play(.triggerFire)
                                 Task { @MainActor in
@@ -377,7 +370,7 @@ struct ComicReaderView: View {
                         },
                         onProgressChange: { progress in
                             nextChapterPull = progress
-                            if progress >= 1.0 && !nextChapterTriggered {
+                            if progress >= 1.0 && bottomEdgeArmedAt != nil && !nextChapterTriggered {
                                 nextChapterTriggered = true
                                 Haptics.play(.triggerFire)
                                 Task { @MainActor in
@@ -395,11 +388,17 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                toggleHUD()
-            }
+            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
+                .onEnded { _ in toggleHUD() }
         )
         .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
+        .onChange(of: pendingScrollToPage) { _, newTarget in
+            guard let target = newTarget else { return }
+            withAnimation(ReaderMotion.pageTurn) {
+                proxy.scrollTo(target, anchor: .top)
+            }
+            pendingScrollToPage = nil
+        }
         .task(id: topEdgeVisibleSince) {
             guard let since = topEdgeVisibleSince else { return }
             try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
@@ -413,6 +412,7 @@ struct ComicReaderView: View {
             guard bottomEdgeVisibleSince == since, bottomEdgeArmedAt == nil else { return }
             withAnimation(ReaderMotion.triggerRing) { bottomEdgeArmedAt = .now }
             Haptics.play(.triggerArmed)
+        }
         }
     }
 
@@ -479,58 +479,9 @@ struct ComicReaderView: View {
             }
         }
         .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                toggleHUD()
-            }
+            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
+                .onEnded { _ in toggleHUD() }
         )
-    }
-
-    // MARK: - Tap Zones
-
-    private var tapZoneOverlay: some View {
-        GeometryReader { geo in
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(.clear)
-                    .frame(width: geo.size.width / 3)
-                    .onTapGesture { handleLeftTap() }
-
-                Rectangle()
-                    .fill(.clear)
-                    .frame(width: geo.size.width / 3)
-                    .contentShape(Rectangle())
-                    .onTapGesture { toggleHUD() }
-
-                Rectangle()
-                    .fill(.clear)
-                    .frame(width: geo.size.width / 3)
-                    .onTapGesture { handleRightTap() }
-            }
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                    longPressedPage = pages[safe: currentPage]
-                    showPageActions = true
-                }
-            )
-        }
-        .allowsHitTesting(true)
-    }
-
-    private func handleLeftTap() {
-        switch readingMode {
-        case .webtoon:     toggleHUD()
-        case .leftToRight: prevPage()
-        case .rightToLeft: nextPage()
-        }
-    }
-
-    private func handleRightTap() {
-        switch readingMode {
-        case .webtoon:     toggleHUD()
-        case .leftToRight: nextPage()
-        case .rightToLeft: prevPage()
-        }
     }
 
     private func toggleHUD() {
@@ -586,17 +537,10 @@ struct ComicReaderView: View {
 
             Spacer(minLength: 8)
 
-            chapterCountLabel
-
-            Button {
-                showChapterList = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(AstralColors.white)
-                    .frame(width: 28, height: 28)
+            Button { showChapterList = true } label: {
+                chapterCountLabel
             }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
+            .buttonStyle(PressButtonStyle(scale: 0.92))
 
             Button {
                 withAnimation(AstralAnimation.bouncy) {
@@ -705,7 +649,11 @@ struct ComicReaderView: View {
                 Menu {
                     ForEach(0..<pages.count, id: \.self) { idx in
                         Button("Page \(idx + 1)") {
-                            withAnimation(ReaderMotion.pageTurn) { currentPage = idx }
+                            if readingMode == .webtoon {
+                                pendingScrollToPage = idx
+                            } else {
+                                withAnimation(ReaderMotion.pageTurn) { currentPage = idx }
+                            }
                             Haptics.play(.pageTurn)
                         }
                     }
@@ -815,11 +763,11 @@ struct ComicReaderView: View {
                     .foregroundStyle(AstralColors.muted)
 
                 HStack(spacing: 12) {
-                    Image(systemName: "sun.min.fill")
+                    Image(systemName: "sun.max.fill")
                         .foregroundStyle(AstralColors.muted)
                     Slider(value: $brightnessOverlay, in: 0...0.75)
                         .tint(AstralColors.gold)
-                    Image(systemName: "sun.max.fill")
+                    Image(systemName: "sun.min.fill")
                         .foregroundStyle(AstralColors.muted)
                 }
             }
@@ -946,8 +894,6 @@ struct ComicReaderView: View {
 
     // MARK: - Long Press Actions
 
-    private func saveCurrentPage() {}
-    private func shareCurrentPage() {}
 
     // MARK: - Loading
 
@@ -1312,11 +1258,16 @@ private extension Array {
 
 // MARK: - Chapter Triggers
 
-private let chapterTriggerHeight: CGFloat = 260
 private let chapterArmDelay: TimeInterval = 0.5
+/// How far past the natural scroll edge the user must pull for the trigger
+/// to fire (pct reaches 1.0 at this overscroll distance). At the natural
+/// edge, overscroll = 0 so pct = 0 — ring UI stays hidden until the user
+/// actively pulls. No reserved empty "black box" space inside scroll content.
+private let chapterPullThreshold: CGFloat = 120
 
-/// Placed at the top of webtoon scroll content — scroll up to load previous chapter.
-/// Reports its visibility and pull progress upward; progress is gated on arming.
+/// 1pt sentinel placed at the top of webtoon scroll content. Tracks
+/// pull-down overscroll past the natural top; ring UI is rendered as
+/// an overlay that only appears during active overscroll.
 private struct PrevChapterTrigger: View {
     let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
@@ -1326,46 +1277,42 @@ private struct PrevChapterTrigger: View {
     var body: some View {
         GeometryReader { geo in
             let frame = geo.frame(in: .global)
-            let visible = max(0, frame.maxY)
-            let pct = min(visible / chapterTriggerHeight, 1.0)
-            let isVisible = visible > 0
+            // Sentinel at content Y=0; with `.ignoresSafeArea()` its natural
+            // global Y is 0. When the user overscrolls down (pulls content
+            // past the top), content Y=0 shifts down by the overscroll
+            // amount, so frame.maxY == overscroll.
+            let overscroll = max(0, frame.maxY)
+            let pct = min(overscroll / chapterPullThreshold, 1.0)
+            let isPulling = overscroll > 0
             Color.clear
-                .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
+                .onChange(of: isPulling) { _, new in onVisibilityChange(new) }
                 .onChange(of: pct) { _, new in
-                    // Only forward progress when the trigger is armed.
-                    // Reports 0 otherwise so the parent resets any cached pull.
-                    onProgressChange(isArmed ? new : 0)
+                    // Forward pct unconditionally so the ring fills as the
+                    // user pulls. The parent gates the actual FIRE on
+                    // `topEdgeArmedAt != nil` (0.5s held-pull requirement).
+                    onProgressChange(new)
+                }
+                .onChange(of: isArmed) { _, armed in
+                    // If the user pulled past threshold faster than the
+                    // arm timer, pct is already ≥ 1.0 and `onChange(of: pct)`
+                    // won't refire. Re-forward current pct so the parent
+                    // can re-evaluate its armed-and-maxed guard.
+                    if armed { onProgressChange(pct) }
                 }
         }
-        .frame(height: chapterTriggerHeight)
+        .frame(height: 1)
         .overlay {
-            VStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeOut(duration: 0.1), value: progress)
-
-                    Image(systemName: progress >= 1.0 ? "checkmark" : "chevron.up")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
-                }
-                .frame(width: 28, height: 28)
-
-                Text(progress >= 1.0 ? "Loading prev..." : "Previous chapter")
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
-            }
-            .opacity(isArmed ? (progress > 0.02 ? 1 : 0.3) : 0)
-            .animation(ReaderMotion.triggerRing, value: isArmed)
+            chapterTriggerRing(
+                progress: progress,
+                icon: progress >= 1.0 ? "checkmark" : "chevron.up",
+                label: progress >= 1.0 ? "Loading prev..." : "Previous chapter"
+            )
+            .offset(y: 40)
         }
     }
 }
 
-/// Placed at the bottom of webtoon scroll content — scroll down to load next chapter.
+/// 1pt sentinel placed at the bottom of webtoon scroll content.
 private struct NextChapterTrigger: View {
     let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
@@ -1376,41 +1323,56 @@ private struct NextChapterTrigger: View {
         GeometryReader { geo in
             let frame = geo.frame(in: .global)
             let screenH = UIScreen.main.bounds.height
-            let visible = max(0, screenH - frame.minY)
-            let pct = min(visible / chapterTriggerHeight, 1.0)
-            let isVisible = visible > 0
+            // Sentinel at scroll content's end. At natural bottom its global
+            // minY equals screenH. Overscroll up (pulling content past the
+            // bottom) shifts minY upward by the overscroll amount.
+            let overscroll = max(0, screenH - frame.minY)
+            let pct = min(overscroll / chapterPullThreshold, 1.0)
+            let isPulling = overscroll > 0
             Color.clear
-                .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
-                .onChange(of: pct) { _, new in
-                    onProgressChange(isArmed ? new : 0)
+                .onChange(of: isPulling) { _, new in onVisibilityChange(new) }
+                .onChange(of: pct) { _, new in onProgressChange(new) }
+                .onChange(of: isArmed) { _, armed in
+                    if armed { onProgressChange(pct) }
                 }
         }
-        .frame(height: chapterTriggerHeight)
+        .frame(height: 1)
         .overlay {
-            VStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeOut(duration: 0.1), value: progress)
-
-                    Image(systemName: progress >= 1.0 ? "checkmark" : "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
-                }
-                .frame(width: 28, height: 28)
-
-                Text(progress >= 1.0 ? "Loading next..." : "Next chapter")
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
-            }
-            .opacity(isArmed ? (progress > 0.02 ? 1 : 0.3) : 0)
-            .animation(ReaderMotion.triggerRing, value: isArmed)
+            chapterTriggerRing(
+                progress: progress,
+                icon: progress >= 1.0 ? "checkmark" : "chevron.down",
+                label: progress >= 1.0 ? "Loading next..." : "Next chapter"
+            )
+            .offset(y: -40)
         }
     }
+}
+
+/// Shared ring + label — progress ring fills via the `trim` parameter.
+@ViewBuilder
+private func chapterTriggerRing(progress: CGFloat, icon: String, label: String) -> some View {
+    VStack(spacing: 8) {
+        ZStack {
+            Circle()
+                .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.easeOut(duration: 0.1), value: progress)
+
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
+        }
+        .frame(width: 28, height: 28)
+
+        Text(label)
+            .font(AstralTypography.caption)
+            .foregroundStyle(AstralColors.muted)
+    }
+    .opacity(progress > 0.02 ? 1 : 0)
+    .animation(ReaderMotion.triggerRing, value: progress > 0.02)
 }
 
 // MARK: - Chapter List Sheet

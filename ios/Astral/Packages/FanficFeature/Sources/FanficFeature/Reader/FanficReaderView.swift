@@ -24,6 +24,7 @@ struct FanficReaderView: View {
     @State private var chapterContent = ""
     @State private var isLoading = true
     @State private var showReaderBar = false
+    @State private var showReaderSettings = false
     @AppStorage("fanficReaderFontSize") private var fontSize: Double = 16
     @AppStorage("fanficReaderLineHeight") private var lineHeight: Double = 1.6
     @AppStorage("fanficReaderBackground") private var background: ReaderBackground = .dark
@@ -219,23 +220,45 @@ struct FanficReaderView: View {
             .animation(ReaderMotion.chrome, value: showReaderBar)
             .allowsHitTesting(showReaderBar)
 
-            // Reader settings bar — spring slide from bottom
-            if showReaderBar {
-                VStack {
-                    Spacer()
-                    readerSettingsBar
+            // Bottom HUD — slides in from below, swaps between settings and nav bar
+            VStack(spacing: 0) {
+                Spacer()
+                ZStack(alignment: .bottom) {
+                    if showReaderSettings {
+                        fanficSettingsPanel
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .trailing).combined(with: .opacity)
+                            ))
+                    } else {
+                        fanficBottomBar
+                            .transition(.asymmetric(
+                                insertion: .opacity,
+                                removal: .opacity
+                            ))
+                    }
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.spring(response: 0.38, dampingFraction: 0.85), value: showReaderSettings)
             }
+            .offset(y: showReaderBar ? 0 : 130)
+            .opacity(showReaderBar ? 1 : 0)
+            .animation(ReaderMotion.chrome, value: showReaderBar)
+            .allowsHitTesting(showReaderBar)
 
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(ReaderMotion.chrome) {
-                showReaderBar.toggle()
-            }
-            Haptics.play(.chromeToggle)
-        }
+        .ignoresSafeArea()
+        .navigationBarHidden(true)
+        .statusBarHidden(!showReaderBar)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
+                .onEnded { _ in
+                    withAnimation(ReaderMotion.chrome) {
+                        showReaderBar.toggle()
+                        if !showReaderBar { showReaderSettings = false }
+                    }
+                    Haptics.play(.chromeToggle)
+                }
+        )
         .task(id: currentChapter.id) {
             scrollPercentThrottle.reset()
             await loadChapter()
@@ -346,25 +369,32 @@ struct FanficReaderView: View {
             .buttonStyle(PressButtonStyle(scale: 0.88))
             .accessibilityIdentifier(AccessibilityID.readerBackButton)
 
-            Text(fanfic.title)
-                .font(AstralTypography.bodyMedium)
-                .foregroundStyle(AstralColors.white)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(fanfic.title)
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text("Ch. \(chapterDisplayNum)")
+                        .font(AstralTypography.bodyMedium)
+                        .foregroundStyle(AstralColors.white)
+                        .contentTransition(.numericText())
+                    if let title = currentChapter.title, !title.isEmpty {
+                        Text("— \(title)")
+                            .font(AstralTypography.body)
+                            .foregroundStyle(AstralColors.muted)
+                            .lineLimit(1)
+                    }
+                }
+                .animation(AstralAnimation.quick, value: currentChapter.chapterNumber)
+            }
 
             Spacer(minLength: 8)
 
-            chapterCountLabel
-
-            Button {
-                showChapterList = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(AstralColors.white)
-                    .frame(width: 28, height: 28)
+            Button { showChapterList = true } label: {
+                chapterCountLabel
             }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
+            .buttonStyle(PressButtonStyle(scale: 0.92))
 
             Button {
                 withAnimation(AstralAnimation.bouncy) {
@@ -380,10 +410,21 @@ struct FanficReaderView: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(PressButtonStyle(scale: 0.88))
+
+            Button {
+                withAnimation(AstralAnimation.snappy) { showReaderSettings.toggle() }
+            } label: {
+                Image(systemName: showReaderSettings ? "xmark" : "slider.horizontal.3")
+                    .contentTransition(.symbolEffect(.replace))
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(AstralColors.white)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
         }
         .padding(.horizontal, 16)
-        .padding(.top, 44)
-        .padding(.bottom, 10)
+        .padding(.top, 56)
+        .padding(.bottom, 12)
         .background(.ultraThinMaterial)
     }
 
@@ -408,103 +449,171 @@ struct FanficReaderView: View {
         return n.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(n))" : String(format: "%.1f", n)
     }
 
-    private var readerSettingsBar: some View {
-        VStack(spacing: 16) {
-            // Font size
-            HStack {
-                Text("Aa")
-                    .font(.system(size: 14))
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(width: 24)
-                Slider(value: $fontSize, in: 12...28)
-                    .tint(AstralColors.gold)
-                Text("Aa")
-                    .font(.system(size: 22))
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(width: 32)
+    // MARK: - Bottom Nav Bar (default when HUD is open)
+
+    private var fanficBottomBar: some View {
+        HStack {
+            Button {
+                if let prev = previousChapter { navigateTo(prev); Haptics.play(.chapterNav) }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text("Prev")
+                }
+                .font(AstralTypography.captionMedium)
+                .foregroundStyle(previousChapter == nil ? AstralColors.muted : AstralColors.gold)
+            }
+            .disabled(previousChapter == nil)
+            .buttonStyle(PressButtonStyle(scale: 0.9))
+
+            Spacer()
+
+            Text(progressReadout)
+                .font(AstralTypography.captionMedium)
+                .foregroundStyle(AstralColors.muted)
+                .monospacedDigit()
+
+            Spacer()
+
+            Button {
+                if let next = nextChapter { navigateTo(next); Haptics.play(.chapterNav) }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Next")
+                    Image(systemName: "chevron.right")
+                }
+                .font(AstralTypography.captionMedium)
+                .foregroundStyle(nextChapter == nil ? AstralColors.muted : AstralColors.gold)
+            }
+            .disabled(nextChapter == nil)
+            .buttonStyle(PressButtonStyle(scale: 0.9))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 34)
+        .background(.ultraThinMaterial)
+    }
+
+    private var progressReadout: String {
+        let pct = Int(((fanfic.scrollOffsetPercent ?? 0) * 100).rounded())
+        return "\(pct)% · Ch. \(chapterDisplayNum) of \(fanfic.totalChapters)"
+    }
+
+    // MARK: - Settings Panel (shown when gear is tapped)
+
+    private var fanficSettingsPanel: some View {
+        VStack(spacing: 20) {
+            // Typography
+            VStack(alignment: .leading, spacing: 14) {
+                sectionHeader("Typography")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Font family")
+                        .font(AstralTypography.caption)
+                        .foregroundStyle(AstralColors.muted)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(ReaderFont.allCases, id: \.self) { font in
+                                Button {
+                                    withAnimation(AstralAnimation.bouncy) { fontFamily = font }
+                                } label: {
+                                    Text(font.rawValue)
+                                        .font(font.font(size: 13))
+                                        .foregroundStyle(fontFamily == font ? AstralColors.gold : AstralColors.body)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 7)
+                                        .background(fontFamily == font ? AstralColors.gold.opacity(0.15) : AstralColors.elevated)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    Text("Aa")
+                        .font(.system(size: 14))
+                        .foregroundStyle(AstralColors.muted)
+                        .frame(width: 24)
+                    Slider(value: $fontSize, in: 12...28)
+                        .tint(AstralColors.gold)
+                    Text("Aa")
+                        .font(.system(size: 22))
+                        .foregroundStyle(AstralColors.muted)
+                        .frame(width: 32)
+                }
+
+                Stepper(value: $lineHeight, in: 1.2...2.2, step: 0.1) {
+                    labeledReadout("Line height", value: String(format: "%.1f", lineHeight))
+                }
+                .tint(AstralColors.gold)
             }
 
-            // Line height
-            HStack {
-                Image(systemName: "text.line.first.and.arrowtriangle.forward")
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(width: 24)
-                Slider(value: $lineHeight, in: 1.2...2.2)
-                    .tint(AstralColors.gold)
+            // Layout
+            VStack(alignment: .leading, spacing: 14) {
+                sectionHeader("Layout")
+
+                Stepper(value: $paragraphSpacing, in: 0...36, step: 2) {
+                    labeledReadout("Paragraph gap", value: "\(Int(paragraphSpacing))pt")
+                }
+                .tint(AstralColors.gold)
+
+                Stepper(value: $horizontalMargin, in: 8...48, step: 2) {
+                    labeledReadout("Side margins", value: "\(Int(horizontalMargin))pt")
+                }
+                .tint(AstralColors.gold)
             }
 
-            // Font family
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(ReaderFont.allCases, id: \.self) { font in
+            // Theme
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader("Background")
+                HStack(spacing: 16) {
+                    ForEach(ReaderBackground.allCases, id: \.self) { bg in
                         Button {
-                            withAnimation(AstralAnimation.bouncy) { fontFamily = font }
+                            withAnimation(AstralAnimation.bouncy) { background = bg }
                         } label: {
-                            Text(font.rawValue)
-                                .font(font.font(size: 13))
-                                .foregroundStyle(fontFamily == font ? AstralColors.gold : AstralColors.body)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(fontFamily == font ? AstralColors.gold.opacity(0.15) : AstralColors.elevated)
-                                .clipShape(Capsule())
+                            Circle()
+                                .fill(bgPreviewColor(bg))
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Circle()
+                                        .stroke(AstralColors.gold, lineWidth: 2.5)
+                                        .opacity(background == bg ? 1 : 0)
+                                        .scaleEffect(background == bg ? 1 : 0.6)
+                                        .animation(AstralAnimation.bouncy, value: background)
+                                )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressButtonStyle(scale: 0.88))
                     }
+                    Spacer()
                 }
-            }
-
-            // Paragraph spacing
-            HStack {
-                Image(systemName: "text.alignleft")
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(width: 24)
-                Slider(value: $paragraphSpacing, in: 0...36)
-                    .tint(AstralColors.gold)
-                Text("\(Int(paragraphSpacing))pt")
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(width: 32)
-            }
-
-            // Horizontal margins
-            HStack {
-                Image(systemName: "arrow.left.and.right")
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(width: 24)
-                Slider(value: $horizontalMargin, in: 8...48)
-                    .tint(AstralColors.gold)
-                Text("\(Int(horizontalMargin))pt")
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
-                    .frame(width: 32)
-            }
-
-            // Background picker — animated ring selection
-            HStack(spacing: 16) {
-                ForEach(ReaderBackground.allCases, id: \.self) { bg in
-                    Button {
-                        withAnimation(AstralAnimation.bouncy) {
-                            background = bg
-                        }
-                    } label: {
-                        Circle()
-                            .fill(bgPreviewColor(bg))
-                            .frame(width: 32, height: 32)
-                            .overlay(
-                                Circle()
-                                    .stroke(AstralColors.gold, lineWidth: 2.5)
-                                    .opacity(background == bg ? 1 : 0)
-                                    .scaleEffect(background == bg ? 1 : 0.6)
-                                    .animation(AstralAnimation.bouncy, value: background)
-                            )
-                    }
-                    .buttonStyle(PressButtonStyle(scale: 0.88))
-                }
-                Spacer()
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 34)
         .background(.ultraThinMaterial)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(AstralTypography.captionMedium)
+            .foregroundStyle(AstralColors.muted)
+            .tracking(0.8)
+    }
+
+    private func labeledReadout(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(AstralTypography.body)
+                .foregroundStyle(AstralColors.white)
+            Spacer()
+            Text(value)
+                .font(AstralTypography.body)
+                .foregroundStyle(AstralColors.muted)
+                .monospacedDigit()
+        }
     }
 
     private func bgPreviewColor(_ bg: ReaderBackground) -> Color {

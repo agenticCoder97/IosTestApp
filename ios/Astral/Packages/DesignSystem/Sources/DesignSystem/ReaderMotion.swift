@@ -19,4 +19,9 @@ public enum ReaderMotion {
 
     /// Trigger ring fade in/out when the arming state changes.
     public static let triggerRing = Animation.easeOut(duration: 0.18)
+
+    /// Minimum hold before a press toggles the reader chrome. A flick-to-scroll
+    /// lifts the finger before this threshold and the recognizer is cancelled,
+    /// so only a deliberate press reveals/hides the bar.
+    public static let chromeRevealDelay: Double = 0.15
 }

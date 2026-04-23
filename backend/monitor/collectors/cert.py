@@ -77,6 +77,6 @@ def _read_last_renew() -> tuple[datetime | None, str]:
                 status = "failed"
             elif any("skipped" in line.lower() for line in tail):
                 status = "skipped"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("letsencrypt.log read failed, reporting renewal status=ok: %s", e)
     return at, status
