@@ -702,6 +702,10 @@ STATE.terms = STATE.terms || {};   // service → { termHost, term, fitAddon, ws
 // Per-service command palette. Picking one types it into the attached
 // shell and hits Enter. Commands are hard-coded here — never taken from
 // user input — so there's no injection surface. Kept small (5 per svc).
+// Every command has been verified to run in its container's actual image:
+// postgres/redis/nginx/certbot are alpine; fastapi + arq_worker are
+// python:3.11-slim, which means NO redis-cli / procps / alembic.ini in
+// the image — so arq_worker uses the `redis` python module instead.
 window.PRESET_CMDS = {
   postgres: [
     {label: 'migration head',          cmd: "psql -U astral -d astral -c 'SELECT version_num FROM alembic_version;'"},
@@ -718,17 +722,17 @@ window.PRESET_CMDS = {
     {label: 'memory usage',            cmd: 'redis-cli info memory | head -15'},
   ],
   fastapi: [
-    {label: 'alembic current',         cmd: 'alembic current'},
-    {label: 'alembic history',         cmd: 'alembic history | head -20'},
-    {label: 'route list',              cmd: "python -c \"from app.main import app\\nfor r in app.routes:\\n    print(getattr(r, 'methods', {}) or '', getattr(r, 'path', r))\""},
+    {label: 'route list',              cmd: "python -c \"from app.main import app\\nfor r in app.routes:\\n    print(getattr(r, 'methods', '') or '', getattr(r, 'path', r))\""},
+    {label: 'health probe',            cmd: 'curl -sS http://127.0.0.1:8000/healthz || curl -sS http://127.0.0.1:8000/ | head -20'},
     {label: 'key pkg versions',        cmd: "pip show fastapi sqlalchemy asyncpg arq pydantic | grep -E 'Name:|Version:'"},
+    {label: 'disk usage',              cmd: 'df -h /'},
     {label: 'astral env vars',         cmd: "env | grep -E '^ASTRAL_|^MONITOR_|^ARQ_|^FFNET_|^MANGADEX_' | sort"},
   ],
   arq_worker: [
     {label: 'arq check',               cmd: 'arq --check app.worker.WorkerSettings'},
-    {label: 'queue depth',             cmd: 'redis-cli llen arq:queue'},
-    {label: 'in-progress jobs',        cmd: "redis-cli --scan --pattern 'arq:in-progress:*' | head -20"},
-    {label: 'recent results',          cmd: "redis-cli --scan --pattern 'arq:result:*' | head -10"},
+    {label: 'queue depth',             cmd: "python -c \"import os, redis; r=redis.from_url(os.environ['REDIS_URL']); print('arq:queue ->', r.llen('arq:queue'))\""},
+    {label: 'in-progress jobs',        cmd: "python -c \"import os, redis; r=redis.from_url(os.environ['REDIS_URL']); keys=list(r.scan_iter('arq:in-progress:*')); print(f'{len(keys)} in-progress'); [print(' ', k.decode()) for k in keys[:20]]\""},
+    {label: 'recent results',          cmd: "python -c \"import os, redis; r=redis.from_url(os.environ['REDIS_URL']); keys=list(r.scan_iter('arq:result:*')); print(f'{len(keys)} result keys'); [print(' ', k.decode()) for k in keys[:10]]\""},
     {label: 'worker env',              cmd: "env | grep -E '^ARQ_|^REDIS_|^DATABASE_' | sort"},
   ],
   nginx: [
