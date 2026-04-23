@@ -389,17 +389,10 @@ struct FanficReaderView: View {
 
             Spacer(minLength: 8)
 
-            chapterCountLabel
-
-            Button {
-                showChapterList = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(AstralColors.white)
-                    .frame(width: 28, height: 28)
+            Button { showChapterList = true } label: {
+                chapterCountLabel
             }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
+            .buttonStyle(PressButtonStyle(scale: 0.92))
 
             Button {
                 withAnimation(AstralAnimation.bouncy) {

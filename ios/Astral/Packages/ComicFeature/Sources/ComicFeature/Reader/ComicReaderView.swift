@@ -57,6 +57,7 @@ struct ComicReaderView: View {
     @State private var bottomEdgeArmedAt: Date? = nil
     @State private var hasCompletedInitialLayout = false
     @State private var pageThrottle = ThrottledSetter<Int>(interval: 0.08)
+    @State private var pendingScrollToPage: Int?
     @State private var showChapterList = false
     @State private var autoScrollActive = false
     @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
@@ -292,6 +293,7 @@ struct ComicReaderView: View {
     }
 
     private var webtoonReader: some View {
+        ScrollViewReader { proxy in
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 // Previous chapter pull trigger at top of scroll content
@@ -385,6 +387,13 @@ struct ComicReaderView: View {
         }
         .simultaneousGesture(TapGesture().onEnded { toggleHUD() })
         .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
+        .onChange(of: pendingScrollToPage) { _, newTarget in
+            guard let target = newTarget else { return }
+            withAnimation(ReaderMotion.pageTurn) {
+                proxy.scrollTo(target, anchor: .top)
+            }
+            pendingScrollToPage = nil
+        }
         .task(id: topEdgeVisibleSince) {
             guard let since = topEdgeVisibleSince else { return }
             try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
@@ -398,6 +407,7 @@ struct ComicReaderView: View {
             guard bottomEdgeVisibleSince == since, bottomEdgeArmedAt == nil else { return }
             withAnimation(ReaderMotion.triggerRing) { bottomEdgeArmedAt = .now }
             Haptics.play(.triggerArmed)
+        }
         }
     }
 
@@ -519,17 +529,10 @@ struct ComicReaderView: View {
 
             Spacer(minLength: 8)
 
-            chapterCountLabel
-
-            Button {
-                showChapterList = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(AstralColors.white)
-                    .frame(width: 28, height: 28)
+            Button { showChapterList = true } label: {
+                chapterCountLabel
             }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
+            .buttonStyle(PressButtonStyle(scale: 0.92))
 
             Button {
                 withAnimation(AstralAnimation.bouncy) {
@@ -638,7 +641,11 @@ struct ComicReaderView: View {
                 Menu {
                     ForEach(0..<pages.count, id: \.self) { idx in
                         Button("Page \(idx + 1)") {
-                            withAnimation(ReaderMotion.pageTurn) { currentPage = idx }
+                            if readingMode == .webtoon {
+                                pendingScrollToPage = idx
+                            } else {
+                                withAnimation(ReaderMotion.pageTurn) { currentPage = idx }
+                            }
                             Haptics.play(.pageTurn)
                         }
                     }
