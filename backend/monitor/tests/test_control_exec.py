@@ -10,6 +10,18 @@ from unittest.mock import MagicMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _reset_exec_state():
+    """Ensure module-level _REGISTRY and _SERVICE_LOCKS start clean for every
+    test in this module, so test order cannot hide regressions."""
+    from monitor.control import exec as exec_mod
+    exec_mod._REGISTRY.clear()
+    exec_mod._SERVICE_LOCKS.clear()
+    yield
+    exec_mod._REGISTRY.clear()
+    exec_mod._SERVICE_LOCKS.clear()
+
+
 # ── allowlist + helper extraction ─────────────────────────────────────
 
 def test_exec_allowlist_contents():
@@ -177,3 +189,22 @@ async def test_close_session_closes_socket_and_audits(fake_docker, monkeypatch):
     assert close_detail["reason"] == "user-close"
     assert "duration_s" in close_detail
     assert "orphaned" in close_detail
+
+
+@pytest.mark.asyncio
+async def test_start_session_audits_failure_and_reraises(fake_docker, monkeypatch):
+    from monitor.control import exec as exec_mod
+    fake_docker.api.exec_create.side_effect = RuntimeError("docker down")
+    records: list[dict] = []
+    monkeypatch.setattr(
+        exec_mod, "audit_record",
+        lambda action, *, ok, detail=None, source_ip=None:
+            records.append({"action": action, "ok": ok, "detail": detail}),
+    )
+    with pytest.raises(RuntimeError, match="docker down"):
+        await exec_mod.start_session("postgres", cols=80, rows=24)
+    assert records == [
+        {"action": "exec.start", "ok": False, "detail": "postgres: docker down"},
+    ]
+    # Session should NOT be registered if start fails.
+    assert exec_mod._REGISTRY == {}

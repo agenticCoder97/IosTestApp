@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
+
+from monitor.control.audit import record as audit_record
+from monitor.control.docker_ops import _find_compose_container
 
 logger = logging.getLogger("monitor.control.exec")
 
@@ -59,11 +63,6 @@ def _has_live_session_for(service: str) -> Session | None:
 
 def _new_session_id() -> str:
     return uuid.uuid4().hex
-
-
-import time  # noqa: E402
-from monitor.control.audit import record as audit_record
-from monitor.control.docker_ops import _find_compose_container
 
 
 class SessionExists(RuntimeError):
