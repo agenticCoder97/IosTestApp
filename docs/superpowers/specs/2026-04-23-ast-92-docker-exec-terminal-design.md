@@ -17,11 +17,12 @@ Replace the AST-78 "coming soon" stub on the monitor-dashboard service cards wit
 - xterm.js wired into the existing flipped-card DOM (`.term-body`).
 - Nginx WebSocket proxy config.
 - Auth, allowlist, audit, idle watchdog, session cap.
+- **Persistent scroll-back across flip-back/flip-forward on the same dashboard load** (see "Persistence & minimize" below).
 
 ### Out of scope (explicit)
 
 - Multi-user collaboration on one session.
-- Persistent scroll-back after the card is flipped back.
+- Persistence across full page reloads (reload = fresh session).
 - File transfer UX inside the terminal.
 - `docker exec` into `astral_monitor` itself (self-exec — deliberately excluded).
 
@@ -185,27 +186,41 @@ xterm 5.x via CDN (matches existing Tailwind-from-CDN pattern in `index.html`):
 
 (No `addon-attach` — we implement binary I/O ourselves to support the control channel.)
 
-### `mountTerminal(wrap, service)` in controls.js
+### `openTerminal(wrap, service)` in controls.js
 
 Replaces the `toast('coming soon — AST-92')` call at `index.html:1824`.
 
 ```
-1. Read token from localStorage.
-2. fetch POST /monitor/control/exec/start, body {service, cols: 80, rows: 24}
-   with header X-Monitor-Auth.
-   409 → show "session already open" banner inside the flipped card.
-   Other error → show error banner.
-3. Instantiate Terminal + FitAddon; terminal.open(termBody).
-4. Open WebSocket to wss?://host/monitor/control/exec/<session_id>
-   with subprotocols ['monitor-token', token]. binaryType = 'arraybuffer'.
-5. On ws.open → fit (delayed: see below) → send initial resize frame.
-6. term.onData(d → ws.send(new TextEncoder().encode(d)))  // binary stdin
-7. ws.onmessage handler:
-       if event.data instanceof ArrayBuffer → term.write(new Uint8Array(event.data))
-       else → JSON.parse(event.data), dispatch 'pong' | 'closed'
-8. ResizeObserver on .term-body → fitAddon.fit() → send resize text frame.
-9. term-close button → ws.close(1000, 'user-close') → term.dispose().
-10. beforeunload → ws.close(1000, 'tab-close').
+1. If STATE.terms[service] exists && ws.readyState === OPEN:
+     → re-attach existing termHost into wrap's .term-body DOM
+     → flip forward; on transitionend, fitAddon.fit() + term.focus()
+     → done (NO POST, NO new WS).
+2. Otherwise cold open:
+   a. Read token from localStorage.
+   b. fetch POST /monitor/control/exec/start, body {service, cols:80, rows:24}
+      with header X-Monitor-Auth.
+      409 → show "session already open (close the other tab, or wait for
+              idle timeout)" banner. No client-side auto-retry.
+      Other error → show error banner.
+   c. Create detached DIV termHost; new Terminal + FitAddon;
+      terminal.open(termHost); append termHost into wrap's .term-body.
+   d. Open WebSocket to wss?://host/monitor/control/exec/<session_id>
+      with subprotocols ['monitor-token', token]. binaryType='arraybuffer'.
+   e. On ws.open → fit (on transitionend) → send initial resize frame.
+   f. term.onData(d → ws.send(new TextEncoder().encode(d)))  // binary stdin
+   g. ws.onmessage:
+        ArrayBuffer → term.write(new Uint8Array(event.data))
+        string     → JSON.parse, dispatch 'pong' | 'closed'
+   h. ResizeObserver on .term-body → fitAddon.fit() → resize text frame.
+   i. STATE.terms[service] = {termHost, term, fitAddon, ws, sessionId, mountedAt}.
+      (wrap is NOT stored — it gets replaced by each render of the service grid.)
+3. Minimize button (−):
+     → flip card back. termHost stays in memory (detached from DOM).
+     → WS stays open. Session cap still held.
+4. Close button (✕):
+     → send ws.close(1000, 'user-close'); term.dispose();
+     → delete STATE.terms[service]; flip card back.
+5. beforeunload → for each STATE.terms[*]: ws.close(1000, 'tab-close').
 ```
 
 ### Card-flip interaction
@@ -213,6 +228,36 @@ Replaces the `toast('coming soon — AST-92')` call at `index.html:1824`.
 - `fitAddon.fit()` is deferred until the card's `transitionend` event fires on the `.svc-flip-inner` element. Reading `clientWidth` mid-flip returns zero (CSS 3D transforms + opacity animation).
 - After fit, call `terminal.focus()` — otherwise keystrokes fall through to the dashboard.
 - The terminal's xterm root div must have `tabindex="0"` so focus works; xterm sets this by default but the surrounding `.term-body` also needs `outline: none` and `cursor: text`.
+
+### Persistence & minimize
+
+Two distinct user actions on the back face, each with different lifecycle semantics:
+
+| Button | Glyph | Action | WS | xterm | Session cap |
+|--------|-------|--------|----|-------|-------------|
+| **Minimize** | `−` (title: "minimize — keep session open") | flip card back to front | kept alive | kept mounted | still held |
+| **Close** | `✕` (title: "close shell") | flip card back + full teardown | `ws.close(1000)` | `term.dispose()` | released |
+
+When the user re-clicks the terminal icon on a service whose session is **minimized**:
+
+1. controls.js checks `STATE.terms[service]` — a map from service name to `{wrap, term, fitAddon, ws, sessionId}`.
+2. If entry exists and `ws.readyState === OPEN`, re-mount the same xterm instance into the (same) `.term-body`, flip the card forward, call `fitAddon.fit()` on `transitionend`, refocus. **No new `/control/exec/start` call.** Scroll-back, prompt state, and any in-flight shell (e.g., a running `tail -f`) are preserved because the WS never closed.
+3. If the WS died in the background (idle timeout, server restart), drop the stale entry and start a fresh session — same code path as a cold open. Show a one-line note in the terminal: `\x1b[33m[shell reconnected]\x1b[0m\r\n`.
+
+Frontend state shape:
+
+```js
+STATE.terms = {
+  postgres: { termHost, term, fitAddon, ws, sessionId, mountedAt },
+  // …
+}
+```
+
+Rendering (`renderServiceHealth` re-renders the service grid on every `refreshAll`, currently every 30 s): the re-render tears down DOM for the back face. We guard by **mounting xterm into a detached container held in `STATE.terms[service].termHost`** — a DIV kept in memory across renders. On each render, if the entry exists we re-attach the same `termHost` into the new `.term-body`. xterm's DOM survives the move because we don't call `term.open()` again; we just append the existing root element.
+
+Backend idle watchdog is unchanged — 10 min no I/O still closes the session. A minimized terminal that stays idle will eventually be reaped; the next re-open becomes a cold open. Surfaced to the user via the reconnect note.
+
+`beforeunload` still fully tears down every minimized session (page reload means fresh state; no server-side persistence across reloads).
 
 ### Global shortcut guard
 
@@ -224,11 +269,12 @@ if (document.activeElement?.closest('.term-body')) return;
 
 ### Disconnect & reconnect UX
 
-On `ws.onclose` (non-user-initiated):
+On `ws.onclose` (non-user-initiated — idle timeout, server restart, exec exited):
 
-- Overlay on the flipped card: "Shell disconnected · [Reconnect]".
-- Reconnect button tears down state and calls `mountTerminal(wrap, service)` again (new session_id, fresh shell).
-- User-initiated closes (close button, flip-back, tab close) skip the overlay.
+- If the card is currently flipped-forward: overlay inside the back face — "Shell disconnected · [Reconnect]". Reconnect calls `openTerminal(wrap, service)` which hits the cold-open path (fresh `session_id`, fresh shell) and prints `[shell reconnected]` into the new buffer.
+- If the card is minimized when the WS dies: silently mark the entry stale in `STATE.terms[service]`. Next time the user re-clicks the terminal icon, the cold-open path runs, and the note appears in the new buffer.
+- Explicit user closes (✕ close button, tab close) skip the overlay entirely.
+- Minimize (−) does **not** disconnect — no overlay, no note.
 
 ### Cache bust
 
@@ -259,8 +305,13 @@ backend/monitor/tests/
                                   frame dispatch, origin allowlist,
                                   subprotocol handshake.
 backend/monitor/static/
-  index.html         ← EDIT. xterm includes, stub replaced, v=5 cache bust.
-  controls.js        ← EDIT. mountTerminal, shortcut guard, disconnect UX.
+  index.html         ← EDIT. xterm includes, stub replaced, v=5 cache bust,
+                       back-face gains a second "minimize" (−) button next
+                       to the existing close (✕); .term-close becomes
+                       .term-minimize for the soft-flip path.
+  controls.js        ← EDIT. openTerminal, STATE.terms map, detached-
+                       termHost re-attach on re-render, shortcut guard,
+                       disconnect UX.
 backend/nginx/
   nginx.conf         ← EDIT. map block + WS upgrade headers on /monitor/.
 ```
@@ -300,15 +351,20 @@ No new Python deps. `docker==7.1.*` is already pinned. FastAPI's built-in WebSoc
 - Send text `{"type":"resize",…}` → verify `exec_resize` called with `height`/`width` correctly.
 - Missing subprotocol → `TestClient.websocket_connect` raises `WebSocketDisconnect(code=1008)`.
 
+### Persistence (no backend involvement)
+
+The re-attach path is purely frontend — covered by the manual smoke test below. No Playwright automation in this change; the dashboard has no existing frontend test harness and adding one is out of scope.
+
 ### Manual smoke
 
 After deploy:
 1. Open `/monitor/`, click terminal icon on `fastapi` card.
 2. Expect a `sh` prompt. Run `ls /app` → see app source.
 3. Resize window → terminal reflows.
-4. Click close (×). Re-open. Expect a fresh session (confirm audit log).
-5. Open two tabs, try to start two sessions on the same service → second returns 409.
-6. Leave idle 10 min → server closes WS with overlay banner.
+4. Click minimize (−). Wait >30s so the service grid re-renders. Click terminal icon again → same scroll-back, cursor on same line, no new `exec.start` in audit. Run `echo hi` → confirm still the same shell.
+5. Click close (✕). Re-open. Expect a fresh session (new `exec.start` in audit).
+6. Open two tabs, try to start two sessions on the same service → second returns 409.
+7. Leave idle 10 min → server closes WS; re-open shows the `[shell reconnected]` note.
 
 ## Risk acknowledgments
 
@@ -316,3 +372,4 @@ After deploy:
 - **Monitor restart mid-session.** Deploy hook restarts the monitor container; all active WS sessions die without graceful close. User sees the disconnect banner and reconnects. No session state is meaningful across restarts.
 - **CDN outage.** jsdelivr down → xterm unavailable → terminal icon shows an error banner on click. The rest of the dashboard still works since xterm is loaded async. Acceptable; matches the Tailwind CDN dependency we already accept.
 - **Token exposure window.** Same as existing `/control/*` endpoints — the token sits in browser localStorage alongside every other control action. AST-92 does not change the trust model.
+- **Minimized sessions hold the per-service cap.** A user who minimizes a terminal and then tries to open it in another tab will hit 409 until the first tab closes, reloads, or hits the 10-min idle timeout. The 409 banner states this explicitly; no server-side "take-over" affordance in v1 (would need a separate authenticated endpoint + audit row and isn't worth the complexity for single-user ops).
