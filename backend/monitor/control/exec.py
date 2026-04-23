@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -155,3 +156,28 @@ def _docker_client():
     """Reexport so tests can monkeypatch exec.py independently of docker_ops."""
     from monitor.control.docker_ops import _docker_client as inner
     return inner()
+
+
+# ── WebSocket helpers ─────────────────────────────────────────────────
+
+_ALLOWED_ORIGIN_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^https://astral-reader\.duckdns\.org$"),
+    re.compile(r"^http://localhost(:\d+)?$"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
+    re.compile(r"^http://192\.168\.0\.108(:\d+)?$"),
+)
+
+
+def origin_allowed(origin: str | None) -> bool:
+    # Missing Origin → non-browser (test client). Allow.
+    if not origin:
+        return True
+    return any(p.match(origin) for p in _ALLOWED_ORIGIN_PATTERNS)
+
+
+def token_from_subprotocols(offered: list[str]) -> str | None:
+    # Client offers ['monitor-token', '<token>']. Accept only if both slots
+    # present and first is the literal sentinel.
+    if len(offered) < 2 or offered[0] != "monitor-token":
+        return None
+    return offered[1]

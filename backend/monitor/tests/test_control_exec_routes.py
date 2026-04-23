@@ -5,7 +5,9 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from starlette.websockets import WebSocketDisconnect
 
 
 @pytest.fixture
@@ -96,3 +98,71 @@ async def test_missing_token_env_returns_503(app_with_token, monkeypatch):
             headers={"X-Monitor-Auth": "anything"},
         )
     assert resp.status_code == 503
+
+
+# ── WebSocket handshake tests ─────────────────────────────────────────
+
+
+def _start_session_sync(client: TestClient, service="postgres") -> str:
+    r = client.post("/control/exec/start",
+                    json={"service": service, "cols": 80, "rows": 24},
+                    headers={"X-Monitor-Auth": "s3cret"})
+    assert r.status_code == 200, r.text
+    return r.json()["session_id"]
+
+
+def test_ws_rejects_without_subprotocol(app_with_token):
+    client = TestClient(app_with_token)
+    sid = _start_session_sync(client)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(f"/control/exec/{sid}"):
+            pass
+    assert exc.value.code == 1008
+
+
+def test_ws_rejects_bad_token(app_with_token):
+    client = TestClient(app_with_token)
+    sid = _start_session_sync(client)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(
+            f"/control/exec/{sid}",
+            subprotocols=["monitor-token", "wrong"],
+        ):
+            pass
+    assert exc.value.code == 1008
+
+
+def test_ws_rejects_unknown_session(app_with_token):
+    client = TestClient(app_with_token)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(
+            "/control/exec/deadbeef",
+            subprotocols=["monitor-token", "s3cret"],
+        ):
+            pass
+    assert exc.value.code == 1008
+
+
+def test_ws_rejects_bad_origin(app_with_token):
+    client = TestClient(app_with_token)
+    sid = _start_session_sync(client)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(
+            f"/control/exec/{sid}",
+            subprotocols=["monitor-token", "s3cret"],
+            headers={"origin": "https://evil.example.com"},
+        ):
+            pass
+    assert exc.value.code == 1008
+
+
+def test_ws_accepts_with_subprotocol_and_allowed_origin(app_with_token):
+    client = TestClient(app_with_token)
+    sid = _start_session_sync(client)
+    # Default TestClient omits Origin — treated as allowed (server-to-server).
+    with client.websocket_connect(
+        f"/control/exec/{sid}",
+        subprotocols=["monitor-token", "s3cret"],
+    ) as ws:
+        # Just accept/close — pumps land in Task 5.
+        ws.close()

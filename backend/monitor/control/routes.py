@@ -11,7 +11,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -200,3 +200,27 @@ async def exec_start(body: ExecStartBody, ip: str = Depends(require_auth)) -> JS
 @router.get("/audit")
 async def audit(limit: int = 30, _ip: str = Depends(require_auth)) -> JSONResponse:
     return JSONResponse({"entries": audit_tail(limit=min(max(limit, 1), 200))})
+
+
+# ── exec WebSocket (AST-92) ───────────────────────────────────────────
+
+@router.websocket("/exec/{session_id}")
+async def exec_ws(websocket: WebSocket, session_id: str) -> None:
+    expected = os.getenv("MONITOR_CONTROL_TOKEN")
+    offered = [p.strip() for p in
+               websocket.headers.get("sec-websocket-protocol", "").split(",")
+               if p.strip()]
+    tok = exec_mod.token_from_subprotocols(offered)
+    if not expected or tok != expected:
+        await websocket.close(code=1008)
+        return
+    if not exec_mod.origin_allowed(websocket.headers.get("origin")):
+        await websocket.close(code=1008)
+        return
+    sess = exec_mod._REGISTRY.get(session_id)
+    if sess is None or sess._closed:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept(subprotocol="monitor-token")
+    # Pumps land in Task 5 — for now, immediately close so handshake tests pass.
+    await websocket.close(code=1000)
