@@ -171,19 +171,6 @@ struct ComicReaderView: View {
             .animation(ReaderMotion.chrome, value: showHUD)
             .allowsHitTesting(showHUD)
 
-            // Chapter + favourite overlay — top right, below the top bar
-            VStack(spacing: 8) {
-                chapterFavOverlay
-                Spacer()
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.top, 110)
-            .padding(.trailing, 16)
-            .offset(y: showHUD ? 0 : -110)
-            .opacity(showHUD ? 1 : 0)
-            .animation(ReaderMotion.chrome, value: showHUD)
-            .allowsHitTesting(showHUD)
-
             // Bottom HUD — slides in from below, swaps between settings and nav bar
             VStack(spacing: 0) {
                 Spacer()
@@ -298,52 +285,6 @@ struct ComicReaderView: View {
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-        }
-    }
-
-    // MARK: - Chapter / Favourite Overlay
-
-    private var chapterFavOverlay: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 58, height: 58)
-                VStack(spacing: 1) {
-                    Text("\(currentChapterIndex + 1)")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(AstralColors.white)
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .animation(AstralAnimation.quick, value: currentChapterIndex)
-                    Capsule()
-                        .fill(AstralColors.muted)
-                        .frame(width: 22, height: 1.5)
-                        .rotationEffect(.degrees(-45))
-                    Text("\(chapters.count)")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(AstralColors.muted)
-                        .monospacedDigit()
-                }
-            }
-
-            Button {
-                withAnimation(AstralAnimation.bouncy) {
-                    comic.isFavorite.toggle()
-                    try? modelContext.save()
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 44, height: 44)
-                    Image(systemName: comic.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(comic.isFavorite ? AstralColors.error : AstralColors.white)
-                        .symbolEffect(.bounce, value: comic.isFavorite)
-                }
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
         }
     }
 
@@ -557,7 +498,8 @@ struct ComicReaderView: View {
                 Rectangle()
                     .fill(.clear)
                     .frame(width: geo.size.width / 3)
-                    .pressReveal { toggleHUD() }
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleHUD() }
 
                 Rectangle()
                     .fill(.clear)
@@ -642,7 +584,9 @@ struct ComicReaderView: View {
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
+
+            chapterCountLabel
 
             Button {
                 showChapterList = true
@@ -650,6 +594,21 @@ struct ComicReaderView: View {
                 Image(systemName: "list.bullet")
                     .font(.body.weight(.medium))
                     .foregroundStyle(AstralColors.white)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
+
+            Button {
+                withAnimation(AstralAnimation.bouncy) {
+                    comic.isFavorite.toggle()
+                    try? modelContext.save()
+                }
+                Haptics.play(.bookmark)
+            } label: {
+                Image(systemName: comic.isFavorite ? "heart.fill" : "heart")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(comic.isFavorite ? AstralColors.error : AstralColors.white)
+                    .symbolEffect(.bounce, value: comic.isFavorite)
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(PressButtonStyle(scale: 0.88))
@@ -679,6 +638,22 @@ struct ComicReaderView: View {
         .padding(.top, 56)
         .padding(.bottom, 12)
         .background(.ultraThinMaterial)
+    }
+
+    private var chapterCountLabel: some View {
+        HStack(spacing: 3) {
+            Text("\(currentChapterIndex + 1)")
+                .foregroundStyle(AstralColors.white)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text("/")
+                .foregroundStyle(AstralColors.muted)
+            Text("\(chapters.count)")
+                .foregroundStyle(AstralColors.muted)
+                .monospacedDigit()
+        }
+        .font(.system(size: 13, weight: .semibold, design: .rounded))
+        .animation(AstralAnimation.quick, value: currentChapterIndex)
     }
 
     // MARK: - Bottom Bar

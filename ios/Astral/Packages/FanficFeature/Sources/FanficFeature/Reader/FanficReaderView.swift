@@ -219,16 +219,6 @@ struct FanficReaderView: View {
             .animation(ReaderMotion.chrome, value: showReaderBar)
             .allowsHitTesting(showReaderBar)
 
-            // Chapter + favourite overlay — top right
-            if showReaderBar {
-                chapterFavOverlay
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, 44)
-                    .padding(.trailing, 16)
-                    .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .topTrailing)))
-                    .allowsHitTesting(showReaderBar)
-            }
-
             // Reader settings bar — spring slide from bottom
             if showReaderBar {
                 VStack {
@@ -239,7 +229,8 @@ struct FanficReaderView: View {
             }
 
         }
-        .pressReveal {
+        .contentShape(Rectangle())
+        .onTapGesture {
             withAnimation(ReaderMotion.chrome) {
                 showReaderBar.toggle()
             }
@@ -343,62 +334,6 @@ struct FanficReaderView: View {
         }
     }
 
-    private var chapterFavOverlay: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 48, height: 48)
-                VStack(spacing: 1) {
-                    Text(chapterDisplayNum)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(AstralColors.white)
-                        .monospacedDigit()
-                    Capsule()
-                        .fill(AstralColors.muted)
-                        .frame(width: 18, height: 1.5)
-                        .rotationEffect(.degrees(-45))
-                    Text("\(fanfic.totalChapters)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AstralColors.muted)
-                        .monospacedDigit()
-                }
-            }
-
-            Button {
-                showChapterList = true
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "list.bullet")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(AstralColors.white)
-                }
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
-
-            Button {
-                withAnimation(AstralAnimation.bouncy) {
-                    fanfic.isFavorite.toggle()
-                    try? modelContext.save()
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 40, height: 40)
-                    Image(systemName: fanfic.isFavorite ? "heart.fill" : "heart")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(fanfic.isFavorite ? AstralColors.error : AstralColors.white)
-                        .symbolEffect(.bounce, value: fanfic.isFavorite)
-                }
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
-        }
-    }
-
     // MARK: - Top Bar
 
     private var fanficTopBar: some View {
@@ -417,12 +352,55 @@ struct FanficReaderView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
 
-            Spacer()
+            Spacer(minLength: 8)
+
+            chapterCountLabel
+
+            Button {
+                showChapterList = true
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(AstralColors.white)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
+
+            Button {
+                withAnimation(AstralAnimation.bouncy) {
+                    fanfic.isFavorite.toggle()
+                    try? modelContext.save()
+                }
+                Haptics.play(.bookmark)
+            } label: {
+                Image(systemName: fanfic.isFavorite ? "heart.fill" : "heart")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(fanfic.isFavorite ? AstralColors.error : AstralColors.white)
+                    .symbolEffect(.bounce, value: fanfic.isFavorite)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(PressButtonStyle(scale: 0.88))
         }
         .padding(.horizontal, 16)
         .padding(.top, 44)
         .padding(.bottom, 10)
         .background(.ultraThinMaterial)
+    }
+
+    private var chapterCountLabel: some View {
+        HStack(spacing: 3) {
+            Text(chapterDisplayNum)
+                .foregroundStyle(AstralColors.white)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text("/")
+                .foregroundStyle(AstralColors.muted)
+            Text("\(fanfic.totalChapters)")
+                .foregroundStyle(AstralColors.muted)
+                .monospacedDigit()
+        }
+        .font(.system(size: 13, weight: .semibold, design: .rounded))
+        .animation(AstralAnimation.quick, value: currentChapter.chapterNumber)
     }
 
     private var chapterDisplayNum: String {
