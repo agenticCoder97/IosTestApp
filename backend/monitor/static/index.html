@@ -388,16 +388,35 @@
   /* AST-86 — skeleton / no-data */
   .svc-dim{ opacity: .5; filter: grayscale(.3); }
   .spark-empty{ font-size: 10px; color: var(--muted); letter-spacing: .12em; }
-  .term-bar{ display:flex; align-items:center; gap:8px; padding:6px 10px;
-            border-bottom:1px solid var(--border); }
+  /* Compact macOS-Terminal-style header. */
+  .term-bar{ display:flex; align-items:center; gap:6px; padding:3px 8px;
+             border-bottom:1px solid var(--border); min-height:20px; }
+  .term-title{ font: 500 11px/1 "JetBrains Mono", ui-monospace, monospace;
+               color: var(--muted); letter-spacing: .04em;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .term-body{ flex:1; min-height:0; padding:6px 8px; outline:none;
              cursor:text; overflow:hidden; }
   .term-body .xterm,
   .term-body .xterm-viewport,
   .term-body .xterm-screen{ width:100% !important; height:100% !important; }
-  /* Compact .sel variant for the term-bar preset-command picker. */
-  .term-presets{ padding:2px 22px 2px 8px; font-size:11px; max-width:170px;
-                background-position: right 6px center; }
+  /* Traffic-light-style buttons in the term-bar right edge. */
+  .term-dot{ width:12px; height:12px; border-radius:999px;
+             border:none; padding:0; margin:0; flex: 0 0 auto;
+             cursor:pointer; appearance:none; -webkit-appearance:none;
+             color: transparent; font-size: 0;
+             background-color: var(--muted); background-repeat:no-repeat;
+             background-position:center; background-size:8px 8px; }
+  .term-dot:hover{ filter: brightness(1.1); }
+  .term-dot:focus-visible{ outline: 2px solid var(--gold); outline-offset: 1px; }
+  .term-dot-close{ background-color: #ff5f57; }
+  .term-dot-min  { background-color: #ffbd2e; }
+  .term-dot-cmd  { background-color: #27c93f;
+                   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(0,0,0,.55)' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); }
+  /* The native <select> dropdown when the cmd dot is clicked. */
+  .term-dot-cmd option{ color: var(--white); background: var(--surface);
+                        font-size: 12px;
+                        font-family: "JetBrains Mono", ui-monospace, monospace;
+                        text-transform: none; letter-spacing: 0; }
 </style>
 </head>
 
@@ -1816,15 +1835,15 @@ function renderServices(){
         </div>
         <div class="svc-face back">
           <div class="term-bar">
-            <span class="text-[11px] tracking-[.14em] uppercase text-muted">Shell · ${name}</span>
+            <span class="term-title">${name}</span>
             <span class="flex-1"></span>
-            <select class="sel term-presets" data-preset-select="${name}" aria-label="run a preset command on ${name}">
-              <option value="">commands…</option>
+            <button class="term-dot term-dot-close" data-close-term="${name}" title="close shell" aria-label="close shell"></button>
+            <button class="term-dot term-dot-min" data-min-term="${name}" title="minimize — keep session open" aria-label="minimize"></button>
+            <select class="term-dot term-dot-cmd" data-preset-select="${name}" title="commands" aria-label="run a preset command on ${name}">
+              <option value="">commands</option>
               ${(window.PRESET_CMDS && window.PRESET_CMDS[name] || [])
                 .map((p, i) => `<option value="${i}">${p.label}</option>`).join('')}
             </select>
-            <button class="ibtn term-min" title="minimize — keep session open" data-min-term="${name}">−</button>
-            <button class="ibtn term-close" title="close shell" data-close-term="${name}">✕</button>
           </div>
           <div class="term-body" data-term-body="${name}"></div>
         </div>
@@ -1872,7 +1891,7 @@ function renderServices(){
       }
     });
   });
-  document.querySelectorAll('.term-presets').forEach(sel => {
+  document.querySelectorAll('.term-dot-cmd').forEach(sel => {
     sel.addEventListener('change', (e) => {
       e.stopPropagation();
       const name = sel.dataset.presetSelect;
@@ -2391,6 +2410,6 @@ applyAllCollapsed();
      FastAPI app.mount("/static", ...) inside astral_monitor. An absolute
      "/static/..." path collides with nginx's `location /static/` block
      (aliased to the media volume) and returns 404. -->
-<script src="static/controls.js?v=6"></script>
+<script src="static/controls.js?v=7"></script>
 </body>
 </html>
