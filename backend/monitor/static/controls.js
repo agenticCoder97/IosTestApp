@@ -752,6 +752,11 @@ function sendPresetCommand(service, cmd){
   const entry = STATE.terms && STATE.terms[service];
   if (!entry || !entry.ws || entry.ws.readyState !== WebSocket.OPEN) return;
   entry.ws.send(new TextEncoder().encode(cmd + '\r'));
+  // Server echoes the command back (TTY echo in prod, explicit echo in
+  // the preview stub), so the typed text appears in the terminal card
+  // without us having to local-echo. Just make sure the terminal has
+  // focus so subsequent keystrokes go to the right place.
+  try { entry.term.focus(); } catch(_){}
 }
 window.sendPresetCommand = sendPresetCommand;
 
@@ -872,7 +877,7 @@ async function openTerminal(wrap, service){
   // eslint-disable-next-line no-undef
   const term = new Terminal({
     fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-    fontSize: 12,
+    fontSize: 11,
     theme: {background: '#0A0A0B', foreground: '#C8C8D4', cursor: '#C9A84C'},
     convertEol: true,
     cursorBlink: true,
