@@ -704,36 +704,36 @@ STATE.terms = STATE.terms || {};   // service → { termHost, term, fitAddon, ws
 // user input — so there's no injection surface. Kept small (5 per svc).
 window.PRESET_CMDS = {
   postgres: [
-    {label: 'list databases',          cmd: 'psql -U astral -l'},
-    {label: 'db size',                 cmd: "psql -U astral -d astral -c \"SELECT pg_size_pretty(pg_database_size(current_database()));\""},
-    {label: 'active connections',      cmd: "psql -U astral -d astral -c \"SELECT pid, usename, state, query FROM pg_stat_activity WHERE state IS NOT NULL;\""},
-    {label: 'largest tables',          cmd: "psql -U astral -d astral -c \"SELECT schemaname||'.'||relname AS table, pg_size_pretty(pg_total_relation_size(relid)) AS size FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;\""},
-    {label: 'version',                 cmd: "psql -U astral -d astral -c 'SELECT version();'"},
+    {label: 'tables + sizes',          cmd: "psql -U astral -d astral -c '\\dt+'"},
+    {label: 'db size',                 cmd: "psql -U astral -d astral -c \"SELECT pg_size_pretty(pg_database_size('astral')) AS db_size;\""},
+    {label: 'active queries',          cmd: "psql -U astral -d astral -c \"SELECT pid, state, now()-query_start AS runtime, substring(query, 1, 60) AS q FROM pg_stat_activity WHERE state <> 'idle' AND pid <> pg_backend_pid() ORDER BY query_start;\""},
+    {label: 'long-running (>5s)',      cmd: "psql -U astral -d astral -c \"SELECT pid, now()-query_start AS runtime, substring(query, 1, 80) AS q FROM pg_stat_activity WHERE state = 'active' AND now()-query_start > interval '5 seconds' ORDER BY runtime DESC;\""},
+    {label: 'waiting locks',           cmd: "psql -U astral -d astral -c \"SELECT locktype, mode, pid, relation::regclass AS rel, granted FROM pg_locks WHERE NOT granted;\""},
   ],
   redis: [
-    {label: 'info summary',            cmd: 'redis-cli info server | head -20'},
+    {label: 'info server',             cmd: 'redis-cli info server | head -20'},
     {label: 'dbsize',                  cmd: 'redis-cli dbsize'},
-    {label: 'memory',                  cmd: 'redis-cli info memory | head -20'},
-    {label: 'scan astral:*',           cmd: "redis-cli --scan --pattern 'astral:*' | head -30"},
+    {label: 'memory usage',            cmd: 'redis-cli info memory | head -15'},
     {label: 'slowlog (top 10)',        cmd: 'redis-cli slowlog get 10'},
+    {label: 'connected clients',       cmd: 'redis-cli client list | head -20'},
   ],
   fastapi: [
-    {label: 'process list',            cmd: 'ps auxf'},
-    {label: 'routes',                  cmd: "python -c \"from app.main import app;\\nfor r in app.routes:\\n  print(getattr(r, 'path', r))\""},
+    {label: 'process tree',            cmd: 'ps auxf'},
     {label: 'disk usage',              cmd: 'df -h /'},
-    {label: 'env (safe)',              cmd: "env | grep -vE 'PASS|SECRET|TOKEN|KEY' | sort"},
+    {label: 'memory (free -m)',        cmd: 'free -m'},
+    {label: 'env (filtered)',          cmd: "env | grep -vE 'PASS|SECRET|TOKEN|KEY' | sort"},
     {label: 'uptime',                  cmd: 'uptime'},
   ],
   arq_worker: [
     {label: 'arq check',               cmd: 'arq --check app.worker.WorkerSettings'},
-    {label: 'active jobs',             cmd: "redis-cli --scan --pattern 'arq:in-progress:*'"},
-    {label: 'process list',            cmd: 'ps auxf'},
-    {label: 'pip freeze',              cmd: 'pip freeze'},
+    {label: 'queue depth',             cmd: 'redis-cli llen arq:queue'},
+    {label: 'arq keys (scan)',         cmd: "redis-cli --scan --pattern 'arq:*' | head -30"},
+    {label: 'process tree',            cmd: 'ps auxf'},
     {label: 'uptime',                  cmd: 'uptime'},
   ],
   nginx: [
-    {label: 'nginx -t (test config)',  cmd: 'nginx -t'},
-    {label: 'nginx -T (full config)',  cmd: 'nginx -T 2>&1 | head -80'},
+    {label: 'nginx -t (test)',         cmd: 'nginx -t'},
+    {label: 'nginx -T (dump config)',  cmd: 'nginx -T 2>&1 | head -80'},
     {label: 'access log tail',         cmd: 'tail -n 40 /var/log/nginx/access.log 2>/dev/null || echo "(no access log)"'},
     {label: 'error log tail',          cmd: 'tail -n 40 /var/log/nginx/error.log 2>/dev/null || echo "(no error log)"'},
     {label: 'reload config',           cmd: 'nginx -s reload'},
@@ -741,9 +741,9 @@ window.PRESET_CMDS = {
   certbot: [
     {label: 'list certificates',       cmd: 'certbot certificates'},
     {label: 'renew --dry-run',         cmd: 'certbot renew --dry-run'},
-    {label: 'show renewal config',     cmd: 'cat /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -60'},
-    {label: 'account info',            cmd: 'certbot show_account'},
     {label: 'cert expiry (openssl)',   cmd: 'for c in /etc/letsencrypt/live/*/cert.pem; do echo "$c"; openssl x509 -enddate -noout -in "$c"; done'},
+    {label: 'show renewal config',     cmd: 'cat /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -60'},
+    {label: 'renewal hooks dir',       cmd: 'ls -la /etc/letsencrypt/renewal-hooks/'},
   ],
 };
 
@@ -754,6 +754,17 @@ function sendPresetCommand(service, cmd){
   entry.ws.send(new TextEncoder().encode(cmd + '\r'));
 }
 window.sendPresetCommand = sendPresetCommand;
+
+// If the service grid already painted before this file finished loading,
+// its preset-dropdown <option>s were built against an empty PRESET_CMDS.
+// Re-run the render so the options appear without waiting for the next
+// 30 s auto-refresh tick.
+(function _rehydratePresets(){
+  if (typeof window.renderServices !== 'function') return;
+  if (!window.STATE || !window.STATE.data || !window.STATE.data.services) return;
+  if (!document.querySelector('.svc-flip')) return;
+  try { window.renderServices(); } catch(_){}
+})();
 
 function _monitorBase(){
   return location.pathname.startsWith('/monitor/') ? '/monitor' : '';
