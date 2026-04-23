@@ -1848,10 +1848,17 @@ function renderServices(){
       e.stopPropagation();
       const name = btn.dataset.closeTerm;
       const wrap = btn.closest('.svc-flip');
-      if (wrap) wrap.classList.remove('flipped');
+      if (wrap) {
+        wrap.classList.remove('flipped');
+        if (wrap._termResizeObs) {
+          try { wrap._termResizeObs.disconnect(); } catch(_){}
+          wrap._termResizeObs = null;
+        }
+      }
       const entry = STATE.terms && STATE.terms[name];
       if (entry) {
         try { entry.ws && entry.ws.close(1000, 'user-close'); } catch(_){}
+        try { entry.fitAddon && entry.fitAddon.dispose(); } catch(_){}
         try { entry.term.dispose(); } catch(_){}
         delete STATE.terms[name];
       }

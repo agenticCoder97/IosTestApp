@@ -831,7 +831,10 @@ async function openTerminal(wrap, service){
 
 function _afterFlipForward(wrap, entry){
   const inner = wrap.querySelector('.svc-flip-inner');
+  let settled = false;
   const done = () => {
+    if (settled) return;
+    settled = true;
     try { entry.fitAddon.fit(); } catch(_){}
     entry.term.focus();
     if (entry.ws && entry.ws.readyState === WebSocket.OPEN) {
