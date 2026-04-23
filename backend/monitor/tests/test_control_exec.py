@@ -208,3 +208,16 @@ async def test_start_session_audits_failure_and_reraises(fake_docker, monkeypatc
     ]
     # Session should NOT be registered if start fails.
     assert exec_mod._REGISTRY == {}
+
+
+def test_origin_allowed_rejects_trailing_newline():
+    from monitor.control.exec import origin_allowed
+    assert origin_allowed("http://localhost:8000\n") is False
+    assert origin_allowed("http://localhost:8000\r\n") is False
+
+
+def test_origin_allowed_is_case_insensitive():
+    from monitor.control.exec import origin_allowed
+    assert origin_allowed("HTTP://LOCALHOST:8000") is True
+    assert origin_allowed("HTTPS://ASTRAL-READER.DUCKDNS.ORG") is True
+    assert origin_allowed("HTTPS://EVIL.EXAMPLE.COM") is False

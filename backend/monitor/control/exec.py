@@ -161,10 +161,10 @@ def _docker_client():
 # ── WebSocket helpers ─────────────────────────────────────────────────
 
 _ALLOWED_ORIGIN_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^https://astral-reader\.duckdns\.org$"),
-    re.compile(r"^http://localhost(:\d+)?$"),
-    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
-    re.compile(r"^http://192\.168\.0\.108(:\d+)?$"),
+    re.compile(r"^https://astral-reader\.duckdns\.org\Z"),
+    re.compile(r"^http://localhost(:\d+)?\Z"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?\Z"),
+    re.compile(r"^http://192\.168\.0\.108(:\d+)?\Z"),
 )
 
 
@@ -172,7 +172,7 @@ def origin_allowed(origin: str | None) -> bool:
     # Missing Origin → non-browser (test client). Allow.
     if not origin:
         return True
-    return any(p.match(origin) for p in _ALLOWED_ORIGIN_PATTERNS)
+    return any(p.match(origin.lower()) for p in _ALLOWED_ORIGIN_PATTERNS)
 
 
 def token_from_subprotocols(offered: list[str]) -> str | None:
