@@ -396,11 +396,15 @@
   async function runSQL() {
     const input = document.getElementById('sql-input');
     const status = document.getElementById('sql-status');
-    const result = document.getElementById('sql-result');
+    const wrapper = document.getElementById('sql-results');
+    const body = document.getElementById('sql-results-body');
+    const meta = document.getElementById('sql-results-meta');
     const sql = (input.value || '').trim();
     if (!sql) return;
     status.textContent = 'running…';
-    result.innerHTML = '';
+    if (meta) meta.textContent = '';
+    if (body) body.replaceChildren();
+    if (wrapper) wrapper.classList.remove('hidden');
     try {
       const resp = await authFetch('control/query', {
         method: 'POST',
@@ -409,18 +413,33 @@
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || ('query failed: ' + resp.status));
-      status.textContent = data.row_count + ' rows · ' + data.duration_ms + 'ms' + (data.truncated ? ' · TRUNCATED' : '');
-      renderSQLTable(result, data);
+      status.textContent = '';
+      if (meta) {
+        const suffix = data.truncated ? ' · TRUNCATED' : '';
+        meta.textContent = data.row_count + ' rows · ' + data.duration_ms + 'ms' + suffix;
+      }
+      renderSQLTable(body, data);
       pushHistory(sql);
     } catch (err) {
       status.textContent = '';
-      result.innerHTML = '<div class="sql-error">' + esc(err.message) + '</div>';
+      if (meta) meta.textContent = 'error';
+      if (body) {
+        body.replaceChildren();
+        const div = document.createElement('div');
+        div.className = 'sql-error';
+        div.textContent = err.message;
+        body.appendChild(div);
+      }
     }
   }
 
   function renderSQLTable(container, data) {
+    container.replaceChildren();
     if (!data.columns || !data.columns.length) {
-      container.innerHTML = '<div class="text-muted text-sm mono">no rows</div>';
+      const empty = document.createElement('div');
+      empty.className = 'text-muted text-sm mono';
+      empty.textContent = 'no rows';
+      container.appendChild(empty);
       return;
     }
     const t = document.createElement('table');
@@ -441,7 +460,6 @@
       tbody.appendChild(tr);
     }
     t.appendChild(tbody);
-    container.innerHTML = '';
     container.appendChild(t);
   }
 
