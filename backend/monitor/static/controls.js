@@ -284,30 +284,70 @@
   }
 
   // ── AST-74: On-demand backup ───────────────────────────────
+  // SVG helpers — line-stroke glyphs matching the rest of the dashboard.
+  function buildSvg(attrs, children) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    for (const k of Object.keys(attrs)) svg.setAttribute(k, attrs[k]);
+    for (const child of children) {
+      const el = document.createElementNS(NS, child.tag);
+      for (const k of Object.keys(child.attrs || {})) el.setAttribute(k, child.attrs[k]);
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+  function playIcon() {
+    return buildSvg(
+      { width: '11', height: '11', viewBox: '0 0 24 24', fill: 'currentColor' },
+      [{ tag: 'polygon', attrs: { points: '6,4 20,12 6,20' } }]
+    );
+  }
+  function downloadIcon() {
+    return buildSvg(
+      { width: '11', height: '11', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+        'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+      [
+        { tag: 'path', attrs: { d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' } },
+        { tag: 'polyline', attrs: { points: '7 10 12 15 17 10' } },
+        { tag: 'line', attrs: { x1: '12', y1: '15', x2: '12', y2: '3' } },
+      ]
+    );
+  }
+
+  function resetBackupBtn(btn) {
+    btn.replaceChildren(playIcon());
+    btn.title = 'run backup now';
+    btn.disabled = false;
+  }
+
   function ensureBackupButton() {
-    const header = document.getElementById('sec-backups');
-    if (!header || header.querySelector('#backup-run')) return;
+    const host = document.getElementById('bk-actions');
+    if (!host || host.querySelector('#backup-run')) return;
+
     const run = document.createElement('button');
     run.id = 'backup-run';
     run.className = 'ibtn';
-    run.innerHTML = '▶ Run backup now';
-    run.style.marginLeft = '8px';
+    run.style.width = '22px';
+    run.style.height = '22px';
+    resetBackupBtn(run);
     run.addEventListener('click', runBackup);
-    header.appendChild(run);
+    host.appendChild(run);
 
     const dl = document.createElement('button');
     dl.id = 'backup-dl';
     dl.className = 'ibtn';
-    dl.innerHTML = '⬇ latest dump';
-    dl.style.marginLeft = '8px';
+    dl.style.width = '22px';
+    dl.style.height = '22px';
+    dl.title = 'download latest dump';
+    dl.replaceChildren(downloadIcon());
     dl.addEventListener('click', async () => {
       try {
         const resp = await authFetch('control/backup/download/latest');
         if (!resp.ok) throw new Error('download failed: ' + resp.status);
         const blob = await resp.blob();
         const cd = resp.headers.get('content-disposition') || '';
-        const match = /filename="?([^";]+)"?/.exec(cd);
-        const fname = match ? match[1] : 'astral-backup.dump';
+        const matched = cd.match(/filename="?([^";]+)"?/);
+        const fname = matched ? matched[1] : 'astral-backup.dump';
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = fname;
@@ -315,13 +355,15 @@
         URL.revokeObjectURL(a.href);
       } catch (err) { toast(err.message, 'err'); }
     });
-    header.appendChild(dl);
+    host.appendChild(dl);
   }
 
   async function runBackup() {
     const btn = document.getElementById('backup-run');
     btn.disabled = true;
-    btn.innerHTML = '… running';
+    btn.replaceChildren();
+    btn.textContent = '…';
+    btn.title = 'backup running';
     try {
       const start = await authFetch('control/backup', { method: 'POST' });
       if (!start.ok) {
@@ -335,14 +377,16 @@
         if (!st.ok) return;
         const s = await st.json();
         const secs = Math.round((Date.now() - t0) / 1000);
-        btn.innerHTML = '… ' + s.status + ' (' + secs + 's)';
+        btn.textContent = secs + 's';
+        btn.title = 'backup ' + s.status + ' · ' + secs + 's';
         if (s.status === 'running') { setTimeout(poll, 2000); return; }
-        btn.disabled = false;
         if (s.status === 'done') {
-          btn.innerHTML = '✓ ' + (s.size_bytes / 1e6).toFixed(1) + 'MB in ' + s.duration_s + 's';
+          btn.textContent = '✓';
+          btn.title = (s.size_bytes / 1e6).toFixed(1) + 'MB in ' + s.duration_s + 's';
           toast('backup complete', 'ok');
+          setTimeout(() => resetBackupBtn(btn), 4000);
         } else {
-          btn.innerHTML = '▶ Run backup now';
+          resetBackupBtn(btn);
           toast('backup failed: ' + (s.error || 'unknown'), 'err');
         }
         loadAudit();
@@ -350,8 +394,7 @@
       setTimeout(poll, 1500);
     } catch (err) {
       toast(err.message, 'err');
-      btn.disabled = false;
-      btn.innerHTML = '▶ Run backup now';
+      resetBackupBtn(btn);
     }
   }
 
