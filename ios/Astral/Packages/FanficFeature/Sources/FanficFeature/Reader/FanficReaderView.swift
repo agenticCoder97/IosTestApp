@@ -30,7 +30,7 @@ struct FanficReaderView: View {
     @AppStorage("fanficReaderBackground") private var background: ReaderBackground = .dark
     @AppStorage("fanficReaderFontFamily") private var fontFamily: ReaderFont = .system
     @AppStorage("fanficReaderParagraphSpacing") private var paragraphSpacing: Double = 12
-    @AppStorage("fanficReaderHorizontalMargin") private var horizontalMargin: Double = 20
+    @AppStorage("fanficReaderHorizontalMargin") private var horizontalMargin: Double = 16
     @State private var showBookmarkSheet = false
     @State private var bookmarkParagraphIndex: Int?
     @State private var showChapterList = false
@@ -246,6 +246,9 @@ struct FanficReaderView: View {
             .allowsHitTesting(showReaderBar)
 
         }
+        .ignoresSafeArea()
+        .navigationBarHidden(true)
+        .statusBarHidden(!showReaderBar)
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(ReaderMotion.chrome) {
@@ -533,10 +536,21 @@ struct FanficReaderView: View {
                     }
                 }
 
-                Stepper(value: $fontSize, in: 12...28, step: 1) {
+                VStack(alignment: .leading, spacing: 6) {
                     labeledReadout("Text size", value: "\(Int(fontSize))pt")
+                    HStack(spacing: 12) {
+                        Text("Aa")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AstralColors.muted)
+                            .frame(width: 20)
+                        Slider(value: $fontSize, in: 12...28)
+                            .tint(AstralColors.gold)
+                        Text("Aa")
+                            .font(.system(size: 22))
+                            .foregroundStyle(AstralColors.muted)
+                            .frame(width: 28)
+                    }
                 }
-                .tint(AstralColors.gold)
 
                 Stepper(value: $lineHeight, in: 1.2...2.2, step: 0.1) {
                     labeledReadout("Line height", value: String(format: "%.1f", lineHeight))
