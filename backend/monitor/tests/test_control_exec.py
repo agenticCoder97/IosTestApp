@@ -237,7 +237,17 @@ async def test_idle_watchdog_closes_stale_session(fake_docker, monkeypatch):
 
     monkeypatch.setattr(exec_mod, "close_session", _spy)
     task = asyncio.create_task(exec_mod.idle_watchdog(sess, interval_s=0.02))
-    await asyncio.sleep(0.3)
+    # Poll with a generous deadline so the test stays fast on idle runners
+    # and robust under CI load — the watchdog needs ~1 interval + the
+    # IDLE_TIMEOUT_S (0.1s) worst case, so 2s is ~13x margin.
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + 2.0
+    while not sess._closed and loop.time() < deadline:
+        await asyncio.sleep(0.01)
     task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert sess._closed is True, "watchdog did not close the session within 2s"
     assert "idle" in closed
-    assert sess._closed is True

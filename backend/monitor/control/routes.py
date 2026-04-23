@@ -240,6 +240,10 @@ async def exec_ws(websocket: WebSocket, session_id: str) -> None:
     for t in pending:
         t.cancel()
     watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
     reason = sess.reason or "exec-exited"
     try:
         await websocket.send_text(
