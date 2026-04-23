@@ -30,7 +30,7 @@ struct FanficReaderView: View {
     @AppStorage("fanficReaderBackground") private var background: ReaderBackground = .dark
     @AppStorage("fanficReaderFontFamily") private var fontFamily: ReaderFont = .system
     @AppStorage("fanficReaderParagraphSpacing") private var paragraphSpacing: Double = 12
-    @AppStorage("fanficReaderHorizontalMargin") private var horizontalMargin: Double = 16
+    @AppStorage("fanficReaderHorizontalMargin") private var horizontalMargin: Double = 20
     @State private var showBookmarkSheet = false
     @State private var bookmarkParagraphIndex: Int?
     @State private var showChapterList = false
@@ -536,20 +536,17 @@ struct FanficReaderView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    labeledReadout("Text size", value: "\(Int(fontSize))pt")
-                    HStack(spacing: 12) {
-                        Text("Aa")
-                            .font(.system(size: 13))
-                            .foregroundStyle(AstralColors.muted)
-                            .frame(width: 20)
-                        Slider(value: $fontSize, in: 12...28)
-                            .tint(AstralColors.gold)
-                        Text("Aa")
-                            .font(.system(size: 22))
-                            .foregroundStyle(AstralColors.muted)
-                            .frame(width: 28)
-                    }
+                HStack(spacing: 12) {
+                    Text("Aa")
+                        .font(.system(size: 14))
+                        .foregroundStyle(AstralColors.muted)
+                        .frame(width: 24)
+                    Slider(value: $fontSize, in: 12...28)
+                        .tint(AstralColors.gold)
+                    Text("Aa")
+                        .font(.system(size: 22))
+                        .foregroundStyle(AstralColors.muted)
+                        .frame(width: 32)
                 }
 
                 Stepper(value: $lineHeight, in: 1.2...2.2, step: 0.1) {
