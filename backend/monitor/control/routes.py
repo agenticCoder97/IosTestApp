@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from monitor.control import arq_ops, backup, docker_ops, flags, sql_console
+from monitor.control import arq_ops, backup, docker_ops, exec as exec_mod, flags, sql_console
 from monitor.control.audit import record as audit_record, tail as audit_tail
 
 logger = logging.getLogger("monitor.control.routes")
@@ -169,6 +169,29 @@ async def run_query(body: QueryBody, ip: str = Depends(require_auth)) -> JSONRes
         source_ip=ip,
     )
     return JSONResponse(result)
+
+
+# ── exec terminal sessions (AST-92) ──────────────────────────────────
+
+class ExecStartBody(BaseModel):
+    service: str
+    cols: int = 80
+    rows: int = 24
+
+
+@router.post("/exec/start")
+async def exec_start(body: ExecStartBody, ip: str = Depends(require_auth)) -> JSONResponse:
+    try:
+        sess = await exec_mod.start_session(
+            body.service, cols=body.cols, rows=body.rows,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except exec_mod.SessionExists as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return JSONResponse({"session_id": sess.session_id})
 
 
 # ── audit log tail (read-only, shown in UI) ───────────────────────────
