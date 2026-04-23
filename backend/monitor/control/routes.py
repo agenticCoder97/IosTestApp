@@ -9,13 +9,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from json import dumps as _json_dump
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from monitor.control import arq_ops, backup, docker_ops, flags, sql_console
+from monitor.control import arq_ops, backup, docker_ops, exec as exec_mod, flags, sql_console
 from monitor.control.audit import record as audit_record, tail as audit_tail
 
 logger = logging.getLogger("monitor.control.routes")
@@ -171,8 +172,88 @@ async def run_query(body: QueryBody, ip: str = Depends(require_auth)) -> JSONRes
     return JSONResponse(result)
 
 
+# ── exec terminal sessions (AST-92) ──────────────────────────────────
+
+class ExecStartBody(BaseModel):
+    service: str
+    cols: int = 80
+    rows: int = 24
+
+
+@router.post("/exec/start")
+async def exec_start(body: ExecStartBody, ip: str = Depends(require_auth)) -> JSONResponse:
+    try:
+        sess = await exec_mod.start_session(
+            body.service, cols=body.cols, rows=body.rows,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except exec_mod.SessionExists as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.exception("exec_start unexpected error for service=%s", body.service)
+        raise HTTPException(status_code=500, detail=str(e))
+    return JSONResponse({"session_id": sess.session_id})
+
+
 # ── audit log tail (read-only, shown in UI) ───────────────────────────
 
 @router.get("/audit")
 async def audit(limit: int = 30, _ip: str = Depends(require_auth)) -> JSONResponse:
     return JSONResponse({"entries": audit_tail(limit=min(max(limit, 1), 200))})
+
+
+# ── exec WebSocket (AST-92) ───────────────────────────────────────────
+
+@router.websocket("/exec/{session_id}")
+async def exec_ws(websocket: WebSocket, session_id: str) -> None:
+    expected = os.getenv("MONITOR_CONTROL_TOKEN")
+    offered = [p.strip() for p in
+               websocket.headers.get("sec-websocket-protocol", "").split(",")
+               if p.strip()]
+    tok = exec_mod.token_from_subprotocols(offered)
+    if not expected or tok != expected:
+        await websocket.close(code=1008)
+        return
+    if not exec_mod.origin_allowed(websocket.headers.get("origin")):
+        await websocket.close(code=1008)
+        return
+    sess = exec_mod._REGISTRY.get(session_id)
+    if sess is None or sess._closed:
+        await websocket.close(code=1008)
+        return
+    await websocket.accept(subprotocol="monitor-token")
+
+    async def _recv() -> dict:
+        return await websocket.receive()
+
+    watchdog_task = asyncio.create_task(exec_mod.idle_watchdog(sess))
+    stdout_task = asyncio.create_task(
+        exec_mod.pump_stdout(sess, websocket.send_bytes),
+    )
+    stdin_task = asyncio.create_task(
+        exec_mod.pump_stdin(sess, _recv, websocket.send_text),
+    )
+    done, pending = await asyncio.wait(
+        {stdout_task, stdin_task}, return_when=asyncio.FIRST_COMPLETED,
+    )
+    for t in pending:
+        t.cancel()
+    watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
+    reason = sess.reason or "exec-exited"
+    try:
+        await websocket.send_text(
+            _json_dump({"type": "closed", "reason": reason})
+        )
+    except Exception:
+        pass
+    try:
+        await websocket.close(code=1000)
+    except Exception:
+        pass
+    if not sess._closed:
+        await exec_mod.close_session(sess, reason=reason)

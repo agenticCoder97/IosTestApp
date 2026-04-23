@@ -7,6 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10/lib/addon-fit.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -385,6 +388,13 @@
   /* AST-86 — skeleton / no-data */
   .svc-dim{ opacity: .5; filter: grayscale(.3); }
   .spark-empty{ font-size: 10px; color: var(--muted); letter-spacing: .12em; }
+  .term-bar{ display:flex; align-items:center; gap:8px; padding:6px 10px;
+            border-bottom:1px solid var(--border); }
+  .term-body{ flex:1; min-height:0; padding:6px 8px; outline:none;
+             cursor:text; overflow:hidden; }
+  .term-body .xterm,
+  .term-body .xterm-viewport,
+  .term-body .xterm-screen{ width:100% !important; height:100% !important; }
 </style>
 </head>
 
@@ -1802,16 +1812,19 @@ function renderServices(){
           </div>
         </div>
         <div class="svc-face back">
-          <button class="term-close" title="close terminal" data-close-term="${name}">✕</button>
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">Shell · ${name}</div>
-          <div class="term-body"><span style="color:var(--gold)">$</span> <span class="mono">_</span>
-<div class="mt-2 text-muted text-[11px]">Terminal UI is a stub — real exec channel lands in AST-92.</div></div>
+          <div class="term-bar">
+            <span class="text-[11px] tracking-[.14em] uppercase text-muted">Shell · ${name}</span>
+            <span class="flex-1"></span>
+            <button class="ibtn term-min" title="minimize — keep session open" data-min-term="${name}">−</button>
+            <button class="ibtn term-close" title="close shell" data-close-term="${name}">✕</button>
+          </div>
+          <div class="term-body" data-term-body="${name}"></div>
         </div>
       </div>
     </div>`;
   }).join('');
 
-  // AST-78-ext2 — terminal flip wiring (re-bound on every render)
+  // AST-92 — terminal flip + open + minimize/close (re-bound each render).
   document.querySelectorAll('.svc-terminal').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1819,9 +1832,15 @@ function renderServices(){
       const wrap = btn.closest('.svc-flip');
       if (!wrap) return;
       wrap.classList.add('flipped');
-      STATE.flippedCards = STATE.flippedCards || new Set();
-      STATE.flippedCards.add(name);
-      toast('coming soon — AST-92');
+      openTerminal(wrap, name);
+    });
+  });
+  document.querySelectorAll('.term-min').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wrap = btn.closest('.svc-flip');
+      if (wrap) wrap.classList.remove('flipped');
+      // Keep ws + xterm alive — that's the whole point of minimize.
     });
   });
   document.querySelectorAll('.term-close').forEach(btn => {
@@ -1829,9 +1848,20 @@ function renderServices(){
       e.stopPropagation();
       const name = btn.dataset.closeTerm;
       const wrap = btn.closest('.svc-flip');
-      if (!wrap) return;
-      wrap.classList.remove('flipped');
-      if (STATE.flippedCards) STATE.flippedCards.delete(name);
+      if (wrap) {
+        wrap.classList.remove('flipped');
+        if (wrap._termResizeObs) {
+          try { wrap._termResizeObs.disconnect(); } catch(_){}
+          wrap._termResizeObs = null;
+        }
+      }
+      const entry = STATE.terms && STATE.terms[name];
+      if (entry) {
+        try { entry.ws && entry.ws.close(1000, 'user-close'); } catch(_){}
+        try { entry.fitAddon && entry.fitAddon.dispose(); } catch(_){}
+        try { entry.term.dispose(); } catch(_){}
+        delete STATE.terms[name];
+      }
     });
   });
 }
@@ -2305,6 +2335,7 @@ document.querySelectorAll('.svc-chip').forEach(chip=>{
 
 // keyboard shortcuts
 document.addEventListener('keydown', e=>{
+  if (window._termHasFocus && window._termHasFocus()) return;
   // ignore shortcuts while typing
   const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
   if(e.key === '/' && !typing){ e.preventDefault(); document.getElementById('search').focus(); return; }
@@ -2332,6 +2363,6 @@ applyAllCollapsed();
      FastAPI app.mount("/static", ...) inside astral_monitor. An absolute
      "/static/..." path collides with nginx's `location /static/` block
      (aliased to the media volume) and returns 404. -->
-<script src="static/controls.js?v=4"></script>
+<script src="static/controls.js?v=5"></script>
 </body>
 </html>

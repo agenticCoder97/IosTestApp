@@ -667,7 +667,10 @@
     if (epClose) epClose.addEventListener('click', closeEndpointModal);
     const epModal = document.getElementById('endpoint-modal');
     if (epModal) epModal.addEventListener('click', (e) => { if (e.target.id === 'endpoint-modal') closeEndpointModal(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEndpointModal(); });
+    document.addEventListener('keydown', (e) => {
+      if (window._termHasFocus && window._termHasFocus()) return;
+      if (e.key === 'Escape') closeEndpointModal();
+    });
 
     // One-time seed from the server so control actions never trigger a prompt.
     seedTokenFromServer();
@@ -691,4 +694,185 @@
     setInterval(loadFlags, 30000);
   });
 })();
+
+// ── AST-92 docker-exec terminal ──────────────────────────────────────
+window.STATE = window.STATE || {};
+STATE.terms = STATE.terms || {};   // service → { termHost, term, fitAddon, ws, sessionId, mountedAt, stale }
+
+function _monitorBase(){
+  return location.pathname.startsWith('/monitor/') ? '/monitor' : '';
+}
+
+function _wsURL(sessionId){
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${location.host}${_monitorBase()}/control/exec/${sessionId}`;
+}
+
+async function _postExecStart(service, cols, rows, token){
+  const r = await fetch(`${_monitorBase()}/control/exec/start`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-Monitor-Auth': token || ''},
+    body: JSON.stringify({service, cols, rows}),
+  });
+  if (r.status === 409) {
+    const e = new Error('session-already-open'); e.status = 409; throw e;
+  }
+  if (!r.ok) {
+    const e = new Error(await r.text()); e.status = r.status; throw e;
+  }
+  return r.json();
+}
+
+function _clearChildren(el){
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function _showTermBanner(termBody, message){
+  const banner = document.createElement('div');
+  banner.className = 'term-banner';
+  banner.textContent = message;
+  banner.style.cssText = 'padding:6px 10px;color:var(--warning);font-size:12px;';
+  termBody.appendChild(banner);
+}
+
+async function openTerminal(wrap, service){
+  const termBody = wrap.querySelector('.term-body');
+  if (!termBody) return;
+
+  // Warm-reopen path: existing live session → just re-attach.
+  const prior = STATE.terms[service];
+  if (prior && prior.ws && prior.ws.readyState === WebSocket.OPEN && !prior.stale) {
+    if (!termBody.contains(prior.termHost)) {
+      _clearChildren(termBody);
+      termBody.appendChild(prior.termHost);
+    }
+    _afterFlipForward(wrap, prior);
+    return;
+  }
+  const wasStale = !!(prior && prior.stale);
+  if (prior) {
+    try { prior.ws && prior.ws.close(); } catch(_){}
+    delete STATE.terms[service];
+  }
+
+  // Cold open.
+  _clearChildren(termBody);
+  const token = (localStorage.getItem('monitor_control_token') || '').trim();
+  if (!token) {
+    _showTermBanner(termBody, 'Missing control token — set it in the dashboard.');
+    return;
+  }
+
+  let startResp;
+  try {
+    startResp = await _postExecStart(service, 80, 24, token);
+  } catch (e) {
+    if (e.status === 409) {
+      _showTermBanner(termBody,
+        'Session already open (close the other tab, or wait 10 min for idle timeout).');
+    } else {
+      _showTermBanner(termBody, `Shell start failed: ${e.message || e.status}`);
+    }
+    return;
+  }
+
+  const termHost = document.createElement('div');
+  termHost.style.cssText = 'width:100%;height:100%;';
+  termBody.appendChild(termHost);
+
+  // eslint-disable-next-line no-undef
+  const term = new Terminal({
+    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+    fontSize: 12,
+    theme: {background: '#0A0A0B', foreground: '#C8C8D4', cursor: '#C9A84C'},
+    convertEol: true,
+    cursorBlink: true,
+  });
+  // eslint-disable-next-line no-undef
+  const fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(termHost);
+  if (wasStale) {
+    term.writeln('\x1b[33m[shell reconnected — previous session timed out]\x1b[0m');
+  }
+
+  const ws = new WebSocket(_wsURL(startResp.session_id), ['monitor-token', token]);
+  ws.binaryType = 'arraybuffer';
+
+  term.onData(d => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(d));
+  });
+
+  ws.addEventListener('message', ev => {
+    if (typeof ev.data === 'string') {
+      let ctrl; try { ctrl = JSON.parse(ev.data); } catch(_) { return; }
+      if (ctrl.type === 'closed') {
+        term.writeln(`\r\n\x1b[33m[shell ${ctrl.reason || 'closed'}]\x1b[0m`);
+      }
+      return;
+    }
+    term.write(new Uint8Array(ev.data));
+  });
+
+  ws.addEventListener('close', () => {
+    const entry = STATE.terms[service];
+    if (entry) entry.stale = true;
+  });
+
+  STATE.terms[service] = {
+    termHost, term, fitAddon, ws,
+    sessionId: startResp.session_id,
+    mountedAt: Date.now(),
+    stale: false,
+  };
+
+  _afterFlipForward(wrap, STATE.terms[service]);
+}
+
+function _afterFlipForward(wrap, entry){
+  const inner = wrap.querySelector('.svc-flip-inner');
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    try { entry.fitAddon.fit(); } catch(_){}
+    entry.term.focus();
+    if (entry.ws && entry.ws.readyState === WebSocket.OPEN) {
+      entry.ws.send(JSON.stringify({
+        type: 'resize', cols: entry.term.cols, rows: entry.term.rows,
+      }));
+    }
+  };
+  const handler = (ev) => {
+    if (ev.target !== inner) return;
+    inner.removeEventListener('transitionend', handler);
+    done();
+  };
+  if (inner) inner.addEventListener('transitionend', handler);
+  setTimeout(done, 400);
+
+  if (!wrap._termResizeObs) {
+    wrap._termResizeObs = new ResizeObserver(() => {
+      try { entry.fitAddon.fit(); } catch(_){}
+      if (entry.ws && entry.ws.readyState === WebSocket.OPEN) {
+        entry.ws.send(JSON.stringify({
+          type: 'resize', cols: entry.term.cols, rows: entry.term.rows,
+        }));
+      }
+    });
+    wrap._termResizeObs.observe(wrap.querySelector('.term-body'));
+  }
+}
+
+// Invoked from existing global keyboard-shortcut handlers.
+window._termHasFocus = function(){
+  return !!document.activeElement?.closest('.term-body');
+};
+
+window.addEventListener('beforeunload', () => {
+  if (!STATE.terms) return;
+  for (const k of Object.keys(STATE.terms)) {
+    try { STATE.terms[k].ws && STATE.terms[k].ws.close(1000, 'tab-close'); } catch(_){}
+  }
+});
 
