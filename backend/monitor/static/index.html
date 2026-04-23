@@ -1762,43 +1762,80 @@ function renderServices(){
     const containerId = hasData ? (s.container_id || '') : '';
 
     return `
-    <div class="card svc-card p-4${bodyClass}" data-service-card="${name}">
-      <div class="flex items-start gap-3 svc-card-header">
-        <div class="elevated w-8 h-8 flex items-center justify-center text-muted" style="border-radius:8px">${svcIcon(name)}</div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="text-white font-semibold tracking-tight truncate">${name}</span>
-            <span class="badge ${badge}"><span class="dot ${tone}"></span>${lbl}</span>
-            <span class="flex-1"></span>
-            <button class="ibtn svc-refresh" style="width:24px;height:24px;" title="refresh ${name}" onclick="event.stopPropagation(); this.classList.add('spin'); setTimeout(()=>this.classList.remove('spin'),700); refreshService('${name}');">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
-            </button>
+    <div class="svc-flip" data-service-card="${name}">
+      <div class="svc-flip-inner">
+        <div class="svc-face front card svc-card p-4${bodyClass}">
+          <div class="flex items-start gap-3 svc-card-header">
+            <div class="elevated w-8 h-8 flex items-center justify-center text-muted" style="border-radius:8px">${svcIcon(name)}</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-white font-semibold tracking-tight truncate">${name}</span>
+                <span class="badge ${badge}"><span class="dot ${tone}"></span>${lbl}</span>
+                <span class="flex-1"></span>
+                <button class="ibtn svc-terminal" style="width:24px;height:24px;" title="open shell in ${name}" data-service="${name}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                </button>
+              </div>
+              <div class="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted mono truncate">
+                <span class="truncate">${imageBase}</span>
+                <span style="color:var(--gold)">:${imageTag||'latest'}</span>
+                <button class="ibtn svc-refresh-mini" style="width:16px;height:16px;margin-left:4px;" title="refresh ${name}" onclick="event.stopPropagation(); this.classList.add('spin'); setTimeout(()=>this.classList.remove('spin'),700); refreshService('${name}');">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted mono truncate">
-            <span class="truncate">${imageBase}</span>
-            <span style="color:var(--gold)">:${imageTag||'latest'}</span>
+          <div class="mt-3 flex items-baseline justify-between">
+            <div>
+              <div class="text-[11px] tracking-[.14em] uppercase text-muted">uptime</div>
+              <div class="mono text-sm text-white">${uptime}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[11px] tracking-[.14em] uppercase text-muted">cpu · mem</div>
+              <div class="mono text-sm text-white">${cpuMem}</div>
+            </div>
+          </div>
+          <div class="mt-2">
+            ${sparkMarkup}
+          </div>
+          <div class="mt-1 flex justify-between items-center">
+            <span class="copy" data-copy="${containerId}">${containerId.slice(0,12) || '—'} <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+            ${footer}
           </div>
         </div>
-      </div>
-      <div class="mt-3 flex items-baseline justify-between">
-        <div>
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">uptime</div>
-          <div class="mono text-sm text-white">${uptime}</div>
+        <div class="svc-face back">
+          <button class="term-close" title="close terminal" data-close-term="${name}">✕</button>
+          <div class="text-[11px] tracking-[.14em] uppercase text-muted">Shell · ${name}</div>
+          <div class="term-body"><span style="color:var(--gold)">$</span> <span class="mono">_</span>
+<div class="mt-2 text-muted text-[11px]">Terminal UI is a stub — real exec channel lands in AST-92.</div></div>
         </div>
-        <div class="text-right">
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">cpu · mem</div>
-          <div class="mono text-sm text-white">${cpuMem}</div>
-        </div>
-      </div>
-      <div class="mt-2">
-        ${sparkMarkup}
-      </div>
-      <div class="mt-1 flex justify-between items-center">
-        <span class="copy" data-copy="${containerId}">${containerId.slice(0,12) || '—'} <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
-        ${footer}
       </div>
     </div>`;
   }).join('');
+
+  // AST-78-ext2 — terminal flip wiring (re-bound on every render)
+  document.querySelectorAll('.svc-terminal').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = btn.dataset.service;
+      const wrap = btn.closest('.svc-flip');
+      if (!wrap) return;
+      wrap.classList.add('flipped');
+      STATE.flippedCards = STATE.flippedCards || new Set();
+      STATE.flippedCards.add(name);
+      toast('coming soon — AST-92');
+    });
+  });
+  document.querySelectorAll('.term-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = btn.dataset.closeTerm;
+      const wrap = btn.closest('.svc-flip');
+      if (!wrap) return;
+      wrap.classList.remove('flipped');
+      if (STATE.flippedCards) STATE.flippedCards.delete(name);
+    });
+  });
 }
 
 function renderRequests(){
