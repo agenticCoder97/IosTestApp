@@ -63,3 +63,117 @@ def test_service_lock_is_per_service():
     assert a is b          # same service → same lock
     assert a is not c      # different service → different lock
     assert isinstance(a, asyncio.Lock)
+
+
+# ── session start / close ─────────────────────────────────────────────
+
+class _FakeInnerSock:
+    def __init__(self):
+        self.written = bytearray()
+        self.closed = False
+        self._recv_queue: list[bytes] = []
+    def sendall(self, data: bytes) -> None:
+        self.written.extend(data)
+    def recv(self, n: int) -> bytes:
+        return self._recv_queue.pop(0) if self._recv_queue else b""
+
+
+class _FakeSocketIO:
+    def __init__(self):
+        self._sock = _FakeInnerSock()
+        self.closed = False
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def fake_docker(monkeypatch):
+    """Patch docker_ops._docker_client to a stub exec engine."""
+    from monitor.control import docker_ops, exec as exec_mod
+
+    container = SimpleNamespace(short_id="abc123", id="abc123full")
+    api = MagicMock()
+    api.exec_create.return_value = {"Id": "exec-xyz"}
+    sock_io = _FakeSocketIO()
+    api.exec_start.return_value = sock_io
+    api.exec_inspect.return_value = {"Running": False}
+
+    client = SimpleNamespace(
+        containers=SimpleNamespace(list=lambda **_: [container]),
+        api=api,
+    )
+    monkeypatch.setattr(docker_ops, "_docker_client", lambda: client)
+    monkeypatch.setattr(exec_mod, "_docker_client", lambda: client,
+                        raising=False)
+
+    exec_mod._REGISTRY.clear()
+    exec_mod._SERVICE_LOCKS.clear()
+    return SimpleNamespace(api=api, sock_io=sock_io, container=container)
+
+
+@pytest.mark.asyncio
+async def test_start_session_rejects_unknown_service(fake_docker):
+    from monitor.control.exec import start_session
+    with pytest.raises(ValueError, match="service not exec-allowed"):
+        await start_session("astral_monitor", cols=80, rows=24)
+
+
+@pytest.mark.asyncio
+async def test_start_session_creates_exec_with_tty_and_stdin(fake_docker):
+    from monitor.control.exec import start_session
+    sess = await start_session("postgres", cols=120, rows=40)
+    assert sess.service == "postgres"
+    assert sess.exec_id == "exec-xyz"
+    fake_docker.api.exec_create.assert_called_once()
+    kwargs = fake_docker.api.exec_create.call_args.kwargs
+    assert kwargs["cmd"] == ["/bin/sh"]
+    assert kwargs["tty"] is True
+    assert kwargs["stdin"] is True
+    assert kwargs["stdout"] is True
+    assert kwargs["stderr"] is True
+    fake_docker.api.exec_start.assert_called_once()
+    start_kwargs = fake_docker.api.exec_start.call_args.kwargs
+    assert start_kwargs["socket"] is True
+    assert start_kwargs["tty"] is True
+    assert start_kwargs["demux"] is False
+
+
+@pytest.mark.asyncio
+async def test_start_session_sets_initial_size(fake_docker):
+    from monitor.control.exec import start_session
+    await start_session("postgres", cols=120, rows=40)
+    # height first, width second.
+    fake_docker.api.exec_resize.assert_called_once_with(
+        "exec-xyz", height=40, width=120,
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_start_for_same_service_raises(fake_docker):
+    from monitor.control.exec import start_session, SessionExists
+    await start_session("redis", cols=80, rows=24)
+    with pytest.raises(SessionExists):
+        await start_session("redis", cols=80, rows=24)
+
+
+@pytest.mark.asyncio
+async def test_close_session_closes_socket_and_audits(fake_docker, monkeypatch):
+    from monitor.control import exec as exec_mod
+    records: list[dict] = []
+    monkeypatch.setattr(
+        exec_mod, "audit_record",
+        lambda action, *, ok, detail=None, source_ip=None:
+            records.append({"action": action, "ok": ok, "detail": detail}),
+    )
+    sess = await exec_mod.start_session("redis", cols=80, rows=24)
+    await exec_mod.close_session(sess, reason="user-close")
+    assert fake_docker.sock_io.closed is True
+    assert sess._closed is True
+    actions = [r["action"] for r in records]
+    assert "exec.start" in actions
+    assert "exec.close" in actions
+    close_detail = next(r for r in records if r["action"] == "exec.close")["detail"]
+    assert close_detail["service"] == "redis"
+    assert close_detail["reason"] == "user-close"
+    assert "duration_s" in close_detail
+    assert "orphaned" in close_detail
