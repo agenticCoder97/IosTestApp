@@ -42,11 +42,12 @@ jobs:
           DEPLOY_APP: ${{ steps.changes.outputs.app }}
           DEPLOY_NGINX: ${{ steps.changes.outputs.nginx }}
           BUILD_SHA: ${{ github.sha }}
+          GHA_ACTOR: ${{ github.actor }}
         with:
           host: astral-reader.duckdns.org
           username: ubuntu
           key: ${{ secrets.ASTRAL_OCI_SSH_KEY }}
-          envs: DEPLOY_MONITOR,DEPLOY_APP,DEPLOY_NGINX,BUILD_SHA
+          envs: DEPLOY_MONITOR,DEPLOY_APP,DEPLOY_NGINX,BUILD_SHA,GHA_ACTOR
           script_stop: true
           script: |
             set -euo pipefail
@@ -57,23 +58,35 @@ jobs:
             git clean -fd
             cd backend
             SHORT_SHA=${BUILD_SHA::7}
+            STARTED_EPOCH=$(date +%s)
+            IMAGES=""
 
             if [ "$DEPLOY_APP" = "true" ]; then
               echo "==> Rebuilding fastapi + arq_worker"
               docker compose build fastapi arq_worker
               docker compose up -d --no-deps fastapi arq_worker
+              IMAGES="${IMAGES} fastapi:${SHORT_SHA} arq_worker:${SHORT_SHA}"
             fi
 
             if [ "$DEPLOY_MONITOR" = "true" ]; then
               echo "==> Rebuilding astral_monitor (sha=${SHORT_SHA})"
               MONITOR_BUILD_SHA=${SHORT_SHA} docker compose build astral_monitor
               docker compose up -d --no-deps astral_monitor
+              IMAGES="${IMAGES} astral_monitor:${SHORT_SHA}"
             fi
 
             if [ "$DEPLOY_NGINX" = "true" ]; then
               echo "==> Reloading nginx config"
               docker compose exec -T nginx nginx -s reload
+              IMAGES="${IMAGES} nginx:reload"
             fi
 
             echo "==> Service status"
             docker compose ps --format 'table {{.Name}}\t{{.Status}}'
+
+            echo "==> Recording deploy via hook (AST-77)"
+            bash scripts/deploy-hook.sh \
+              --images        "${IMAGES# }" \
+              --started-epoch "$STARTED_EPOCH" \
+              --commit-sha    "$SHORT_SHA" \
+              --actor         "${GHA_ACTOR:-unknown}"
