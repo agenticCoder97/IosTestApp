@@ -221,3 +221,23 @@ def test_origin_allowed_is_case_insensitive():
     assert origin_allowed("HTTP://LOCALHOST:8000") is True
     assert origin_allowed("HTTPS://ASTRAL-READER.DUCKDNS.ORG") is True
     assert origin_allowed("HTTPS://EVIL.EXAMPLE.COM") is False
+
+
+@pytest.mark.asyncio
+async def test_idle_watchdog_closes_stale_session(fake_docker, monkeypatch):
+    from monitor.control import exec as exec_mod
+    monkeypatch.setattr(exec_mod, "IDLE_TIMEOUT_S", 0.1)
+    sess = await exec_mod.start_session("postgres", cols=80, rows=24)
+    closed: list[str] = []
+    original = exec_mod.close_session
+
+    async def _spy(s, *, reason):
+        closed.append(reason)
+        await original(s, reason=reason)
+
+    monkeypatch.setattr(exec_mod, "close_session", _spy)
+    task = asyncio.create_task(exec_mod.idle_watchdog(sess, interval_s=0.02))
+    await asyncio.sleep(0.3)
+    task.cancel()
+    assert "idle" in closed
+    assert sess._closed is True

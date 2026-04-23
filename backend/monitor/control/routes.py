@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from json import dumps as _json_dump
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket
@@ -226,6 +227,7 @@ async def exec_ws(websocket: WebSocket, session_id: str) -> None:
     async def _recv() -> dict:
         return await websocket.receive()
 
+    watchdog_task = asyncio.create_task(exec_mod.idle_watchdog(sess))
     stdout_task = asyncio.create_task(
         exec_mod.pump_stdout(sess, websocket.send_bytes),
     )
@@ -237,12 +239,17 @@ async def exec_ws(websocket: WebSocket, session_id: str) -> None:
     )
     for t in pending:
         t.cancel()
+    watchdog_task.cancel()
+    reason = sess.reason or "exec-exited"
     try:
-        await websocket.send_text('{"type":"closed","reason":"exec-exited"}')
+        await websocket.send_text(
+            _json_dump({"type": "closed", "reason": reason})
+        )
     except Exception:
         pass
     try:
         await websocket.close(code=1000)
     except Exception:
         pass
-    await exec_mod.close_session(sess, reason="exec-exited")
+    if not sess._closed:
+        await exec_mod.close_session(sess, reason=reason)

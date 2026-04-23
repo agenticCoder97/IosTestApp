@@ -213,6 +213,17 @@ async def pump_stdout(sess: Session, send_bytes: Callable[[bytes], Awaitable[Non
             return
 
 
+async def idle_watchdog(sess: Session, *, interval_s: float = 30.0) -> None:
+    """Close the session after IDLE_TIMEOUT_S of no activity."""
+    while not sess._closed:
+        await asyncio.sleep(interval_s)
+        if sess._closed:
+            return
+        if time.monotonic() - sess.last_activity > IDLE_TIMEOUT_S:
+            await close_session(sess, reason="idle")
+            return
+
+
 async def pump_stdin(
     sess: Session,
     recv: Callable[[], Awaitable[dict]],
