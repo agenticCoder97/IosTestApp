@@ -572,11 +572,13 @@
 
   <!-- ─── 1. COST TRIPWIRE ─────────────────────────────────────────────── -->
   <div class="section-head" id="sec-cost">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">cost &amp; always-free</span></span>
     <span class="rule"></span>
     <span class="badge badge-ok"><span class="dot ok"></span>WITHIN CAPS</span>
   </div>
 
+  <div class="section-body" data-for="sec-cost">
   <section class="card p-4 sm:p-5">
     <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5 lg:gap-6">
 
@@ -666,28 +668,34 @@
       </div>
     </div>
   </section>
+  </div><!-- /.section-body[sec-cost] -->
 
 
   <!-- ─── 2. SERVICE HEALTH GRID ───────────────────────────────────────── -->
   <div class="section-head" id="sec-services">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">service health</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">docker compose ps · 6 services</span>
   </div>
 
+  <div class="section-body" data-for="sec-services">
   <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     <!-- cards injected below -->
     <div id="svc-grid" class="contents"></div>
   </section>
+  </div><!-- /.section-body[sec-services] -->
 
 
   <!-- ─── 3. REQUEST METRICS ──────────────────────────────────────────── -->
   <div class="section-head" id="sec-requests">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">requests</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">nginx + fastapi · <span id="req-window">last 6h</span></span>
   </div>
 
+  <div class="section-body" data-for="sec-requests">
   <section class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
     <!-- Left: line chart -->
     <div class="card p-4 sm:p-5">
@@ -734,15 +742,18 @@
       </table>
     </div>
   </section>
+  </div><!-- /.section-body[sec-requests] -->
 
 
   <!-- ─── 4. ARQ WORKER ──────────────────────────────────────────────── -->
   <div class="section-head" id="sec-arq">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">arq worker</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">ARQ_MAX_JOBS=3 · redis://:6379/0</span>
   </div>
 
+  <div class="section-body" data-for="sec-arq">
   <section class="grid grid-cols-1 lg:grid-cols-3 gap-3">
     <!-- KPIs + active -->
     <div class="card p-4 sm:p-5 lg:col-span-1">
@@ -799,25 +810,31 @@
       </table>
     </div>
   </section>
+  </div><!-- /.section-body[sec-arq] -->
 
 
   <!-- ─── 5. STORAGE ──────────────────────────────────────────────────── -->
   <div class="section-head" id="sec-storage">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">storage</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">/mnt/astral-media · 7d trend</span>
   </div>
 
+  <div class="section-body" data-for="sec-storage">
   <section class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="storage-grid"></section>
+  </div><!-- /.section-body[sec-storage] -->
 
 
   <!-- ─── 6. BACKUPS ──────────────────────────────────────────────────── -->
   <div class="section-head" id="sec-backups">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">backups</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">pg_dump → s3://astral-backups</span>
   </div>
 
+  <div class="section-body" data-for="sec-backups">
   <section class="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-3">
     <div class="card p-4 sm:p-5">
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -862,15 +879,18 @@
       <div class="text-[11px] text-muted mono mt-1.5">17% of 20 GB free cap</div>
     </div>
   </section>
+  </div><!-- /.section-body[sec-backups] -->
 
 
   <!-- ─── 7. CERTIFICATE ──────────────────────────────────────────────── -->
   <div class="section-head" id="sec-cert">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">tls certificate</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">duckdns · let's encrypt</span>
   </div>
 
+  <div class="section-body" data-for="sec-cert">
   <section class="card p-4 sm:p-5">
     <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_200px] gap-5 items-center">
       <div>
@@ -907,14 +927,17 @@
       </div>
     </div>
   </section>
+  </div><!-- /.section-body[sec-cert] -->
 
 
   <div class="section-head" id="sec-logs">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">recent logs</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted flex items-center gap-1.5"><span class="dot ok live-dot"></span> tailing · <span id="log-count">100</span> lines</span>
   </div>
 
+  <div class="section-body" data-for="sec-logs">
   <section class="card overflow-hidden">
     <div class="p-3 sm:p-4 border-b border-border/70 flex items-center gap-2 flex-wrap">
       <div class="flex gap-1.5 flex-wrap flex-1">
@@ -938,27 +961,33 @@
       <span><span id="log-shown">100</span> / <span id="log-total">100</span> visible</span>
     </div>
   </section>
+  </div><!-- /.section-body[sec-logs] -->
 
 
   <!-- ─── KILL SWITCHES (AST-70) ───────────────────────────────────── -->
   <div class="section-head" id="sec-flags">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / ops / <span class="cur">kill switches</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">redis-backed · no restart required</span>
   </div>
+  <div class="section-body" data-for="sec-flags">
   <section class="card p-4 sm:p-5">
     <div id="flags-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div class="text-muted text-sm mono">Loading flags…</div>
     </div>
   </section>
+  </div><!-- /.section-body[sec-flags] -->
 
 
   <!-- ─── DEPLOYS (AST-77) ─────────────────────────────────────────── -->
   <div class="section-head" id="sec-deploys">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / ops / <span class="cur">recent deploys</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">from <code>/var/lib/astral-monitor/deploys.jsonl</code></span>
   </div>
+  <div class="section-body" data-for="sec-deploys">
   <section class="card overflow-hidden">
     <table class="z">
       <thead>
@@ -969,14 +998,17 @@
       <tbody id="deploys-rows"><tr><td colspan="5" class="text-muted text-sm mono">No deploys recorded yet.</td></tr></tbody>
     </table>
   </section>
+  </div><!-- /.section-body[sec-deploys] -->
 
 
   <!-- ─── SQL CONSOLE (AST-75) ─────────────────────────────────────── -->
   <div class="section-head" id="sec-sql">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / ops / <span class="cur">sql console</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">read-only · SELECT / WITH only · 10s timeout · 500 row cap</span>
   </div>
+  <div class="section-body" data-for="sec-sql">
   <section class="card p-4 sm:p-5">
     <textarea id="sql-input" rows="5" class="w-full bg-bg mono text-sm p-3 rounded-lg hairline" placeholder="SELECT id, title FROM comics ORDER BY added_at DESC LIMIT 10;"></textarea>
     <div class="flex items-center gap-3 mt-3">
@@ -989,14 +1021,17 @@
     </div>
     <div id="sql-result" class="mt-3 overflow-auto" style="max-height:420px;"></div>
   </section>
+  </div><!-- /.section-body[sec-sql] -->
 
 
   <!-- ─── AUDIT LOG ────────────────────────────────────────────────── -->
   <div class="section-head" id="sec-audit">
+    <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / ops / <span class="cur">audit log</span></span>
     <span class="rule"></span>
     <span class="mono text-[11px] text-muted">last control-plane actions</span>
   </div>
+  <div class="section-body" data-for="sec-audit">
   <section class="card overflow-hidden">
     <table class="z">
       <thead>
@@ -1005,6 +1040,7 @@
       <tbody id="audit-rows"><tr><td colspan="5" class="text-muted text-sm mono">No actions recorded.</td></tr></tbody>
     </table>
   </section>
+  </div><!-- /.section-body[sec-audit] -->
 
 
   <!-- ─── FOOTER ──────────────────────────────────────────────────────── -->
@@ -1133,6 +1169,60 @@ const STATE = {
 // Expose STATE so the controls.js companion can read the current
 // range / service filter without duplicating state.
 window.STATE = STATE;
+
+// AST-83 — collapsible sections
+const COLLAPSE_KEY = 'monitor_collapsed_v1';
+const COLLAPSE_DEFAULTS = {
+  'sec-cost':     false,
+  'sec-services': false,
+  'sec-requests': true,
+  'sec-arq':      true,
+  'sec-storage':  true,
+  'sec-backups':  true,
+  'sec-cert':     true,
+  'sec-logs':     true,
+  'sec-flags':    true,
+  'sec-deploys':  true,
+  'sec-sql':      true,
+  'sec-audit':    true,
+};
+STATE.collapsed = (() => {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    if (!raw) return Object.assign({}, COLLAPSE_DEFAULTS);
+    return Object.assign({}, COLLAPSE_DEFAULTS, JSON.parse(raw));
+  } catch (_) {
+    return Object.assign({}, COLLAPSE_DEFAULTS);
+  }
+})();
+
+function applyCollapsed(id){
+  const head = document.getElementById(id);
+  const body = document.querySelector(`.section-body[data-for="${id}"]`);
+  if (!head || !body) return;
+  const isCollapsed = !!STATE.collapsed[id];
+  head.classList.toggle('collapsed', isCollapsed);
+  body.classList.toggle('collapsed', isCollapsed);
+}
+
+function applyAllCollapsed(){
+  for (const id of Object.keys(COLLAPSE_DEFAULTS)) applyCollapsed(id);
+}
+
+function toggleSection(id){
+  STATE.collapsed[id] = !STATE.collapsed[id];
+  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(STATE.collapsed)); } catch(_) {}
+  applyCollapsed(id);
+}
+
+// Delegated click handler for every section head
+document.addEventListener('click', (e) => {
+  const head = e.target.closest('.section-head');
+  if (!head || !head.id || !(head.id in COLLAPSE_DEFAULTS)) return;
+  // Ignore clicks that target interactive children
+  if (e.target.closest('button')) return;
+  toggleSection(head.id);
+});
 
 /* ---------- deterministic-ish PRNG seeded per refresh --------------- */
 let RNG_SEED = Date.now() & 0xffff;
@@ -2113,6 +2203,7 @@ document.addEventListener('keydown', e=>{
    BOOT
    ========================================================================= */
 refreshAll();
+applyAllCollapsed();
 </script>
 
 <!-- control plane UI — decorated after the main renderer settles.
