@@ -4,6 +4,10 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/ast-78-monitor-dashboard-polish — 2026-04-22
+
+- **AST-78..91** — Monitor dashboard UI/UX polish pass. Removed PROD env-pill, auto-refresh toggle (timer still ticks), decorative budget-alert dot, incidents-last-24h card, backups STATUS column. Added collapsible section heads with localStorage persistence, click-to-dim STATUS CODES bars, sky-blue/coral request-chart palette, skeleton + `NO DATA` empty states for service cards (no fake-healthy fallback — `genDataMock` now gated behind `?preview=1`), styled SQL run button + dedicated results section, sticky-header scroll for every dashboard table, and a terminal-icon stub on each service card that flips to a placeholder for the upcoming [AST-92](https://linear.app/nnetraganti/issue/AST-92) exec channel. Controls.js cache-busted to `?v=4`. Fixes [AST-78](https://linear.app/nnetraganti/issue/AST-78), [AST-79](https://linear.app/nnetraganti/issue/AST-79), [AST-80](https://linear.app/nnetraganti/issue/AST-80), [AST-81](https://linear.app/nnetraganti/issue/AST-81), [AST-83](https://linear.app/nnetraganti/issue/AST-83), [AST-84](https://linear.app/nnetraganti/issue/AST-84), [AST-85](https://linear.app/nnetraganti/issue/AST-85), [AST-86](https://linear.app/nnetraganti/issue/AST-86), [AST-87](https://linear.app/nnetraganti/issue/AST-87), [AST-88](https://linear.app/nnetraganti/issue/AST-88), [AST-89](https://linear.app/nnetraganti/issue/AST-89), [AST-90](https://linear.app/nnetraganti/issue/AST-90), [AST-91](https://linear.app/nnetraganti/issue/AST-91).
+
 ## feature/ast-reader-smoothness-pass — 2026-04-22
 
 - [ios] Reader smoothness pass: touch-down chrome reveal, tappable page Menu, armed next-chapter trigger with 0.5s delay, unified reader motion + haptics, throttled scroll writes, chapter crossfade + prefetch, tightened fanfic chrome padding. Closes AST-62, AST-63, AST-64, AST-65.
