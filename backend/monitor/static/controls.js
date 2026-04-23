@@ -699,6 +699,100 @@
 window.STATE = window.STATE || {};
 STATE.terms = STATE.terms || {};   // service → { termHost, term, fitAddon, ws, sessionId, mountedAt, stale }
 
+// Per-service command palette. Picking one types it into the attached
+// shell and hits Enter. Commands are hard-coded here — never taken from
+// user input — so there's no injection surface. Kept small (5 per svc).
+window.PRESET_CMDS = {
+  postgres: [
+    {label: 'migration head',          cmd: "psql -U astral -d astral -c 'SELECT version_num FROM alembic_version;'"},
+    {label: 'list tables',             cmd: "psql -U astral -d astral -c '\\dt'"},
+    {label: 'row counts (top 20)',     cmd: "psql -U astral -d astral -c \"SELECT relname AS table, n_live_tup AS rows, n_dead_tup AS dead FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 20;\""},
+    {label: 'table sizes (top 10)',    cmd: "psql -U astral -d astral -c \"SELECT relname AS table, pg_size_pretty(pg_total_relation_size(relid)) AS size FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;\""},
+    {label: 'active queries',          cmd: "psql -U astral -d astral -c \"SELECT pid, state, now()-query_start AS runtime, substring(query, 1, 60) AS q FROM pg_stat_activity WHERE state <> 'idle' AND pid <> pg_backend_pid() ORDER BY query_start;\""},
+  ],
+  redis: [
+    {label: 'dbsize',                  cmd: 'redis-cli dbsize'},
+    {label: 'scan astral:*',           cmd: "redis-cli --scan --pattern 'astral:*' | head -30"},
+    {label: 'bigkeys',                 cmd: 'redis-cli --bigkeys | tail -20'},
+    {label: 'monitor 10s (live)',      cmd: 'timeout 10 redis-cli monitor 2>/dev/null || echo "(monitor ended)"'},
+    {label: 'memory usage',            cmd: 'redis-cli info memory | head -15'},
+  ],
+  fastapi: [
+    {label: 'alembic current',         cmd: 'alembic current'},
+    {label: 'alembic history',         cmd: 'alembic history | head -20'},
+    {label: 'route list',              cmd: "python -c \"from app.main import app\\nfor r in app.routes:\\n    print(getattr(r, 'methods', {}) or '', getattr(r, 'path', r))\""},
+    {label: 'key pkg versions',        cmd: "pip show fastapi sqlalchemy asyncpg arq pydantic | grep -E 'Name:|Version:'"},
+    {label: 'astral env vars',         cmd: "env | grep -E '^ASTRAL_|^MONITOR_|^ARQ_|^FFNET_|^MANGADEX_' | sort"},
+  ],
+  arq_worker: [
+    {label: 'arq check',               cmd: 'arq --check app.worker.WorkerSettings'},
+    {label: 'queue depth',             cmd: 'redis-cli llen arq:queue'},
+    {label: 'in-progress jobs',        cmd: "redis-cli --scan --pattern 'arq:in-progress:*' | head -20"},
+    {label: 'recent results',          cmd: "redis-cli --scan --pattern 'arq:result:*' | head -10"},
+    {label: 'worker env',              cmd: "env | grep -E '^ARQ_|^REDIS_|^DATABASE_' | sort"},
+  ],
+  nginx: [
+    {label: 'nginx -t (test)',         cmd: 'nginx -t'},
+    {label: 'nginx -T (dump config)',  cmd: 'nginx -T 2>&1 | head -80'},
+    {label: 'status codes (last 100)', cmd: "awk '{print $9}' /var/log/nginx/access.log 2>/dev/null | tail -100 | sort | uniq -c | sort -rn"},
+    {label: '5xx tail',                cmd: "grep -E ' 5[0-9][0-9] ' /var/log/nginx/access.log 2>/dev/null | tail -20 || echo '(no 5xx or no log)'"},
+    {label: 'reload config',           cmd: 'nginx -s reload'},
+  ],
+  certbot: [
+    {label: 'list certificates',       cmd: 'certbot certificates'},
+    {label: 'renew --dry-run',         cmd: 'certbot renew --dry-run'},
+    {label: 'cert expiry (openssl)',   cmd: 'for c in /etc/letsencrypt/live/*/cert.pem; do echo "$c"; openssl x509 -enddate -noout -in "$c"; done'},
+    {label: 'show renewal config',     cmd: 'cat /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -60'},
+    {label: 'renewal hooks dir',       cmd: 'ls -la /etc/letsencrypt/renewal-hooks/'},
+  ],
+};
+
+function sendPresetCommand(service, cmd){
+  if (!cmd) return;
+  const entry = STATE.terms && STATE.terms[service];
+  if (!entry || !entry.ws || entry.ws.readyState !== WebSocket.OPEN) return;
+  entry.ws.send(new TextEncoder().encode(cmd + '\r'));
+  // Server echoes the command back (TTY echo in prod, explicit echo in
+  // the preview stub), so the typed text appears in the terminal card
+  // without us having to local-echo. Just make sure the terminal has
+  // focus so subsequent keystrokes go to the right place.
+  try { entry.term.focus(); } catch(_){}
+}
+window.sendPresetCommand = sendPresetCommand;
+
+// If the service grid already painted before this file finished loading,
+// its preset-dropdown <option>s were built against an empty PRESET_CMDS.
+// Re-run the render so the options appear without waiting for the next
+// 30 s auto-refresh tick.
+(function _rehydratePresets(){
+  if (typeof window.renderServices !== 'function') return;
+  if (!window.STATE || !window.STATE.data || !window.STATE.data.services) return;
+  if (!document.querySelector('.svc-flip')) return;
+  try { window.renderServices(); } catch(_){}
+})();
+
+// Close any open preset-command popover menu on outside click or Escape.
+// Bound once globally — the per-render handlers in index.html only open
+// and item-click; they don't need their own outside-click listener.
+document.addEventListener('click', (e) => {
+  if (e.target.closest && e.target.closest('.term-cmd-wrap')) return;
+  document.querySelectorAll('.term-cmd-menu').forEach(m => {
+    if (!m.hidden) {
+      m.hidden = true;
+      const btn = document.querySelector(`[data-cmd-button="${m.dataset.cmdMenu}"]`);
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = document.querySelector('.term-cmd-menu:not([hidden])');
+  if (!open) return;
+  open.hidden = true;
+  const btn = document.querySelector(`[data-cmd-button="${open.dataset.cmdMenu}"]`);
+  if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.focus(); }
+});
+
 function _monitorBase(){
   return location.pathname.startsWith('/monitor/') ? '/monitor' : '';
 }
@@ -783,7 +877,7 @@ async function openTerminal(wrap, service){
   // eslint-disable-next-line no-undef
   const term = new Terminal({
     fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-    fontSize: 12,
+    fontSize: 11,
     theme: {background: '#0A0A0B', foreground: '#C8C8D4', cursor: '#C9A84C'},
     convertEol: true,
     cursorBlink: true,
