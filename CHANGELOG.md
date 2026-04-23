@@ -6,7 +6,7 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 
 ## fix/reader-tap-trigger-and-topbar-consolidation — 2026-04-23
 
-- [ios] Reader trigger + top-bar consolidation. Swapped chrome reveal from `.pressReveal` (touch-down) to `.onTapGesture` on both readers so the finger-down that begins a scroll no longer flashes the top bar. Folded the circular chapter-badge + heart overlay into each reader's top bar as a tight `X / Y` label next to the chapter-list button; deleted the now-redundant `chapterFavOverlay` property and its mount points.
+- [ios] Reader trigger + top-bar consolidation. Swapped chrome reveal from `.pressReveal` (touch-down) to `.onTapGesture` on both readers so the finger-down that begins a scroll no longer flashes the top bar. Folded the circular chapter-badge + heart overlay into each reader's top bar as a tight `X / Y` label next to the chapter-list button; deleted the now-redundant `chapterFavOverlay` property and its mount points. Mounted the previously-dead `tapZoneOverlay` on both comic readers (webtoon + paged) so the tap actually fires — previously only the 0.5s long-press could toggle the HUD. Rebuilt the fanfic top bar to mirror the comic's 2-line title + chapter stack and matching `(56, 12)` padding, so both readers share the same chrome height and density.
 
 ## feature/ast-78-monitor-dashboard-polish — 2026-04-22
 

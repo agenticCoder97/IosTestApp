@@ -346,11 +346,25 @@ struct FanficReaderView: View {
             .buttonStyle(PressButtonStyle(scale: 0.88))
             .accessibilityIdentifier(AccessibilityID.readerBackButton)
 
-            Text(fanfic.title)
-                .font(AstralTypography.bodyMedium)
-                .foregroundStyle(AstralColors.white)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(fanfic.title)
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.muted)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text("Ch. \(chapterDisplayNum)")
+                        .font(AstralTypography.bodyMedium)
+                        .foregroundStyle(AstralColors.white)
+                        .contentTransition(.numericText())
+                    if let title = currentChapter.title, !title.isEmpty {
+                        Text("— \(title)")
+                            .font(AstralTypography.body)
+                            .foregroundStyle(AstralColors.muted)
+                            .lineLimit(1)
+                    }
+                }
+                .animation(AstralAnimation.quick, value: currentChapter.chapterNumber)
+            }
 
             Spacer(minLength: 8)
 
@@ -382,8 +396,8 @@ struct FanficReaderView: View {
             .buttonStyle(PressButtonStyle(scale: 0.88))
         }
         .padding(.horizontal, 16)
-        .padding(.top, 44)
-        .padding(.bottom, 10)
+        .padding(.top, 56)
+        .padding(.bottom, 12)
         .background(.ultraThinMaterial)
     }
 
