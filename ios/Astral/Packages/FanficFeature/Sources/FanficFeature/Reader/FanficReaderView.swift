@@ -250,13 +250,14 @@ struct FanficReaderView: View {
         .navigationBarHidden(true)
         .statusBarHidden(!showReaderBar)
         .simultaneousGesture(
-            TapGesture().onEnded {
-                withAnimation(ReaderMotion.chrome) {
-                    showReaderBar.toggle()
-                    if !showReaderBar { showReaderSettings = false }
+            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
+                .onEnded { _ in
+                    withAnimation(ReaderMotion.chrome) {
+                        showReaderBar.toggle()
+                        if !showReaderBar { showReaderSettings = false }
+                    }
+                    Haptics.play(.chromeToggle)
                 }
-                Haptics.play(.chromeToggle)
-            }
         )
         .task(id: currentChapter.id) {
             scrollPercentThrottle.reset()

@@ -387,7 +387,10 @@ struct ComicReaderView: View {
                 }
             }
         }
-        .simultaneousGesture(TapGesture().onEnded { toggleHUD() })
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
+                .onEnded { _ in toggleHUD() }
+        )
         .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
         .onChange(of: pendingScrollToPage) { _, newTarget in
             guard let target = newTarget else { return }
@@ -475,7 +478,10 @@ struct ComicReaderView: View {
                 scrolledPageID = new
             }
         }
-        .simultaneousGesture(TapGesture().onEnded { toggleHUD() })
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
+                .onEnded { _ in toggleHUD() }
+        )
     }
 
     private func toggleHUD() {
