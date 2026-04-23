@@ -395,6 +395,9 @@
   .term-body .xterm,
   .term-body .xterm-viewport,
   .term-body .xterm-screen{ width:100% !important; height:100% !important; }
+  /* Compact .sel variant for the term-bar preset-command picker. */
+  .term-presets{ padding:2px 22px 2px 8px; font-size:11px; max-width:170px;
+                background-position: right 6px center; }
 </style>
 </head>
 
@@ -1815,6 +1818,11 @@ function renderServices(){
           <div class="term-bar">
             <span class="text-[11px] tracking-[.14em] uppercase text-muted">Shell · ${name}</span>
             <span class="flex-1"></span>
+            <select class="sel term-presets" data-preset-select="${name}" aria-label="run a preset command on ${name}">
+              <option value="">commands…</option>
+              ${(window.PRESET_CMDS && window.PRESET_CMDS[name] || [])
+                .map((p, i) => `<option value="${i}">${p.label}</option>`).join('')}
+            </select>
             <button class="ibtn term-min" title="minimize — keep session open" data-min-term="${name}">−</button>
             <button class="ibtn term-close" title="close shell" data-close-term="${name}">✕</button>
           </div>
@@ -1863,6 +1871,26 @@ function renderServices(){
         delete STATE.terms[name];
       }
     });
+  });
+  document.querySelectorAll('.term-presets').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const name = sel.dataset.presetSelect;
+      const idx = sel.value;
+      sel.value = '';  // reset to placeholder immediately
+      if (idx === '' || !window.PRESET_CMDS || !window.PRESET_CMDS[name]) return;
+      const preset = window.PRESET_CMDS[name][Number(idx)];
+      if (!preset) return;
+      const entry = STATE.terms && STATE.terms[name];
+      if (!entry) return;
+      // Return focus to the terminal so the shell receives the keystrokes
+      // naturally (the select stole focus on click).
+      try { entry.term.focus(); } catch(_){}
+      window.sendPresetCommand(name, preset.cmd);
+    });
+    // Swallow keystrokes inside the dropdown so the dashboard's global
+    // '/' and '⌘K' shortcuts don't hijack option-picking.
+    sel.addEventListener('keydown', (e) => e.stopPropagation());
   });
 }
 

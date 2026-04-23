@@ -699,6 +699,62 @@
 window.STATE = window.STATE || {};
 STATE.terms = STATE.terms || {};   // service → { termHost, term, fitAddon, ws, sessionId, mountedAt, stale }
 
+// Per-service command palette. Picking one types it into the attached
+// shell and hits Enter. Commands are hard-coded here — never taken from
+// user input — so there's no injection surface. Kept small (5 per svc).
+window.PRESET_CMDS = {
+  postgres: [
+    {label: 'list databases',          cmd: 'psql -U astral -l'},
+    {label: 'db size',                 cmd: "psql -U astral -d astral -c \"SELECT pg_size_pretty(pg_database_size(current_database()));\""},
+    {label: 'active connections',      cmd: "psql -U astral -d astral -c \"SELECT pid, usename, state, query FROM pg_stat_activity WHERE state IS NOT NULL;\""},
+    {label: 'largest tables',          cmd: "psql -U astral -d astral -c \"SELECT schemaname||'.'||relname AS table, pg_size_pretty(pg_total_relation_size(relid)) AS size FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;\""},
+    {label: 'version',                 cmd: "psql -U astral -d astral -c 'SELECT version();'"},
+  ],
+  redis: [
+    {label: 'info summary',            cmd: 'redis-cli info server | head -20'},
+    {label: 'dbsize',                  cmd: 'redis-cli dbsize'},
+    {label: 'memory',                  cmd: 'redis-cli info memory | head -20'},
+    {label: 'scan astral:*',           cmd: "redis-cli --scan --pattern 'astral:*' | head -30"},
+    {label: 'slowlog (top 10)',        cmd: 'redis-cli slowlog get 10'},
+  ],
+  fastapi: [
+    {label: 'process list',            cmd: 'ps auxf'},
+    {label: 'routes',                  cmd: "python -c \"from app.main import app;\\nfor r in app.routes:\\n  print(getattr(r, 'path', r))\""},
+    {label: 'disk usage',              cmd: 'df -h /'},
+    {label: 'env (safe)',              cmd: "env | grep -vE 'PASS|SECRET|TOKEN|KEY' | sort"},
+    {label: 'uptime',                  cmd: 'uptime'},
+  ],
+  arq_worker: [
+    {label: 'arq check',               cmd: 'arq --check app.worker.WorkerSettings'},
+    {label: 'active jobs',             cmd: "redis-cli --scan --pattern 'arq:in-progress:*'"},
+    {label: 'process list',            cmd: 'ps auxf'},
+    {label: 'pip freeze',              cmd: 'pip freeze'},
+    {label: 'uptime',                  cmd: 'uptime'},
+  ],
+  nginx: [
+    {label: 'nginx -t (test config)',  cmd: 'nginx -t'},
+    {label: 'nginx -T (full config)',  cmd: 'nginx -T 2>&1 | head -80'},
+    {label: 'access log tail',         cmd: 'tail -n 40 /var/log/nginx/access.log 2>/dev/null || echo "(no access log)"'},
+    {label: 'error log tail',          cmd: 'tail -n 40 /var/log/nginx/error.log 2>/dev/null || echo "(no error log)"'},
+    {label: 'reload config',           cmd: 'nginx -s reload'},
+  ],
+  certbot: [
+    {label: 'list certificates',       cmd: 'certbot certificates'},
+    {label: 'renew --dry-run',         cmd: 'certbot renew --dry-run'},
+    {label: 'show renewal config',     cmd: 'cat /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -60'},
+    {label: 'account info',            cmd: 'certbot show_account'},
+    {label: 'cert expiry (openssl)',   cmd: 'for c in /etc/letsencrypt/live/*/cert.pem; do echo "$c"; openssl x509 -enddate -noout -in "$c"; done'},
+  ],
+};
+
+function sendPresetCommand(service, cmd){
+  if (!cmd) return;
+  const entry = STATE.terms && STATE.terms[service];
+  if (!entry || !entry.ws || entry.ws.readyState !== WebSocket.OPEN) return;
+  entry.ws.send(new TextEncoder().encode(cmd + '\r'));
+}
+window.sendPresetCommand = sendPresetCommand;
+
 function _monitorBase(){
   return location.pathname.startsWith('/monitor/') ? '/monitor' : '';
 }
