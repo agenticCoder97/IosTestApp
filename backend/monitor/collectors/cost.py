@@ -134,10 +134,10 @@ async def _fetch_always_free(egress_tb_used: Optional[float] = None) -> dict:
                     used_block_gb = int(sd["block_vol"]["used_bytes"] / 1024**3)
                 if sd.get("object_storage"):
                     used_obj_gb = round(sd["object_storage"]["used_bytes"] / 1024**3, 1)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as e:
+                logger.debug("mon:last_good:storage JSON parse failed, using defaults: %s", e)
+    except Exception as e:
+        logger.debug("mon:last_good:storage Redis GET failed, using defaults: %s", e)
 
     egress = round(egress_tb_used, 3) if egress_tb_used is not None else 0.0
     return {

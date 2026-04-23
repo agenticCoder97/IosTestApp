@@ -4,9 +4,14 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## fix/reader-lost-commit-and-audit-cleanup — 2026-04-23
+
+- [ios] Re-land the second commit that was orphaned by the early squash-merge of #60: wires `.overlay(tapZoneOverlay)` onto both comic readers (webtoon + paged) so a tap actually toggles the HUD (dev had only the dead-code tap zones + a long-press fallback), and rebuilds the fanfic top bar to mirror the comic's 2-line title stack + `(56, 12)` padding so both readers share chrome height and density. Content matches what the prior CHANGELOG entry already claimed.
+- [backend] Small dead-code / silent-failure audit sweep. Removed two redundant `pass` statements after `logger.warning` in `scrape_service.py` (retry_job + delta_update enqueue handlers). Replaced four silent `except: pass` sites in the monitor stack with `logger.debug` explaining why the failure is non-fatal: `monitor/bg.py` SSE publish, `monitor/control/flags.py` Redis-override parse, `monitor/collectors/cert.py` letsencrypt.log tail, `monitor/collectors/cost.py` `mon:last_good:storage` JSON. Added a `logging.getLogger("monitor.flags")` to `flags.py` which previously had no logger.
+
 ## fix/reader-tap-trigger-and-topbar-consolidation — 2026-04-23
 
-- [ios] Reader trigger + top-bar consolidation. Swapped chrome reveal from `.pressReveal` (touch-down) to `.onTapGesture` on both readers so the finger-down that begins a scroll no longer flashes the top bar. Folded the circular chapter-badge + heart overlay into each reader's top bar as a tight `X / Y` label next to the chapter-list button; deleted the now-redundant `chapterFavOverlay` property and its mount points.
+- [ios] Reader trigger + top-bar consolidation. Swapped chrome reveal from `.pressReveal` (touch-down) to `.onTapGesture` on both readers so the finger-down that begins a scroll no longer flashes the top bar. Folded the circular chapter-badge + heart overlay into each reader's top bar as a tight `X / Y` label next to the chapter-list button; deleted the now-redundant `chapterFavOverlay` property and its mount points. Mounted the previously-dead `tapZoneOverlay` on both comic readers (webtoon + paged) so the tap actually fires — previously only the 0.5s long-press could toggle the HUD. Rebuilt the fanfic top bar to mirror the comic's 2-line title + chapter stack and matching `(56, 12)` padding, so both readers share the same chrome height and density.
 
 ## feature/ast-78-monitor-dashboard-polish — 2026-04-22
 

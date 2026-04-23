@@ -310,8 +310,8 @@ async def _follow_one(client, container, svc: str) -> None:
         try:
             from monitor import logs_stream
             logs_stream.publish(entry)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("logs_stream.publish failed (SSE subscribers will miss this line): %s", e)
 
 
 async def log_tailer() -> None:
