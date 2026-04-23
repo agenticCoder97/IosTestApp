@@ -748,11 +748,11 @@ struct ComicReaderView: View {
                     .foregroundStyle(AstralColors.muted)
 
                 HStack(spacing: 12) {
-                    Image(systemName: "sun.min.fill")
+                    Image(systemName: "sun.max.fill")
                         .foregroundStyle(AstralColors.muted)
                     Slider(value: $brightnessOverlay, in: 0...0.75)
                         .tint(AstralColors.gold)
-                    Image(systemName: "sun.max.fill")
+                    Image(systemName: "sun.min.fill")
                         .foregroundStyle(AstralColors.muted)
                 }
             }
