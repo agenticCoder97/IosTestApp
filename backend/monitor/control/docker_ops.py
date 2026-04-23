@@ -22,24 +22,31 @@ def _docker_client():
     return docker.from_env()
 
 
+def _find_compose_container(service: str):
+    """Find a compose-managed container by service label. Raises if absent.
+    Shared by restart_service (AST-71) and exec.start_session (AST-92).
+    """
+    client = _docker_client()
+    containers = client.containers.list(
+        all=True,
+        filters={
+            "label": [
+                "com.docker.compose.project=backend",
+                f"com.docker.compose.service={service}",
+            ],
+        },
+    )
+    if not containers:
+        raise RuntimeError(f"no container for service {service}")
+    return containers[0]
+
+
 async def restart_service(service: str, *, timeout_s: int = 20) -> dict:
     if service not in RESTARTABLE_SERVICES:
         raise ValueError(f"service not restartable: {service}")
 
     def _do_restart() -> dict:
-        client = _docker_client()
-        containers = client.containers.list(
-            all=True,
-            filters={
-                "label": [
-                    "com.docker.compose.project=backend",
-                    f"com.docker.compose.service={service}",
-                ],
-            },
-        )
-        if not containers:
-            raise RuntimeError(f"no container for service {service}")
-        container = containers[0]
+        container = _find_compose_container(service)
         container.restart(timeout=timeout_s)
         container.reload()
         return {
