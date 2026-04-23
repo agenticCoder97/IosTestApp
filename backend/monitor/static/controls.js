@@ -91,7 +91,7 @@
     const grid = document.getElementById('flags-grid');
     if (!grid) return;
     try {
-      const resp = await authFetch('/control/flags');
+      const resp = await authFetch('control/flags');
       if (!resp.ok) throw new Error('flags fetch failed: ' + resp.status);
       const data = await resp.json();
       grid.innerHTML = '';
@@ -120,7 +120,7 @@
             }
           }
           try {
-            const resp = await authFetch('/control/flags', {
+            const resp = await authFetch('control/flags', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ key, value }),
@@ -167,7 +167,7 @@
     btn.disabled = true;
     btn.innerHTML = '⋯ restarting';
     try {
-      const resp = await authFetch('/control/restart/' + encodeURIComponent(svc), { method: 'POST' });
+      const resp = await authFetch('control/restart/' + encodeURIComponent(svc), { method: 'POST' });
       if (!resp.ok) throw new Error('restart failed: ' + resp.status);
       toast(svc + ' restarted', 'ok');
       loadAudit();
@@ -199,7 +199,7 @@
     btn.disabled = true;
     btn.innerHTML = '… queued';
     try {
-      const resp = await authFetch('/control/retry-job/' + encodeURIComponent(jobId), { method: 'POST' });
+      const resp = await authFetch('control/retry-job/' + encodeURIComponent(jobId), { method: 'POST' });
       if (!resp.ok) throw new Error('retry failed: ' + resp.status);
       const data = await resp.json();
       toast('re-queued as ' + data.new_job_id, 'ok');
@@ -302,7 +302,7 @@
     dl.style.marginLeft = '8px';
     dl.addEventListener('click', async () => {
       try {
-        const resp = await authFetch('/control/backup/download/latest');
+        const resp = await authFetch('control/backup/download/latest');
         if (!resp.ok) throw new Error('download failed: ' + resp.status);
         const blob = await resp.blob();
         const cd = resp.headers.get('content-disposition') || '';
@@ -323,7 +323,7 @@
     btn.disabled = true;
     btn.innerHTML = '… running';
     try {
-      const start = await authFetch('/control/backup', { method: 'POST' });
+      const start = await authFetch('control/backup', { method: 'POST' });
       if (!start.ok) {
         if (start.status === 409) throw new Error('backup already running');
         throw new Error('backup start failed: ' + start.status);
@@ -331,7 +331,7 @@
       const info = await start.json();
       const t0 = Date.now();
       const poll = async () => {
-        const st = await authFetch('/control/backup/' + info.job_id);
+        const st = await authFetch('control/backup/' + info.job_id);
         if (!st.ok) return;
         const s = await st.json();
         const secs = Math.round((Date.now() - t0) / 1000);
@@ -402,7 +402,7 @@
     status.textContent = 'running…';
     result.innerHTML = '';
     try {
-      const resp = await authFetch('/control/query', {
+      const resp = await authFetch('control/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql }),
@@ -568,7 +568,7 @@
     const tbody = document.getElementById('audit-rows');
     if (!tbody) return;
     try {
-      const resp = await authFetch('/control/audit?limit=20');
+      const resp = await authFetch('control/audit?limit=20');
       if (!resp.ok) throw new Error('audit fetch failed: ' + resp.status);
       const data = await resp.json();
       if (!data.entries.length) {
