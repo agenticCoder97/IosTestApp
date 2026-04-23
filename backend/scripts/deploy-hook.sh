@@ -13,12 +13,19 @@
 #       --actor        "$GITHUB_ACTOR"
 #
 # Healthiness is computed by polling the astral_monitor /healthz and
-# the fastapi /health endpoints for up to 60 s.
+# the fastapi /api/v1/health endpoints for up to 60 s. Probes run from
+# inside the `nginx` container so docker-internal DNS works — neither
+# service is reachable from the OCI host directly (monitor only
+# `expose`s 8001; host port 80 redirects to HTTPS which is served on
+# a different server_name).
+#
+# Must be executed from the directory containing docker-compose.yml.
 
 set -euo pipefail
 
 MONITOR_STATE_DIR="${MONITOR_STATE_DIR:-/var/lib/astral-monitor}"
 DEPLOY_LOG="${MONITOR_STATE_DIR}/deploys.jsonl"
+COMPOSE="${COMPOSE:-docker compose --env-file .env.oci}"
 
 images=""
 started_epoch="$(date +%s)"
@@ -37,9 +44,14 @@ done
 
 healthy=true
 end=$(( $(date +%s) + 60 ))
+probe_monitor() {
+  $COMPOSE exec -T nginx curl -fsS --max-time 3 http://astral_monitor:8001/healthz >/dev/null 2>&1
+}
+probe_fastapi() {
+  $COMPOSE exec -T nginx curl -fsS --max-time 3 http://fastapi:8000/api/v1/health >/dev/null 2>&1
+}
 while [[ $(date +%s) -lt $end ]]; do
-  if curl -fsS --max-time 3 "http://127.0.0.1:8001/healthz" >/dev/null 2>&1 \
-     && curl -fsS --max-time 3 "http://127.0.0.1/health"   >/dev/null 2>&1; then
+  if probe_monitor && probe_fastapi; then
     healthy=true
     break
   fi
@@ -60,12 +72,20 @@ if [[ -n "$images" ]]; then
   ')
 fi
 
-mkdir -p "$MONITOR_STATE_DIR"
-
 record=$(cat <<EOF
 {"ts":"$ts","images_pulled":$images_json,"healthy":$healthy,"duration_s":$duration_s,"commit_sha":"$commit_sha","actor":"$actor"}
 EOF
 )
 
-echo "$record" >> "$DEPLOY_LOG"
-echo "deploy-hook: recorded $record"
+# Append via docker exec so the write lands inside the monitor_state
+# volume (mounted at $MONITOR_STATE_DIR in astral_monitor). The host's
+# path is the root-owned docker volume dir — ubuntu can't write there
+# without sudo. Non-fatal: a log write failure should not fail the
+# whole deploy.
+if printf '%s\n' "$record" | $COMPOSE exec -T astral_monitor \
+    sh -c "mkdir -p '$MONITOR_STATE_DIR' && cat >> '$DEPLOY_LOG'"; then
+  echo "deploy-hook: recorded $record"
+else
+  echo "deploy-hook: WARNING — could not append to $DEPLOY_LOG (monitor container down?)" >&2
+  echo "deploy-hook: record was $record" >&2
+fi
