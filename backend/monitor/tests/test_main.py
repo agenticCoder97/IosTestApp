@@ -56,3 +56,24 @@ async def test_index_html_ast78_polish_markers():
     ]
     for needle in banned:
         assert needle not in html, f"regression: {needle!r} should have been removed"
+
+
+@pytest.mark.asyncio
+async def test_index_html_ast92_terminal_markers():
+    """Protects AST-92 terminal shell surface."""
+    from monitor.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get("/")
+    html = resp.text
+    required = [
+        "@xterm/xterm@5",                # CDN include
+        "@xterm/addon-fit",              # fit addon
+        'data-min-term="',               # minimize button data attr
+        'data-term-body="',              # term-body data attr
+        "controls.js?v=5",               # cache bust
+    ]
+    for needle in required:
+        assert needle in html, f"AST-92 marker missing: {needle}"
+    assert "real exec channel lands in AST-92" not in html
+    assert "Terminal UI is a stub" not in html
