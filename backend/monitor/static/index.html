@@ -1824,7 +1824,7 @@ function renderServices(){
     </div>`;
   }).join('');
 
-  // AST-78-ext2 — terminal flip wiring (re-bound on every render)
+  // AST-92 — terminal flip + open + minimize/close (re-bound each render).
   document.querySelectorAll('.svc-terminal').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1832,9 +1832,15 @@ function renderServices(){
       const wrap = btn.closest('.svc-flip');
       if (!wrap) return;
       wrap.classList.add('flipped');
-      STATE.flippedCards = STATE.flippedCards || new Set();
-      STATE.flippedCards.add(name);
-      toast('coming soon — AST-92');
+      openTerminal(wrap, name);
+    });
+  });
+  document.querySelectorAll('.term-min').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wrap = btn.closest('.svc-flip');
+      if (wrap) wrap.classList.remove('flipped');
+      // Keep ws + xterm alive — that's the whole point of minimize.
     });
   });
   document.querySelectorAll('.term-close').forEach(btn => {
@@ -1842,9 +1848,13 @@ function renderServices(){
       e.stopPropagation();
       const name = btn.dataset.closeTerm;
       const wrap = btn.closest('.svc-flip');
-      if (!wrap) return;
-      wrap.classList.remove('flipped');
-      if (STATE.flippedCards) STATE.flippedCards.delete(name);
+      if (wrap) wrap.classList.remove('flipped');
+      const entry = STATE.terms && STATE.terms[name];
+      if (entry) {
+        try { entry.ws && entry.ws.close(1000, 'user-close'); } catch(_){}
+        try { entry.term.dispose(); } catch(_){}
+        delete STATE.terms[name];
+      }
     });
   });
 }
@@ -2318,6 +2328,7 @@ document.querySelectorAll('.svc-chip').forEach(chip=>{
 
 // keyboard shortcuts
 document.addEventListener('keydown', e=>{
+  if (window._termHasFocus && window._termHasFocus()) return;
   // ignore shortcuts while typing
   const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
   if(e.key === '/' && !typing){ e.preventDefault(); document.getElementById('search').focus(); return; }
