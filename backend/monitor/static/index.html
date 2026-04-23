@@ -1813,7 +1813,7 @@ function renderServices(){
             ${sparkMarkup}
           </div>
           <div class="mt-1 flex justify-between items-center">
-            ${containerId ? `<span class="copy" data-copy="${containerId}">${containerId.slice(0,12)} <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>` : '<span class="text-muted text-[11px] mono">—</span>'}
+            <span class="copy" data-copy="${containerId}" title="${containerId ? 'copy container id' : 'no container id available'}">${containerId.slice(0,12)}<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-left:6px"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
             ${footer}
           </div>
         </div>
