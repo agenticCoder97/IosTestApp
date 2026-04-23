@@ -300,23 +300,28 @@
     background: var(--gold); color: #0a0a0a; border: 1px solid var(--gold);
     padding: 6px 14px; border-radius: 8px;
     font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-    font-size: 12px; letter-spacing: .04em;
+    font-size: 12px; font-weight: 600; letter-spacing: .04em;
     transition: transform .08s ease, opacity .12s;
     cursor: pointer;
   }
   .tbtn:hover{ opacity: .9; }
   .tbtn:active{ transform: scale(.97); }
+  .tbtn:focus-visible{ outline: none; box-shadow: 0 0 0 2px var(--gold-tint); }
 
   /* AST-87 — styled native <select> */
   .sel{
+    appearance: none; -webkit-appearance: none;
     background: var(--surface); color: var(--white);
     border: 1px solid var(--border);
-    padding: 6px 10px; border-radius: 8px;
+    padding: 6px 26px 6px 10px; border-radius: 8px;
     font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
     font-size: 12px; cursor: pointer;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236B6B7A' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+    background-repeat: no-repeat; background-position: right 8px center;
   }
+  .sel:focus-visible{ outline: none; box-shadow: inset 0 0 0 1px var(--gold); }
 
-  /* AST-88 — red-tinted SQL error box (supersedes the older .sql-error below) */
+  /* AST-88 — red-tinted SQL error box (replaces older rule; Task 7 deleted it) */
   .sql-error{
     background: rgba(255,107,107,.08);
     border: 1px solid rgba(255,107,107,.4);
@@ -370,6 +375,7 @@
     border-radius: 4px;
   }
   .svc-face.back .term-close:hover{ color: var(--white); background: var(--elevated); }
+  .svc-face.back .term-close:focus-visible{ outline: none; box-shadow: inset 0 0 0 1px var(--gold); }
 
   /* AST-86 — skeleton / no-data */
   .svc-dim{ opacity: .5; filter: grayscale(.3); }
@@ -2334,6 +2340,6 @@ applyAllCollapsed();
      FastAPI app.mount("/static", ...) inside astral_monitor. An absolute
      "/static/..." path collides with nginx's `location /static/` block
      (aliased to the media volume) and returns 404. -->
-<script src="static/controls.js?v=3"></script>
+<script src="static/controls.js?v=4"></script>
 </body>
 </html>
