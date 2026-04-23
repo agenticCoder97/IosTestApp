@@ -249,14 +249,15 @@ struct FanficReaderView: View {
         .ignoresSafeArea()
         .navigationBarHidden(true)
         .statusBarHidden(!showReaderBar)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(ReaderMotion.chrome) {
-                showReaderBar.toggle()
-                if !showReaderBar { showReaderSettings = false }
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                withAnimation(ReaderMotion.chrome) {
+                    showReaderBar.toggle()
+                    if !showReaderBar { showReaderSettings = false }
+                }
+                Haptics.play(.chromeToggle)
             }
-            Haptics.play(.chromeToggle)
-        }
+        )
         .task(id: currentChapter.id) {
             scrollPercentThrottle.reset()
             await loadChapter()
