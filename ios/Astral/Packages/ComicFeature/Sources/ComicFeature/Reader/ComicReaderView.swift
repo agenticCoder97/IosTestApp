@@ -311,7 +311,9 @@ struct ComicReaderView: View {
                         },
                         onProgressChange: { progress in
                             prevChapterPull = progress
-                            if progress >= 1.0 && !prevChapterTriggered {
+                            // Fire only when user has held past threshold
+                            // AND the 0.5s arm timer has elapsed.
+                            if progress >= 1.0 && topEdgeArmedAt != nil && !prevChapterTriggered {
                                 prevChapterTriggered = true
                                 Haptics.play(.triggerFire)
                                 Task { @MainActor in
@@ -368,7 +370,7 @@ struct ComicReaderView: View {
                         },
                         onProgressChange: { progress in
                             nextChapterPull = progress
-                            if progress >= 1.0 && !nextChapterTriggered {
+                            if progress >= 1.0 && bottomEdgeArmedAt != nil && !nextChapterTriggered {
                                 nextChapterTriggered = true
                                 Haptics.play(.triggerFire)
                                 Task { @MainActor in
@@ -1257,9 +1259,9 @@ private let chapterArmDelay: TimeInterval = 0.5
 /// actively pulls. No reserved empty "black box" space inside scroll content.
 private let chapterPullThreshold: CGFloat = 120
 
-/// 0-height sentinel placed at the top of webtoon scroll content. Tracks
-/// pull-down overscroll past the natural top; ring UI is rendered as an
-/// overlay that only appears during active overscroll.
+/// 1pt sentinel placed at the top of webtoon scroll content. Tracks
+/// pull-down overscroll past the natural top; ring UI is rendered as
+/// an overlay that only appears during active overscroll.
 private struct PrevChapterTrigger: View {
     let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
@@ -1279,32 +1281,32 @@ private struct PrevChapterTrigger: View {
             Color.clear
                 .onChange(of: isPulling) { _, new in onVisibilityChange(new) }
                 .onChange(of: pct) { _, new in
-                    // Only forward progress when the trigger is armed.
-                    // Reports 0 otherwise so the parent resets any cached pull.
-                    onProgressChange(isArmed ? new : 0)
+                    // Forward pct unconditionally so the ring fills as the
+                    // user pulls. The parent gates the actual FIRE on
+                    // `topEdgeArmedAt != nil` (0.5s held-pull requirement).
+                    onProgressChange(new)
                 }
                 .onChange(of: isArmed) { _, armed in
-                    // Re-forward current pct the moment the arm timer flips.
-                    // Without this, a user who pulls past threshold faster
-                    // than the 0.5s arm delay has pct stuck at 1.0 and the
-                    // above `onChange(of: pct)` doesn't refire.
+                    // If the user pulled past threshold faster than the
+                    // arm timer, pct is already ≥ 1.0 and `onChange(of: pct)`
+                    // won't refire. Re-forward current pct so the parent
+                    // can re-evaluate its armed-and-maxed guard.
                     if armed { onProgressChange(pct) }
                 }
         }
-        .frame(height: 0)
-        .overlay(alignment: .bottom) {
+        .frame(height: 1)
+        .overlay {
             chapterTriggerRing(
                 progress: progress,
                 icon: progress >= 1.0 ? "checkmark" : "chevron.up",
                 label: progress >= 1.0 ? "Loading prev..." : "Previous chapter"
             )
-            .padding(.top, 16)
-            .offset(y: 60)
+            .offset(y: 40)
         }
     }
 }
 
-/// 0-height sentinel placed at the bottom of webtoon scroll content.
+/// 1pt sentinel placed at the bottom of webtoon scroll content.
 private struct NextChapterTrigger: View {
     let onVisibilityChange: (Bool) -> Void
     let onProgressChange: (CGFloat) -> Void
@@ -1323,22 +1325,19 @@ private struct NextChapterTrigger: View {
             let isPulling = overscroll > 0
             Color.clear
                 .onChange(of: isPulling) { _, new in onVisibilityChange(new) }
-                .onChange(of: pct) { _, new in
-                    onProgressChange(isArmed ? new : 0)
-                }
+                .onChange(of: pct) { _, new in onProgressChange(new) }
                 .onChange(of: isArmed) { _, armed in
                     if armed { onProgressChange(pct) }
                 }
         }
-        .frame(height: 0)
-        .overlay(alignment: .top) {
+        .frame(height: 1)
+        .overlay {
             chapterTriggerRing(
                 progress: progress,
                 icon: progress >= 1.0 ? "checkmark" : "chevron.down",
                 label: progress >= 1.0 ? "Loading next..." : "Next chapter"
             )
-            .padding(.bottom, 16)
-            .offset(y: -60)
+            .offset(y: -40)
         }
     }
 }
