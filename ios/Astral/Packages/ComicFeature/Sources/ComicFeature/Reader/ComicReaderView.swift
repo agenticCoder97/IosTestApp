@@ -1274,6 +1274,14 @@ private struct PrevChapterTrigger: View {
                     // Reports 0 otherwise so the parent resets any cached pull.
                     onProgressChange(isArmed ? new : 0)
                 }
+                .onChange(of: isArmed) { _, armed in
+                    // User may have already scrolled past the pull threshold
+                    // before the arm timer expired — in that case `pct` is
+                    // static at 1.0 and the above `onChange(of: pct)` won't
+                    // fire again. Re-forward current `pct` so the parent
+                    // sees the real progress the moment the trigger arms.
+                    if armed { onProgressChange(pct) }
+                }
         }
         .frame(height: chapterTriggerHeight)
         .overlay {
@@ -1321,6 +1329,14 @@ private struct NextChapterTrigger: View {
                 .onChange(of: isVisible) { _, new in onVisibilityChange(new) }
                 .onChange(of: pct) { _, new in
                     onProgressChange(isArmed ? new : 0)
+                }
+                .onChange(of: isArmed) { _, armed in
+                    // Re-forward current pct when the arm timer flips.
+                    // Without this, a user who scrolls to the bottom faster
+                    // than the 0.5s arm delay leaves pct stuck at 1.0 with
+                    // no `onChange(of: pct)` fire — the trigger arms but
+                    // never actually triggers.
+                    if armed { onProgressChange(pct) }
                 }
         }
         .frame(height: chapterTriggerHeight)
