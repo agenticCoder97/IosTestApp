@@ -16,7 +16,9 @@ services:
     healthcheck:
       # pg_isready only checks socket acceptance, doesn't authenticate,
       # so no -U needed — keeps the healthcheck independent of env vars.
-      test: ["CMD-SHELL", "pg_isready -q"]
+      # Note: postgres:16-alpine's pg_isready has NO -q flag; it's already
+      # quiet on success (exit 0, no output). Don't re-add -q.
+      test: ["CMD", "pg_isready"]
       interval: 10s
       timeout: 5s
       retries: 5
