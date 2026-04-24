@@ -1,14 +1,22 @@
 services:
   postgres:
     image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+    # env_file delivers POSTGRES_USER/PASSWORD/DB into the container at
+    # runtime. The previous `environment: POSTGRES_USER: ${POSTGRES_USER}`
+    # pattern relied on compose's parse-time substitution from a top-level
+    # .env file — which doesn't exist on prod (only .env.oci does, and
+    # env_file is NOT consulted for ${...} substitution in the compose
+    # file itself). That resolved every var to "" and made the healthcheck
+    # `pg_isready -U ''` fail with exit 3 → postgres stuck "unhealthy" →
+    # astral_monitor blocked behind `depends_on: service_healthy`.
+    env_file:
+      - .env.oci
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      # pg_isready only checks socket acceptance, doesn't authenticate,
+      # so no -U needed — keeps the healthcheck independent of env vars.
+      test: ["CMD-SHELL", "pg_isready -q"]
       interval: 10s
       timeout: 5s
       retries: 5
