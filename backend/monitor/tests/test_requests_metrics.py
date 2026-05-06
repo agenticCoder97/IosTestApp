@@ -1,9 +1,13 @@
+import pytest
+
 from monitor.requests_metrics import (
     build_request_debug,
     build_requests_block,
     records_for_window,
 )
 from monitor.traffic import RequestFilters
+
+EXPECTED_MAX_DEBUG_SAMPLES = 100
 
 
 def _records():
@@ -107,6 +111,64 @@ def test_rank_count_orders_by_request_count():
     assert block.slowest[0].count == 3
 
 
+def test_rank_error_rate_ignores_invalid_statuses():
+    records = [
+        {
+            "ts_ms": 1000,
+            "method": "GET",
+            "path": "/api/invalid",
+            "status": 999,
+            "rt_ms": 900,
+            "traffic_class": "app",
+            "classification_reason": "api_path",
+        },
+        {
+            "ts_ms": 2000,
+            "method": "GET",
+            "path": "/api/real-error",
+            "status": 500,
+            "rt_ms": 1,
+            "traffic_class": "app",
+            "classification_reason": "api_path",
+        },
+    ]
+
+    block = build_requests_block(records, "6h", RequestFilters(rank="error_rate"))
+
+    assert block.slowest[0].path == "/api/real-error"
+
+
+@pytest.mark.parametrize("rank", ["p95", "count", "error_rate"])
+def test_rank_ties_order_by_method_and_path(rank):
+    records = [
+        {
+            "ts_ms": 1000,
+            "method": "POST",
+            "path": "/api/z",
+            "status": 200,
+            "rt_ms": 10,
+            "traffic_class": "app",
+            "classification_reason": "api_path",
+        },
+        {
+            "ts_ms": 2000,
+            "method": "GET",
+            "path": "/api/a",
+            "status": 200,
+            "rt_ms": 10,
+            "traffic_class": "app",
+            "classification_reason": "api_path",
+        },
+    ]
+
+    block = build_requests_block(records, "6h", RequestFilters(rank=rank))
+
+    assert [(endpoint.method, endpoint.path) for endpoint in block.slowest] == [
+        ("GET", "/api/a"),
+        ("POST", "/api/z"),
+    ]
+
+
 def test_debug_summary_counts_match_classified_records():
     debug = build_request_debug(
         _records(), RequestFilters(), limit=2, sampler_meta={"elapsed_ms": 7}
@@ -140,13 +202,45 @@ def test_debug_samples_redact_paths_and_coerce_missing_values():
     assert sample["rt_ms"] == 0
 
 
-def test_records_for_window_applies_cutoff():
+def test_debug_sample_limit_is_capped():
+    records = [
+        {
+            "ts_ms": ts_ms,
+            "method": "GET",
+            "path": f"/api/{ts_ms}",
+            "status": 200,
+            "rt_ms": 1,
+            "traffic_class": "app",
+            "classification_reason": "api_path",
+        }
+        for ts_ms in range(EXPECTED_MAX_DEBUG_SAMPLES + 50)
+    ]
+
+    debug = build_request_debug(records, RequestFilters(), limit=999)
+
+    assert len(debug["included_samples"]) == EXPECTED_MAX_DEBUG_SAMPLES
+
+
+@pytest.mark.parametrize("limit", [-1, "not-a-number"])
+def test_debug_sample_limit_normalizes_invalid_values(limit):
+    debug = build_request_debug(_records(), RequestFilters(), limit=limit)
+
+    assert debug["included_samples"] == []
+    assert debug["excluded_samples"] == []
+
+
+def test_records_for_window_applies_inclusive_cutoff():
     records = [
         {"ts_ms": 0, "path": "/api/old"},
         {"ts_ms": 3_600_000, "path": "/api/new"},
     ]
     out = records_for_window(records, "1h", now_ms=3_600_000)
-    assert [r["path"] for r in out] == ["/api/new"]
+    assert [r["path"] for r in out] == ["/api/old", "/api/new"]
+
+
+def test_records_for_window_rejects_invalid_window():
+    with pytest.raises(ValueError, match="invalid window"):
+        records_for_window([], "bad-window", now_ms=0)
 
 
 def test_1m_api_public_window_validates_as_1h():

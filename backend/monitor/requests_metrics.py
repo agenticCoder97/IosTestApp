@@ -22,6 +22,7 @@ WINDOWS_S = {
     "30d": 2592000,
     "1m_api": 60,
 }
+MAX_DEBUG_SAMPLES = 100
 
 _STATUS_BUCKETS = ("2xx", "3xx", "4xx", "5xx")
 
@@ -30,10 +31,14 @@ def records_for_window(
     records: list[dict], window: str, now_ms: int | None = None
 ) -> list[dict]:
     """Return records whose timestamp falls within the requested window."""
+    if window not in WINDOWS_S:
+        raise ValueError(f"invalid window: {window}")
     if now_ms is None:
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
     cutoff_ms = now_ms - WINDOWS_S[window] * 1000
-    return [record for record in records if _coerce_int(record.get("ts_ms")) > cutoff_ms]
+    return [
+        record for record in records if _coerce_int(record.get("ts_ms")) >= cutoff_ms
+    ]
 
 
 def build_requests_block(
@@ -88,14 +93,33 @@ def build_requests_block(
         )
 
     if filters.rank == "count":
-        slowest.sort(key=lambda item: (item["count"], item["p95_ms"]), reverse=True)
+        slowest.sort(
+            key=lambda item: (
+                -item["count"],
+                -item["p95_ms"],
+                item["method"],
+                item["path"],
+            )
+        )
     elif filters.rank == "error_rate":
         slowest.sort(
-            key=lambda item: (item["_error_rate"], item["count"], item["p95_ms"]),
-            reverse=True,
+            key=lambda item: (
+                -item["_error_rate"],
+                -item["count"],
+                -item["p95_ms"],
+                item["method"],
+                item["path"],
+            )
         )
     else:
-        slowest.sort(key=lambda item: (item["p95_ms"], item["count"]), reverse=True)
+        slowest.sort(
+            key=lambda item: (
+                -item["p95_ms"],
+                -item["count"],
+                item["method"],
+                item["path"],
+            )
+        )
 
     return RequestsBlock(
         window=_public_window(window),
@@ -129,7 +153,7 @@ def build_request_debug(
         else:
             excluded.append(record)
 
-    sample_limit = max(0, _coerce_int(limit))
+    sample_limit = min(MAX_DEBUG_SAMPLES, max(0, _coerce_int(limit)))
     return {
         "filters": asdict(filters),
         "traffic_counts": dict(traffic_counts),
@@ -174,7 +198,7 @@ def _error_rate(records: list[dict]) -> float:
     errors = 0
     for record in records:
         status = _optional_int(record.get("status"))
-        if status is not None and status >= 500:
+        if status is not None and status_band(status) == "5xx":
             errors += 1
     return errors / len(records)
 
