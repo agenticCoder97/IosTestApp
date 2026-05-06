@@ -36,6 +36,7 @@ from monitor.collectors import storage
 from monitor.control.routes import router as control_router
 from typing import cast
 
+from monitor.endpoint_catalog import is_main_app_endpoint
 from monitor.requests_metrics import build_request_debug, records_for_window
 from monitor.schema import EndpointDetail, MetricsResponse, RequestDebugResponse
 from monitor.traffic import RankMode, RequestFilters, StatusBand, TrafficClass
@@ -236,7 +237,7 @@ async def metrics_requests(
     method: str = Query("all"),
     status: str = Query("all", pattern="^(all|2xx|3xx|4xx|5xx)$"),
     q: str = Query(""),
-    rank: str = Query("p95", pattern="^(p95|count|error_rate)$"),
+    rank: str = Query("p95", pattern="^(p95|p99|count|error_rate)$"),
 ) -> JSONResponse:
     filters = RequestFilters(
         traffic=cast(TrafficClass, traffic),
@@ -256,7 +257,7 @@ async def metrics_requests_debug(
     method: str = Query("all"),
     status: str = Query("all", pattern="^(all|2xx|3xx|4xx|5xx)$"),
     q: str = Query(""),
-    rank: str = Query("p95", pattern="^(p95|count|error_rate)$"),
+    rank: str = Query("p95", pattern="^(p95|p99|count|error_rate)$"),
     limit: int = Query(25, ge=1, le=100),
 ) -> JSONResponse:
     filters = RequestFilters(
@@ -318,6 +319,21 @@ async def metrics_endpoint(
     cache_for_window = bg.NGINX_ENDPOINT_CACHE.get(range, {})
     buckets = cache_for_window.get((method, path))
     if not buckets:
+        if is_main_app_endpoint(method, path):
+            detail = EndpointDetail(
+                method=method, path=path, window=range,  # type: ignore[arg-type]
+                total_requests=0,
+                error_count=0,
+                error_rate_pct=0.0,
+                p50_ms=0,
+                p95_ms=0,
+                p99_ms=0,
+                peak_p99_ms=0,
+                apdex=0.0,
+                buckets=[],
+                samples=[],
+            )
+            return JSONResponse(detail.model_dump(mode="json"))
         raise HTTPException(
             status_code=404,
             detail=f"no data for {method} {path} in window {range}",
@@ -325,13 +341,25 @@ async def metrics_endpoint(
     total = sum(b["count"] for b in buckets)
     err = sum(b["status_4xx"] + b["status_5xx"] for b in buckets)
     error_rate = (err / total * 100.0) if total else 0.0
+    p50 = max((b["p50_ms"] for b in buckets), default=0)
+    p95 = max((b["p95_ms"] for b in buckets), default=0)
+    p99 = max((b["p99_ms"] for b in buckets), default=0)
     peak_p99 = max((b["p99_ms"] for b in buckets), default=0)
+    satisfied = sum(b["status_2xx"] for b in buckets)
+    tolerated = sum(b["status_3xx"] for b in buckets)
+    apdex = (satisfied + tolerated / 2) / total if total else 0.0
     detail = EndpointDetail(
         method=method, path=path, window=range,  # type: ignore[arg-type]
         total_requests=total,
+        error_count=err,
         error_rate_pct=round(error_rate, 2),
+        p50_ms=int(p50),
+        p95_ms=int(p95),
+        p99_ms=int(p99),
         peak_p99_ms=int(peak_p99),
+        apdex=round(apdex, 2),
         buckets=buckets,  # type: ignore[arg-type]
+        samples=[],
     )
     return JSONResponse(detail.model_dump(mode="json"))
 

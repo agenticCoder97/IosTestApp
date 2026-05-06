@@ -352,6 +352,38 @@
   .section-head.collapsed .chev{ transform: rotate(-90deg); }
   .section-body.collapsed{ display: none; }
 
+  /* Tab bar — top-level navigation for non-overview sections */
+  .tab-bar{
+    position: sticky; top: 56px; z-index: 30;
+    background: rgba(10,10,11,0.92); backdrop-filter: blur(8px);
+    margin: 18px 0 4px; padding: 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 0; overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-bar::-webkit-scrollbar{ display: none; }
+  .tab-btn{
+    appearance: none; background: transparent; border: 0;
+    padding: 12px 16px; cursor: pointer;
+    font: 500 12px/1 "Inter", sans-serif;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    transition: color .15s ease, border-color .15s ease;
+    white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .tab-btn:hover{ color: var(--body); }
+  .tab-btn.active{ color: var(--white); border-bottom-color: var(--gold); }
+  .tab-btn .tab-count{
+    font: 500 10px/1 "JetBrains Mono", monospace;
+    color: var(--muted); padding: 2px 6px;
+    background: var(--elevated); border-radius: 999px;
+    box-shadow: inset 0 0 0 0.5px var(--border);
+  }
+  .tab-btn.active .tab-count{ color: var(--gold); }
+  [data-tab]:not([data-tab-active]){ display: none; }
+
   /* AST-78-ext2 — 3D flip wrapper for service cards */
   .svc-flip{ perspective: 1200px; }
   .svc-flip-inner{
@@ -748,6 +780,37 @@
   </div><!-- /.section-body[sec-services] -->
 
 
+  <!-- ─── TAB BAR ──────────────────────────────────────────────────────── -->
+  <nav class="tab-bar" id="tab-bar" role="tablist">
+    <button class="tab-btn active" data-tab-target="requests" role="tab" aria-selected="true">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+      Requests
+    </button>
+    <button class="tab-btn" data-tab-target="workers" role="tab" aria-selected="false">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9 1.65 1.65 0 0 0 4.27 7.18l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Workers <span class="tab-count" id="tab-count-workers">0</span>
+    </button>
+    <button class="tab-btn" data-tab-target="storage" role="tab" aria-selected="false">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+      Storage &amp; Backups
+    </button>
+    <button class="tab-btn" data-tab-target="security" role="tab" aria-selected="false">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Security
+    </button>
+    <button class="tab-btn" data-tab-target="logs" role="tab" aria-selected="false">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
+      Logs
+    </button>
+    <button class="tab-btn" data-tab-target="ops" role="tab" aria-selected="false">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      Ops Console
+    </button>
+  </nav>
+
+
+  <!-- ═══ TAB: REQUESTS ════════════════════════════════════════════════ -->
+  <div data-tab="requests" data-tab-active>
   <!-- ─── 3. REQUEST METRICS ──────────────────────────────────────────── -->
   <div class="section-head" id="sec-requests">
     <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
@@ -757,84 +820,118 @@
   </div>
 
   <div class="section-body" data-for="sec-requests">
-  <!-- AST-93 request filter controls -->
-  <div id="req-controls" class="flex flex-wrap gap-2 mb-3 items-center">
-    <select id="req-traffic" class="sel">
-      <option value="app">app</option>
-      <option value="noise">noise</option>
-      <option value="static">static</option>
-      <option value="monitor">monitor</option>
-      <option value="unknown">unknown</option>
-    </select>
-    <select id="req-method" class="sel">
-      <option value="all">all methods</option>
-      <option value="GET">GET</option>
-      <option value="POST">POST</option>
-      <option value="PUT">PUT</option>
-      <option value="DELETE">DELETE</option>
-      <option value="PATCH">PATCH</option>
-    </select>
-    <select id="req-status" class="sel">
-      <option value="all">all status</option>
-      <option value="2xx">2xx</option>
-      <option value="3xx">3xx</option>
-      <option value="4xx">4xx</option>
-      <option value="5xx">5xx</option>
-    </select>
-    <select id="req-rank" class="sel">
-      <option value="p95">rank p95</option>
-      <option value="count">rank count</option>
-      <option value="error_rate">rank error</option>
-    </select>
-    <input id="req-q" type="text" placeholder="filter path…" class="sel w-36"
-           value="" autocomplete="off" spellcheck="false">
-  </div>
-  <section class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
-    <!-- Left: line chart -->
+  <section class="grid grid-cols-1 gap-3">
     <div class="card p-4 sm:p-5">
-      <div class="flex items-baseline justify-between flex-wrap gap-2">
-        <div>
-          <div class="text-[11px] tracking-[.14em] uppercase text-muted">Requests/sec · p95 latency</div>
-          <div class="flex items-end gap-4 mt-1">
-            <div>
-              <div class="text-2xl font-semibold text-white mono" id="rps-now">2.4</div>
-              <div class="text-[11px] text-muted mono">rps · <span style="color:#4FC3F7">■</span> rps</div>
-            </div>
-            <div>
-              <div class="text-2xl font-semibold text-white mono" id="p95-now">142<span class="text-muted text-sm ml-0.5">ms</span></div>
-              <div class="text-[11px] text-muted mono">p95 · <span style="color:#FF6B6B">■</span> p95</div>
-            </div>
-            <div class="hidden sm:block">
-              <div class="text-2xl font-semibold text-white mono" id="req-total">18,831</div>
-              <div class="text-[11px] text-muted mono">total req</div>
-            </div>
+      <div class="flex items-start justify-between flex-wrap gap-3 mb-4">
+        <div class="flex items-end gap-5 flex-wrap">
+          <div>
+            <div class="text-[11px] tracking-[.14em] uppercase text-muted">requests / sec</div>
+            <div class="text-2xl font-semibold text-white mono mt-1" id="rps-now">2.4</div>
+            <div class="text-[11px] text-muted mono"><span style="color:#4FC3F7">■</span> rps</div>
           </div>
+          <div>
+            <div class="text-[11px] tracking-[.14em] uppercase text-muted">p95 latency</div>
+            <div class="text-2xl font-semibold text-white mono mt-1" id="p95-now">142<span class="text-muted text-sm ml-0.5">ms</span></div>
+            <div class="text-[11px] text-muted mono"><span style="color:#FF6B6B">■</span> p95</div>
+          </div>
+          <div>
+            <div class="text-[11px] tracking-[.14em] uppercase text-muted">total in window</div>
+            <div class="text-2xl font-semibold text-white mono mt-1" id="req-total">18,831</div>
+            <div class="text-[11px] text-muted mono">req · <span id="req-window-inline">last 6h</span></div>
+          </div>
+        </div>
+        <div id="req-controls" class="flex flex-wrap gap-2 items-center">
+          <span class="text-[10px] tracking-[.14em] uppercase text-muted mr-1">chart filter</span>
+          <select id="req-traffic" class="sel">
+            <option value="app">app</option>
+            <option value="noise">noise</option>
+            <option value="static">static</option>
+            <option value="monitor">monitor</option>
+            <option value="unknown">unknown</option>
+          </select>
+          <select id="req-method" class="sel">
+            <option value="all">all methods</option>
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+            <option value="PATCH">PATCH</option>
+          </select>
+          <select id="req-status" class="sel">
+            <option value="all">all status</option>
+            <option value="2xx">2xx</option>
+            <option value="3xx">3xx</option>
+            <option value="4xx">4xx</option>
+            <option value="5xx">5xx</option>
+          </select>
         </div>
       </div>
 
-      <div class="chart-wrap mt-4">
+      <div class="chart-wrap">
         <svg id="reqChart" viewBox="0 0 800 220" preserveAspectRatio="none" class="w-full h-full"></svg>
         <div id="req-tip" class="req-tip"></div>
       </div>
     </div>
 
-    <!-- Right: status bars + slowest -->
     <div class="card p-4 sm:p-5">
-      <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-3">Status codes</div>
-      <div id="statusBars" class="space-y-2 mb-5"></div>
+      <div class="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <div class="text-[11px] tracking-[.14em] uppercase text-muted">status mix</div>
+          <div class="text-white text-sm mono mt-0.5">click a slice to filter the endpoints below</div>
+        </div>
+        <button id="status-clear" class="svc-chip" style="display:none">clear filter x</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6 items-center">
+        <div class="relative mx-auto" style="width:240px;height:240px">
+          <svg id="statusDonut" viewBox="0 0 240 240" class="w-full h-full"></svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div class="text-[10px] tracking-[.14em] uppercase text-muted" id="donut-label">all requests</div>
+            <div class="text-[34px] leading-none font-bold text-white mono mt-1" id="donut-count">—</div>
+            <div class="text-[11px] text-muted mono mt-1" id="donut-sub">—</div>
+          </div>
+        </div>
+        <div id="statusLegend" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+      </div>
+    </div>
 
-      <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-2">Slowest endpoints</div>
+    <div class="card p-4 sm:p-5">
+      <div class="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <div class="text-[11px] tracking-[.14em] uppercase text-muted">all main endpoints</div>
+          <div class="text-white text-sm mono mt-0.5" id="ep-filter-summary">all status codes · ranked by p95</div>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center">
+          <select id="req-rank" class="sel">
+            <option value="p95">rank by p95</option>
+            <option value="p99">rank by p99</option>
+            <option value="count">rank by count</option>
+            <option value="error_rate">rank by error rate</option>
+          </select>
+          <input id="req-q" type="text" placeholder="filter path…" class="sel w-44"
+                 value="" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
       <div class="table-scroll">
-        <table class="z">
-          <thead><tr><th>endpoint</th><th class="text-right">p95</th><th class="text-right">n</th></tr></thead>
+        <table class="z" id="slowest-table">
+          <thead><tr>
+            <th>endpoint</th>
+            <th class="text-right">p50</th>
+            <th class="text-right">p95</th>
+            <th class="text-right">p99</th>
+            <th class="text-right">count</th>
+            <th class="text-right">err%</th>
+          </tr></thead>
           <tbody id="slowest"></tbody>
         </table>
       </div>
     </div>
   </section>
   </div><!-- /.section-body[sec-requests] -->
+  </div><!-- /tab=requests -->
 
 
+  <!-- ═══ TAB: WORKERS ═════════════════════════════════════════════════ -->
+  <div data-tab="workers">
   <!-- ─── 4. ARQ WORKER ──────────────────────────────────────────────── -->
   <div class="section-head" id="sec-arq">
     <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
@@ -905,8 +1002,11 @@
     </div>
   </section>
   </div><!-- /.section-body[sec-arq] -->
+  </div><!-- /tab=workers -->
 
 
+  <!-- ═══ TAB: STORAGE & BACKUPS ═══════════════════════════════════════ -->
+  <div data-tab="storage">
   <!-- ─── 5. STORAGE ──────────────────────────────────────────────────── -->
   <div class="section-head" id="sec-storage">
     <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
@@ -979,8 +1079,11 @@
     </div>
   </section>
   </div><!-- /.section-body[sec-backups] -->
+  </div><!-- /tab=storage -->
 
 
+  <!-- ═══ TAB: SECURITY ════════════════════════════════════════════════ -->
+  <div data-tab="security">
   <!-- ─── 7. CERTIFICATE ──────────────────────────────────────────────── -->
   <div class="section-head" id="sec-cert">
     <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
@@ -1027,8 +1130,11 @@
     </div>
   </section>
   </div><!-- /.section-body[sec-cert] -->
+  </div><!-- /tab=security -->
 
 
+  <!-- ═══ TAB: LOGS ════════════════════════════════════════════════════ -->
+  <div data-tab="logs">
   <div class="section-head" id="sec-logs">
     <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
     <span class="crumb">astral / oci / <span class="cur">recent logs</span></span>
@@ -1061,8 +1167,11 @@
     </div>
   </section>
   </div><!-- /.section-body[sec-logs] -->
+  </div><!-- /tab=logs -->
 
 
+  <!-- ═══ TAB: OPS CONSOLE ═════════════════════════════════════════════ -->
+  <div data-tab="ops">
   <!-- ─── KILL SWITCHES (AST-70) ───────────────────────────────────── -->
   <div class="section-head" id="sec-flags">
     <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m6 9 6 6 6-6"/></svg>
@@ -1163,6 +1272,7 @@
     </div>
   </section>
   </div><!-- /.section-body[sec-audit] -->
+  </div><!-- /tab=ops -->
 
 
   <!-- ─── FOOTER ──────────────────────────────────────────────────────── -->
@@ -1190,41 +1300,150 @@
 
 
 <!-- ─── ENDPOINT DRILL-DOWN MODAL (AST-76) ──────────────────────────── -->
-<div id="endpoint-modal" class="endpoint-modal" style="display:none;">
-  <div class="endpoint-dialog card p-5">
-    <div class="flex items-start justify-between mb-3">
-      <div>
-        <div class="text-[11px] tracking-[.14em] uppercase text-muted">Endpoint</div>
-        <div id="ep-title" class="text-white font-semibold mono text-lg mt-1">—</div>
+<template id="endpoint-drilldown-template">
+  <div class="ep-inline">
+    <div class="ep-header">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="text-[10px] tracking-[.16em] uppercase text-muted">endpoint drill-down</span>
+            <span class="text-muted text-xs">·</span>
+            <span id="ep-range-label" class="text-[11px] mono text-muted">last 6h</span>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="ep-method" class="ep-method get">GET</span>
+            <span id="ep-path" class="ep-path mono">—</span>
+            <button id="ep-copy" class="ibtn" style="width:26px;height:26px" title="copy path">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="seg ep-range" id="ep-range-seg">
+          <button data-r="1h">1h</button>
+          <button data-r="6h" class="active">6h</button>
+          <button data-r="24h">24h</button>
+          <button data-r="7d">7d</button>
+        </div>
       </div>
-      <button class="ibtn" id="ep-close" title="close">✕</button>
     </div>
-    <div class="grid grid-cols-3 gap-3 mb-4">
-      <div class="elevated p-3">
-        <div class="text-[11px] uppercase tracking-[.14em] text-muted">requests</div>
-        <div class="text-xl font-semibold text-white mono mt-1" id="ep-total">—</div>
-      </div>
-      <div class="elevated p-3">
-        <div class="text-[11px] uppercase tracking-[.14em] text-muted">error rate</div>
-        <div class="text-xl font-semibold mono mt-1" id="ep-err">—</div>
-      </div>
-      <div class="elevated p-3">
-        <div class="text-[11px] uppercase tracking-[.14em] text-muted">peak p99</div>
-        <div class="text-xl font-semibold text-white mono mt-1" id="ep-peak">—</div>
-      </div>
+    <div class="ep-kpis">
+      <div class="ep-kpi"><div class="ep-kpi-l">requests</div><div class="ep-kpi-v"><span id="ep-total">—</span></div><div class="ep-kpi-sub mono"><span id="ep-rps">—</span> rps avg</div></div>
+      <div class="ep-kpi"><div class="ep-kpi-l">error rate</div><div class="ep-kpi-v"><span id="ep-err">—</span></div><div class="ep-kpi-sub mono"><span id="ep-err-count">—</span> errors</div></div>
+      <div class="ep-kpi"><div class="ep-kpi-l">p50 latency</div><div class="ep-kpi-v"><span id="ep-p50">—</span><span class="ep-kpi-unit">ms</span></div><div class="ep-kpi-sub mono">median</div></div>
+      <div class="ep-kpi"><div class="ep-kpi-l">p95 latency</div><div class="ep-kpi-v"><span id="ep-p95">—</span><span class="ep-kpi-unit">ms</span></div><div class="ep-kpi-sub mono"><span id="ep-p95-trend">—</span> vs prev</div></div>
+      <div class="ep-kpi"><div class="ep-kpi-l">peak p99</div><div class="ep-kpi-v"><span id="ep-peak">—</span><span class="ep-kpi-unit">ms</span></div><div class="ep-kpi-sub mono">worst bucket</div></div>
+      <div class="ep-kpi"><div class="ep-kpi-l">apdex</div><div class="ep-kpi-v"><span id="ep-apdex">—</span></div><div class="ep-kpi-sub mono">T=200ms</div></div>
     </div>
-    <div style="position:relative">
-      <svg id="ep-chart" viewBox="0 0 800 220" preserveAspectRatio="none" class="w-full" style="height:220px"></svg>
-      <div id="ep-tip" class="req-tip"></div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-head">
+          <span class="ep-section-title">Latency percentiles</span>
+          <div class="flex items-center gap-3 text-[10px] mono text-muted">
+            <span class="flex items-center gap-1.5"><span class="ep-leg" style="background:#C9A84C"></span>p50</span>
+            <span class="flex items-center gap-1.5"><span class="ep-leg" style="background:#FFA726"></span>p95</span>
+            <span class="flex items-center gap-1.5"><span class="ep-leg" style="background:#EF5350"></span>p99</span>
+          </div>
+        </div>
+        <div style="position:relative" class="ep-chart-wrap">
+          <svg id="ep-chart" viewBox="0 0 800 220" preserveAspectRatio="none" class="w-full" style="height:220px;display:block"></svg>
+          <div id="ep-tip" class="req-tip"></div>
+        </div>
+      </div>
+      <div class="ep-grid-2">
+        <div class="ep-section">
+          <div class="ep-section-head"><span class="ep-section-title">Status timeline</span><span class="text-[10px] mono text-muted" id="ep-ribbon-window">—</span></div>
+          <div id="ep-ribbon" class="ep-ribbon"></div>
+          <div class="ep-ribbon-axis mono" id="ep-ribbon-axis"></div>
+          <div class="ep-ribbon-legend mono">
+            <span><span class="dot ok"></span>2xx ok</span>
+            <span><span class="dot muted"></span>3xx redirect</span>
+            <span><span class="dot warn"></span>4xx client</span>
+            <span><span class="dot crit"></span>5xx server</span>
+          </div>
+        </div>
+        <div class="ep-section">
+          <div class="ep-section-head"><span class="ep-section-title">Status distribution</span></div>
+          <div class="ep-dist-row">
+            <div class="ep-donut-wrap">
+              <svg id="ep-donut" viewBox="0 0 120 120" width="120" height="120"></svg>
+              <div class="ep-donut-center"><div class="ep-donut-num mono" id="ep-donut-pct">—</div><div class="ep-donut-lbl">success</div></div>
+            </div>
+            <div id="ep-dist-list" class="ep-dist-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-head"><span class="ep-section-title">Recent samples</span><span class="text-[10px] mono text-muted" id="ep-samples-meta">—</span></div>
+        <div class="ep-samples-wrap">
+          <table class="z ep-samples">
+            <thead><tr><th>time</th><th>status</th><th class="text-right">latency</th><th>client</th><th>ua</th></tr></thead>
+            <tbody id="ep-samples"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="ep-status-bars" class="hidden"></div>
     </div>
-    <div id="ep-status-bars" class="mt-3"></div>
   </div>
-</div>
+</template>
 
 
 <style>
-  .endpoint-modal{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; }
-  .endpoint-dialog{ width:100%; max-width:920px; max-height:90vh; overflow:auto; background:var(--surface); }
+  tr.ep-drilldown-row > td{ padding:0 !important; background:var(--bg); border-bottom:1px solid var(--border) !important; }
+  .ep-inline{ width:100%; background:var(--surface); box-shadow:inset 0 0 0 0.5px var(--border); animation:ep-slide 220ms cubic-bezier(0.22,1,0.36,1); }
+  @keyframes ep-slide{ from{ opacity:0; transform:translateY(-4px); } to{ opacity:1; transform:translateY(0); } }
+  tr.ep-row-open > td{ background:rgba(201,168,76,.06); }
+  tr.ep-row-open > td:first-child{ box-shadow:inset 3px 0 0 var(--gold); }
+  .ep-header{ padding:18px 22px 14px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); z-index:2; }
+  .ep-method{ display:inline-flex; align-items:center; padding:3px 9px; border-radius:4px; font:600 11px/1 "JetBrains Mono",monospace; letter-spacing:.06em; }
+  .ep-method.get{ background:rgba(79,195,247,.15); color:#4FC3F7; }
+  .ep-method.post{ background:rgba(76,175,80,.15); color:var(--success); }
+  .ep-method.put{ background:rgba(255,167,38,.15); color:var(--warning); }
+  .ep-method.delete{ background:rgba(239,83,80,.15); color:var(--error); }
+  .ep-method.patch{ background:rgba(167,139,218,.15); color:#A78BDA; }
+  .ep-path{ color:var(--white); font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+  .ep-range{ padding:2px; }
+  .ep-range button{ padding:4px 9px; font-size:11px; }
+  .ep-kpis{ display:grid; grid-template-columns:repeat(6,1fr); border-bottom:1px solid var(--border); }
+  .ep-kpi{ padding:14px 18px; border-right:1px solid var(--border); position:relative; }
+  .ep-kpi:last-child{ border-right:0; }
+  .ep-kpi-l{ font:500 10px/1 "Inter",sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+  .ep-kpi-v{ font:600 22px/1 "JetBrains Mono",monospace; color:var(--white); font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:3px; }
+  .ep-kpi-unit{ font-size:12px; color:var(--muted); font-weight:500; }
+  .ep-kpi-sub{ font-size:11px; color:var(--muted); margin-top:6px; }
+  @media (max-width:800px){ .ep-kpis{ grid-template-columns:repeat(3,1fr); } .ep-kpi:nth-child(3n){ border-right:0; } .ep-kpi:nth-child(-n+3){ border-bottom:1px solid var(--border); } }
+  .ep-body{ padding:18px 22px 22px; display:flex; flex-direction:column; gap:18px; }
+  .ep-section-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:10px; }
+  .ep-section-title{ font:500 10px/1 "Inter",sans-serif; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); }
+  .ep-leg{ width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .ep-chart-wrap{ background:var(--bg); border-radius:8px; padding:8px; box-shadow:inset 0 0 0 0.5px var(--border); }
+  .ep-grid-2{ display:grid; grid-template-columns:1.4fr 1fr; gap:16px; }
+  @media (max-width:800px){ .ep-grid-2{ grid-template-columns:1fr; } }
+  .ep-ribbon{ display:flex; gap:1px; height:26px; border-radius:4px; overflow:hidden; background:var(--bg); box-shadow:inset 0 0 0 0.5px var(--border); }
+  .ep-ribbon .seg{ flex:1; cursor:crosshair; transition:filter .15s; min-width:0; }
+  .ep-ribbon .seg:hover{ filter:brightness(1.4); }
+  .ep-ribbon .seg.r2xx{ background:var(--success); }
+  .ep-ribbon .seg.r3xx{ background:var(--muted); }
+  .ep-ribbon .seg.r4xx{ background:var(--warning); }
+  .ep-ribbon .seg.r5xx{ background:var(--error); }
+  .ep-ribbon .seg.rmix-warn{ background:linear-gradient(180deg,var(--success) 0 60%,var(--warning) 60% 100%); }
+  .ep-ribbon .seg.rmix-crit{ background:linear-gradient(180deg,var(--success) 0 70%,var(--error) 70% 100%); }
+  .ep-ribbon .seg.rnone{ background:rgba(107,107,122,.14); }
+  .ep-ribbon-axis{ display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-top:6px; }
+  .ep-ribbon-legend{ display:flex; gap:14px; font-size:10px; color:var(--muted); margin-top:8px; flex-wrap:wrap; }
+  .ep-ribbon-legend > span{ display:inline-flex; align-items:center; gap:5px; }
+  .ep-dist-row{ display:flex; align-items:center; gap:18px; }
+  .ep-donut-wrap{ position:relative; width:120px; height:120px; flex-shrink:0; }
+  .ep-donut-center{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; }
+  .ep-donut-num{ font:600 20px/1 "JetBrains Mono",monospace; color:var(--white); }
+  .ep-donut-lbl{ font:500 9px/1 "Inter",sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:4px; }
+  .ep-dist-list{ display:flex; flex-direction:column; gap:8px; flex:1; min-width:0; }
+  .ep-dist-item{ display:grid; grid-template-columns:12px 38px 1fr 60px 50px; align-items:center; gap:8px; font-size:12px; }
+  .ep-dist-sw{ width:10px; height:10px; border-radius:2px; }
+  .ep-dist-bar{ height:6px; background:rgba(107,107,122,.18); border-radius:999px; overflow:hidden; }
+  .ep-dist-bar > span{ display:block; height:100%; border-radius:999px; }
+  .ep-dist-v,.ep-dist-p{ text-align:right; }
+  .ep-samples-wrap{ max-height:240px; overflow:auto; border-radius:8px; box-shadow:inset 0 0 0 0.5px var(--border); }
+  .ep-samples thead th{ position:sticky; top:0; background:var(--surface); z-index:1; }
   .svc-ctrl-btn{ display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:500; color:var(--muted); background:transparent; border:0.5px solid var(--border); cursor:pointer; }
   .svc-ctrl-btn:hover{ color:var(--white); background:var(--elevated); }
   .flag-card{ background:var(--elevated); border-radius:8px; padding:14px; box-shadow: inset 0 0 0 0.5px var(--border); }
@@ -1296,6 +1515,29 @@ const STATE = {
 // range / service filter without duplicating state.
 window.STATE = STATE;
 
+// ── Tab bar wiring ────────────────────────────────────────────────
+function setActiveTab(name){
+  document.querySelectorAll('[data-tab]').forEach(p => {
+    if (p.getAttribute('data-tab') === name) p.setAttribute('data-tab-active','');
+    else p.removeAttribute('data-tab-active');
+  });
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const on = b.getAttribute('data-tab-target') === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  try { localStorage.setItem('monitor_active_tab', name); } catch(_){}
+}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-btn[data-tab-target]');
+  if (!btn) return;
+  setActiveTab(btn.getAttribute('data-tab-target'));
+});
+try {
+  const saved = localStorage.getItem('monitor_active_tab');
+  if (saved) setActiveTab(saved);
+} catch(_){}
+
 // AST-83 — collapsible sections
 const COLLAPSE_KEY = 'monitor_collapsed_v1';
 const COLLAPSE_DEFAULTS = {
@@ -1356,6 +1598,9 @@ document.addEventListener('click', (e) => {
 /* ---------- deterministic-ish PRNG seeded per refresh --------------- */
 let RNG_SEED = Date.now() & 0xffff;
 function rnd(){ RNG_SEED = (RNG_SEED * 1664525 + 1013904223) & 0xffffffff; return ((RNG_SEED >>> 0) / 0xffffffff); }
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 function rint(a,b){ return Math.floor(a + rnd()*(b-a+1)); }
 function noise(base, amp){ return base + (rnd()-0.5)*2*amp; }
 
@@ -1594,14 +1839,25 @@ function genDataMock(range){
     '5xx': rint(0, 4),
   };
   const endpoints = [
-    ['GET','/comics/{slug}/chapters',  412, 1284],
-    ['POST','/fanfic/scrape',          980, 38],
-    ['GET','/comics/{slug}/pages',     288, 1542],
-    ['GET','/auth/session',            204, 4211],
-    ['POST','/arq/enqueue',            176, 56],
+    ['GET',  '/api/v1/comics/{id}/chapters/{id}/pages', 412, 1284, 0.3],
+    ['POST', '/api/v1/scrape/comic',                    980,   38, 2.6],
+    ['GET',  '/api/v1/fanfic/{id}/chapters/{id}',       288, 1542, 0.1],
+    ['GET',  '/api/v1/fanfic/{id}',                     204, 4211, 0.0],
+    ['POST', '/api/v1/scrape/fanfic',                   176,   56, 5.4],
+    ['GET',  '/api/v1/comics/{id}',                     120,  890, 0.0],
+    ['GET',  '/api/v1/comics',                           88, 2100, 0.0],
+    ['GET',  '/api/v1/fanfic',                           74, 1850, 0.0],
+    ['PUT',  '/api/v1/progress/comic/{id}',              52,  620, 0.0],
+    ['GET',  '/api/v1/health',                           18, 8400, 0.0],
   ];
-  const slowest = endpoints.map(([m,p,p95,c])=>({
-    method:m, path:p, p50_ms: Math.round(p95/4 + rnd()*20), p95_ms: p95 + rint(-40,40), count: c + rint(-50,50),
+  const slowest = endpoints.map(([m,p,p95,c,err])=>({
+    method: m,
+    path: p,
+    p50_ms: Math.round(p95/3 + rnd()*15),
+    p95_ms: p95 + rint(-30,30),
+    p99_ms: Math.round(p95 * 2.1 + rnd()*40),
+    count: c + rint(-30,30),
+    error_rate_pct: +(err + (rnd()*0.4 - 0.2)).toFixed(1),
   })).sort((a,b)=>b.p95_ms-a.p95_ms);
 
   // arq
@@ -2183,6 +2439,50 @@ function renderServices(){
   restoreServiceFaces();
 }
 
+STATE.donutSelected = null;
+const STATUS_COLORS = { '2xx':'#4CAF50', '3xx':'#8AB4F8', '4xx':'#FFA726', '5xx':'#EF5350' };
+
+function drawDonut(codes, total, selected){
+  const svg = document.getElementById('statusDonut');
+  if(!svg) return;
+  const cx=120, cy=120, rOuter=100, rInner=68;
+  const entries = Object.entries(codes).filter(([,v])=>v>0);
+  if(total === 0 || entries.length === 0){
+    svg.innerHTML = `<circle cx="${cx}" cy="${cy}" r="${(rOuter+rInner)/2}" fill="none" stroke="#2A2A30" stroke-width="${rOuter-rInner}"/>`;
+    return;
+  }
+  let acc = -Math.PI/2;
+  let html = '';
+  entries.forEach(([k,v])=>{
+    const frac = v/total;
+    const a0 = acc, a1 = acc + frac*Math.PI*2;
+    acc = a1;
+    const isSel = selected === k;
+    const isDim = selected && !isSel;
+    const r1 = isSel ? rOuter+6 : rOuter;
+    const x0o = cx + r1*Math.cos(a0), y0o = cy + r1*Math.sin(a0);
+    const x1o = cx + r1*Math.cos(a1), y1o = cy + r1*Math.sin(a1);
+    const x0i = cx + rInner*Math.cos(a1), y0i = cy + rInner*Math.sin(a1);
+    const x1i = cx + rInner*Math.cos(a0), y1i = cy + rInner*Math.sin(a0);
+    const large = (a1-a0) > Math.PI ? 1 : 0;
+    const d = `M ${x0o.toFixed(2)} ${y0o.toFixed(2)} A ${r1} ${r1} 0 ${large} 1 ${x1o.toFixed(2)} ${y1o.toFixed(2)} L ${x0i.toFixed(2)} ${y0i.toFixed(2)} A ${rInner} ${rInner} 0 ${large} 0 ${x1i.toFixed(2)} ${y1i.toFixed(2)} Z`;
+    html += `<path d="${d}" fill="${STATUS_COLORS[k]}" opacity="${isDim?0.25:1}" data-code="${k}" style="cursor:pointer;transition:opacity .15s"><title>${k} · ${v.toLocaleString()} (${(frac*100).toFixed(1)}%)</title></path>`;
+  });
+  svg.innerHTML = html;
+  svg.querySelectorAll('path').forEach(p => {
+    p.addEventListener('click', () => {
+      const code = p.dataset.code;
+      STATE.donutSelected = (STATE.donutSelected === code) ? null : code;
+      renderRequests();
+    });
+  });
+}
+
+function endpointStatusValue(endpoint, key){
+  const codes = endpoint.status_codes || {};
+  return codes[key] ?? codes[key.replace('xx','_xx')] ?? 0;
+}
+
 function renderRequests(){
   const r = STATE.data.requests;
   const sc = r.status_codes || {};
@@ -2190,7 +2490,6 @@ function renderRequests(){
   const chartEl = document.getElementById('reqChart');
 
   if(totalReqs === 0){
-    // No traffic in this window — show placeholder instead of a flat-zero chart.
     if(chartEl){
       chartEl.innerHTML = `<text x="50%" y="50%" text-anchor="middle"
         fill="var(--muted)" font-family="JetBrains Mono" font-size="12">
@@ -2199,49 +2498,93 @@ function renderRequests(){
     document.getElementById('rps-now').textContent = '0.00';
     document.getElementById('p95-now').innerHTML = `0<span class="text-muted text-sm ml-0.5">ms</span>`;
     document.getElementById('req-total').textContent = '0';
-    document.getElementById('req-window').textContent = RANGE_LABELS[STATE.range];
-    document.getElementById('statusBars').innerHTML = '';
-    document.getElementById('slowest').innerHTML =
-      '<tr><td colspan="3" class="text-muted mono text-[12px] py-3 text-center">no requests to rank</td></tr>';
-    return;
+  } else {
+    drawRequestChart(r.series_rps, r.series_p95_ms, r._ts_rps);
+    document.getElementById('rps-now').textContent = r.series_rps.at(-1).toFixed(2);
+    document.getElementById('p95-now').innerHTML = `${Math.round(r.series_p95_ms.at(-1))}<span class="text-muted text-sm ml-0.5">ms</span>`;
+    document.getElementById('req-total').textContent = r.total.toLocaleString();
   }
-
-  drawRequestChart(r.series_rps, r.series_p95_ms, r._ts_rps);
-  document.getElementById('rps-now').textContent = r.series_rps.at(-1).toFixed(2);
-  document.getElementById('p95-now').innerHTML = `${Math.round(r.series_p95_ms.at(-1))}<span class="text-muted text-sm ml-0.5">ms</span>`;
-  document.getElementById('req-total').textContent = r.total.toLocaleString();
   document.getElementById('req-window').textContent = RANGE_LABELS[STATE.range];
+  const reqWindowInline = document.getElementById('req-window-inline');
+  if (reqWindowInline) reqWindowInline.textContent = RANGE_LABELS[STATE.range];
 
-  // AST-84 — status bars (right panel) become click-to-dim toggles.
-  const total = Object.values(r.status_codes).reduce((a,b)=>a+b,0);
-  const colors = { '2xx':'var(--success)', '3xx':'var(--muted)', '4xx':'var(--warning)', '5xx':'var(--error)' };
-  document.getElementById('statusBars').innerHTML = Object.entries(r.status_codes).map(([k,v])=>{
-    const pct = (v/total*100).toFixed(v>total*0.1?0:2);
-    const dim = STATE.statusFilter.has(k) ? ' svc-dim' : '';
-    return `<div class="sc-row${dim}" data-code="${k}" style="cursor:pointer">
-      <div class="flex justify-between text-[12px] mono">
-        <span style="color:${colors[k]}">${k}</span>
-        <span class="text-body">${v.toLocaleString()} <span class="text-muted">· ${pct}%</span></span>
+  drawDonut(sc, totalReqs, STATE.donutSelected);
+  const sel = STATE.donutSelected;
+  const labelEl = document.getElementById('donut-label');
+  const countEl = document.getElementById('donut-count');
+  const subEl = document.getElementById('donut-sub');
+  if(sel){
+    const v = sc[sel] || 0;
+    labelEl.textContent = sel + ' responses';
+    labelEl.style.color = STATUS_COLORS[sel];
+    countEl.textContent = v.toLocaleString();
+    subEl.textContent = totalReqs ? `${(v/totalReqs*100).toFixed(2)}% of ${totalReqs.toLocaleString()}` : '—';
+  } else {
+    labelEl.textContent = 'all requests';
+    labelEl.style.color = '';
+    countEl.textContent = totalReqs.toLocaleString();
+    const errs = (sc['4xx']||0) + (sc['5xx']||0);
+    subEl.textContent = totalReqs ? `${((errs/totalReqs)*100).toFixed(2)}% error rate` : '—';
+  }
+  document.getElementById('status-clear').style.display = sel ? '' : 'none';
+  document.getElementById('status-clear').onclick = () => { STATE.donutSelected = null; renderRequests(); };
+
+  document.getElementById('statusLegend').innerHTML = ['2xx','3xx','4xx','5xx'].map(k=>{
+    const v = sc[k] || 0;
+    const pct = totalReqs ? (v/totalReqs*100) : 0;
+    const isSel = sel === k;
+    const isDim = sel && !isSel;
+    return `<button data-code="${k}" class="text-left p-3 rounded-lg flex items-center gap-3 transition" style="background:var(--elevated);box-shadow:inset 0 0 0 0.5px ${isSel?STATUS_COLORS[k]:'var(--border)'};opacity:${isDim?0.45:1};cursor:pointer">
+      <span style="width:10px;height:10px;border-radius:2px;background:${STATUS_COLORS[k]};flex-shrink:0"></span>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="mono text-[13px] font-semibold" style="color:${STATUS_COLORS[k]}">${k}</span>
+          <span class="mono text-[11px] text-muted">${pct.toFixed(1)}%</span>
+        </div>
+        <div class="mono text-white text-[15px] mt-0.5">${v.toLocaleString()}</div>
       </div>
-      <div class="bar-track mt-1"><span style="width:${Math.max(0.5,(v/total*100))}%; background:${colors[k]}"></span></div>
-    </div>`;
+    </button>`;
   }).join('');
-  document.querySelectorAll('#statusBars .sc-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const code = row.dataset.code;
-      if (STATE.statusFilter.has(code)) STATE.statusFilter.delete(code);
-      else STATE.statusFilter.add(code);
-      row.classList.toggle('svc-dim', STATE.statusFilter.has(code));
+  document.querySelectorAll('#statusLegend [data-code]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.code;
+      STATE.donutSelected = (STATE.donutSelected === code) ? null : code;
+      renderRequests();
     });
   });
 
-  // slowest table
-  document.getElementById('slowest').innerHTML = r.slowest.map(e=>`
-    <tr>
-      <td class="mono"><span style="color:var(--gold)">${e.method}</span> <span class="text-body">${e.path}</span></td>
-      <td class="text-right mono ${e.p95_ms>500?'text-[color:var(--warning)]':'text-white'}">${e.p95_ms}<span class="text-muted">ms</span></td>
-      <td class="text-right mono text-muted">${e.count.toLocaleString()}</td>
-    </tr>`).join('');
+  let filtered = (r.slowest || []).slice();
+  if(sel && filtered.some(e => e.status_codes)) {
+    filtered = filtered.filter(e => endpointStatusValue(e, sel) > 0);
+  }
+  const q = (STATE.filters.q || '').trim().toLowerCase();
+  if(q) filtered = filtered.filter(e => (e.path||'').toLowerCase().includes(q) || (e.method||'').toLowerCase().includes(q));
+
+  const rank = STATE.filters.rank || 'p95';
+  document.getElementById('ep-filter-summary').textContent =
+    `${sel ? sel + ' only' : 'all status codes'} · ranked by ${rank}${q ? ` · matching "${q}"` : ''}`;
+
+  const tb = document.getElementById('slowest');
+  if(filtered.length === 0){
+    tb.innerHTML = `<tr><td colspan="6" class="text-muted mono text-[12px] py-4 text-center">no endpoints match these filters</td></tr>`;
+    return;
+  }
+
+  tb.innerHTML = filtered.map(e => {
+    const err   = Math.max(0, e.error_rate_pct ?? 0);
+    const m     = escapeHtml(e.method);
+    const p     = escapeHtml(e.path);
+    const errColor = err > 5 ? 'var(--error)' : err > 1 ? 'var(--warning)' : 'var(--success)';
+    const p99cls   = (e.p99_ms ?? 0) > 1000 ? 'text-[color:var(--error)]' : (e.p99_ms ?? 0) > 500 ? 'text-[color:var(--warning)]' : 'text-white';
+    return '<tr data-method="' + m + '" data-path="' + p + '">'
+      + '<td class="mono"><span style="color:var(--gold)">' + m + '</span> <span class="text-body">' + p + '</span></td>'
+      + '<td class="text-right mono text-muted">' + (e.p50_ms ?? '\u2014') + '<span class="text-muted text-[11px]">ms</span></td>'
+      + '<td class="text-right mono ' + (e.p95_ms > 500 ? 'text-[color:var(--warning)]' : 'text-white') + '">' + e.p95_ms + '<span class="text-muted text-[11px]">ms</span></td>'
+      + '<td class="text-right mono ' + p99cls + '">' + (e.p99_ms ?? '\u2014') + '<span class="text-muted text-[11px]">ms</span></td>'
+      + '<td class="text-right mono text-muted">' + e.count.toLocaleString() + '</td>'
+      + '<td class="text-right mono" style="color:' + errColor + '">' + err.toFixed(1) + '%</td>'
+      + '</tr>';
+  }).join('');
 }
 
 function renderArq(){

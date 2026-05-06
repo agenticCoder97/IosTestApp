@@ -97,3 +97,60 @@ async def test_metrics_returns_schema_shape(monkeypatch):
     ):
         assert key in body
     assert body["cost"]["budget"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_endpoint_cache_normalizes_raw_paths():
+    """Two concrete comic-page paths with different IDs must aggregate under one
+    normalized key so that /metrics/endpoint?path=/api/v1/comics/{id}/...
+    returns data rather than 404.
+    """
+    from monitor import bg
+    from monitor.main import app
+    from httpx import AsyncClient, ASGITransport
+
+    records = [
+        {"ts_ms": 1_000, "method": "GET", "path": "/api/v1/comics/abc/chapters/1/pages",
+         "status": 200, "rt_ms": 300, "traffic_class": "app"},
+        {"ts_ms": 2_000, "method": "GET", "path": "/api/v1/comics/xyz/chapters/3/pages",
+         "status": 200, "rt_ms": 350, "traffic_class": "app"},
+        {"ts_ms": 3_000, "method": "GET", "path": "/api/v1/comics/xyz/chapters/3/pages",
+         "status": 500, "rt_ms": 900, "traffic_class": "app"},
+    ]
+
+    bg._build_endpoint_cache(records, "6h")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get(
+            "/metrics/endpoint",
+            params={"method": "GET", "path": "/api/v1/comics/{id}/chapters/{id}/pages", "range": "6h"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_requests"] == 3
+    assert body["path"] == "/api/v1/comics/{id}/chapters/{id}/pages"
+
+
+@pytest.mark.asyncio
+async def test_endpoint_detail_returns_empty_payload_for_catalog_endpoint_without_data():
+    from monitor import bg
+    from monitor.main import app
+
+    bg.NGINX_ENDPOINT_CACHE.clear()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get(
+            "/metrics/endpoint",
+            params={"method": "GET", "path": "/api/v1/comics", "range": "6h"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["method"] == "GET"
+    assert body["path"] == "/api/v1/comics"
+    assert body["total_requests"] == 0
+    assert body["error_rate_pct"] == 0.0
+    assert body["buckets"] == []
