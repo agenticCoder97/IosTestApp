@@ -20,6 +20,12 @@ enum ReadingMode: String, CaseIterable {
     }
 }
 
+enum ComicChapterPullTrigger {
+    static func shouldFire(progress: CGFloat, hasTriggered: Bool) -> Bool {
+        progress >= 1.0 && !hasTriggered
+    }
+}
+
 // MARK: - Main View
 
 struct ComicReaderView: View {
@@ -311,9 +317,7 @@ struct ComicReaderView: View {
                         },
                         onProgressChange: { progress in
                             prevChapterPull = progress
-                            // Fire only when user has held past threshold
-                            // AND the 0.5s arm timer has elapsed.
-                            if progress >= 1.0 && topEdgeArmedAt != nil && !prevChapterTriggered {
+                            if ComicChapterPullTrigger.shouldFire(progress: progress, hasTriggered: prevChapterTriggered) {
                                 prevChapterTriggered = true
                                 Haptics.play(.triggerFire)
                                 Task { @MainActor in
@@ -370,7 +374,7 @@ struct ComicReaderView: View {
                         },
                         onProgressChange: { progress in
                             nextChapterPull = progress
-                            if progress >= 1.0 && bottomEdgeArmedAt != nil && !nextChapterTriggered {
+                            if ComicChapterPullTrigger.shouldFire(progress: progress, hasTriggered: nextChapterTriggered) {
                                 nextChapterTriggered = true
                                 Haptics.play(.triggerFire)
                                 Task { @MainActor in
