@@ -163,7 +163,7 @@ def test_rank_ties_order_by_method_and_path(rank):
 
     block = build_requests_block(records, "6h", RequestFilters(rank=rank))
 
-    assert [(endpoint.method, endpoint.path) for endpoint in block.slowest] == [
+    assert [(endpoint.method, endpoint.path) for endpoint in block.slowest[:2]] == [
         ("GET", "/api/a"),
         ("POST", "/api/z"),
     ]
@@ -293,9 +293,8 @@ def test_slowest_normalizes_path_before_grouping():
          "status": 200, "rt_ms": 380, "traffic_class": "app", "classification_reason": "api_path"},
     ]
     block = build_requests_block(records, "6h", RequestFilters())
-    assert len(block.slowest) == 1
-    assert block.slowest[0].path == "/api/v1/comics/{id}/chapters/{id}/pages"
-    assert block.slowest[0].count == 3
+    row = next(endpoint for endpoint in block.slowest if endpoint.path == "/api/v1/comics/{id}/chapters/{id}/pages")
+    assert row.count == 3
 
 
 def test_slowest_normalizes_query_strings_before_grouping():
@@ -308,6 +307,55 @@ def test_slowest_normalizes_query_strings_before_grouping():
          "status": 200, "rt_ms": 85, "traffic_class": "app", "classification_reason": "api_path"},
     ]
     block = build_requests_block(records, "6h", RequestFilters())
-    assert len(block.slowest) == 1
-    assert block.slowest[0].path == "/api/v1/comics"
-    assert block.slowest[0].count == 3
+    row = next(endpoint for endpoint in block.slowest if endpoint.path == "/api/v1/comics")
+    assert row.count == 3
+
+
+def test_app_requests_include_main_endpoint_catalog_rows_with_zero_metrics():
+    block = build_requests_block([], "6h", RequestFilters())
+    rows = {(endpoint.method, endpoint.path): endpoint for endpoint in block.slowest}
+
+    assert rows[("GET", "/api/v1/comics")].count == 0
+    assert rows[("GET", "/api/v1/fanfic")].p95_ms == 0
+    assert rows[("POST", "/api/v1/scrape/comic")].error_rate_pct == 0.0
+    assert rows[("PUT", "/api/v1/progress/comic/{id}")].status_codes.two_xx == 0
+
+
+def test_app_catalog_rows_merge_observed_metrics_and_status_counts():
+    records = [
+        {"ts_ms": 1000, "method": "GET", "path": "/api/v1/comics/abc",
+         "status": 200, "rt_ms": 50, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 2000, "method": "GET", "path": "/api/v1/comics/def",
+         "status": 404, "rt_ms": 150, "traffic_class": "app", "classification_reason": "api_path"},
+    ]
+
+    block = build_requests_block(records, "6h", RequestFilters())
+    row = next(endpoint for endpoint in block.slowest if endpoint.path == "/api/v1/comics/{id}")
+
+    assert row.count == 2
+    assert row.p50_ms == 150
+    assert row.p95_ms == 150
+    assert row.error_rate_pct == 50.0
+    assert row.status_codes.two_xx == 1
+    assert row.status_codes.four_xx == 1
+
+
+def test_noise_requests_remain_observed_only_without_catalog_rows():
+    block = build_requests_block(_records(), "6h", RequestFilters(traffic="noise"))
+
+    assert [(endpoint.method, endpoint.path) for endpoint in block.slowest] == [
+        ("POST", "/cgi-bin/.%2e/bin/sh")
+    ]
+
+
+def test_p99_rank_orders_by_p99_latency():
+    records = [
+        {"ts_ms": 1000, "method": "GET", "path": "/api/v1/comics",
+         "status": 200, "rt_ms": 10, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 2000, "method": "GET", "path": "/api/v1/fanfic",
+         "status": 200, "rt_ms": 500, "traffic_class": "app", "classification_reason": "api_path"},
+    ]
+
+    block = build_requests_block(records, "6h", RequestFilters(rank="p99"))
+
+    assert block.slowest[0].path == "/api/v1/fanfic"

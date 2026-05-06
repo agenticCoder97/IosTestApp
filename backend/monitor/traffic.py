@@ -8,7 +8,7 @@ import re
 
 TrafficClass = Literal["app", "static", "monitor", "noise", "unknown"]
 StatusBand = Literal["all", "2xx", "3xx", "4xx", "5xx"]
-RankMode = Literal["p95", "count", "error_rate"]
+RankMode = Literal["p95", "p99", "count", "error_rate"]
 
 
 @dataclass(frozen=True)

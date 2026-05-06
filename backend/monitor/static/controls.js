@@ -503,48 +503,144 @@
     if (!tbody) return;
     tbody.querySelectorAll('tr').forEach((tr) => {
       if (tr.hasAttribute('data-ep-wired')) return;
+      if (tr.classList.contains('ep-drilldown-row')) return;
       tr.setAttribute('data-ep-wired', '1');
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', () => {
         const method = (tr.dataset.method || 'GET').trim().toUpperCase();
         const path   = (tr.dataset.path   || '').trim();
         if (!path) return;
-        openEndpointModal(method, path);
+        toggleInlineDrilldown(tr, method, path);
       });
     });
   }
 
-  async function openEndpointModal(method, path) {
-    const modal = document.getElementById('endpoint-modal');
-    const title = document.getElementById('ep-title');
-    const range = (window.STATE && window.STATE.range) || '6h';
-    title.textContent = method + ' ' + path + ' · ' + range;
-    document.getElementById('ep-total').textContent = '…';
-    document.getElementById('ep-err').textContent = '…';
-    document.getElementById('ep-peak').textContent = '…';
-    document.getElementById('ep-chart').innerHTML = '';
-    document.getElementById('ep-status-bars').innerHTML = '';
-    modal.style.display = 'flex';
+  function toggleInlineDrilldown(tr, method, path) {
+    const tbody = tr.parentElement;
+    if (!tbody) return;
+    const next = tr.nextElementSibling;
+    const isOpenHere = next && next.classList.contains('ep-drilldown-row') &&
+      next.dataset.epPath === path && next.dataset.epMethod === method;
+
+    tbody.querySelectorAll('tr.ep-drilldown-row').forEach(r => r.remove());
+    tbody.querySelectorAll('tr.ep-row-open').forEach(r => r.classList.remove('ep-row-open'));
+    if (isOpenHere) return;
+
+    const tpl = document.getElementById('endpoint-drilldown-template');
+    if (!tpl) return;
+    const headerRow = tr.parentElement.parentElement.querySelector('thead tr');
+    const colCount = headerRow ? headerRow.children.length : 6;
+    const drillTr = document.createElement('tr');
+    drillTr.className = 'ep-drilldown-row';
+    drillTr.dataset.epPath = path;
+    drillTr.dataset.epMethod = method;
+    const td = document.createElement('td');
+    td.colSpan = colCount;
+    td.appendChild(tpl.content.cloneNode(true));
+    drillTr.appendChild(td);
+    tr.after(drillTr);
+    tr.classList.add('ep-row-open');
+
+    drillTr.addEventListener('click', (e) => e.stopPropagation());
+    const seg = drillTr.querySelector('#ep-range-seg');
+    if (seg) {
+      seg.querySelectorAll('button').forEach((b) => {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const r = b.getAttribute('data-r');
+          if (!r) return;
+          seg.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+          loadInlineDrilldown(drillTr, method, path, r);
+        });
+      });
+    }
+    const copyBtn = drillTr.querySelector('#ep-copy');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(method + ' ' + path).then(() => toast('path copied'));
+      });
+    }
+    loadInlineDrilldown(drillTr, method, path, (window.STATE && window.STATE.range) || '6h');
+  }
+
+  async function loadInlineDrilldown(drillTr, method, path, range) {
+    setEndpointMethod(drillTr, method);
+    const pathEl = drillTr.querySelector('#ep-path');
+    if (pathEl) pathEl.textContent = path;
+    const lbl = drillTr.querySelector('#ep-range-label');
+    if (lbl) lbl.textContent = 'last ' + range;
+    const seg = drillTr.querySelector('#ep-range-seg');
+    if (seg) seg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.getAttribute('data-r') === range));
+    ['ep-total','ep-rps','ep-err','ep-err-count','ep-p50','ep-p95','ep-peak','ep-apdex','ep-p95-trend'].forEach(id => {
+      const el = drillTr.querySelector('#' + id);
+      if (el) el.textContent = '…';
+    });
+    const chart = drillTr.querySelector('#ep-chart');
+    if (chart) chart.innerHTML = '';
     try {
       const url = '/metrics/endpoint?method=' + encodeURIComponent(method) +
         '&path=' + encodeURIComponent(path) + '&range=' + encodeURIComponent(range);
       const resp = await fetch(url, { credentials: 'include' });
       if (!resp.ok) throw new Error('no data (' + resp.status + ')');
       const data = await resp.json();
-      document.getElementById('ep-total').textContent = data.total_requests.toLocaleString();
-      document.getElementById('ep-err').textContent = data.error_rate_pct.toFixed(2) + '%';
-      document.getElementById('ep-err').style.color = data.error_rate_pct > 5 ? 'var(--error)' : 'var(--body)';
-      document.getElementById('ep-peak').textContent = data.peak_p99_ms + ' ms';
-      renderEndpointChart(data.buckets);
-      renderEndpointStatusBars(data.buckets);
+      data.method = data.method || method;
+      data.path = data.path || path;
+      data.range = data.range || range;
+      paintEndpoint(drillTr, data);
     } catch (err) {
-      document.getElementById('ep-total').textContent = err.message;
+      const total = drillTr.querySelector('#ep-total');
+      if (total) total.textContent = err.message;
     }
   }
 
-  function renderEndpointChart(buckets) {
-    const svg = document.getElementById('ep-chart');
-    const tip = document.getElementById('ep-tip');
+  function setEndpointMethod(root, method) {
+    const el = root.querySelector('#ep-method');
+    if (!el) return;
+    el.textContent = method;
+    el.className = 'ep-method ' + method.toLowerCase();
+  }
+
+  function fmtNum(n) {
+    if (n == null || isNaN(n)) return '—';
+    if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n/1e3).toFixed(1) + 'k';
+    return n.toLocaleString();
+  }
+
+  function rangeSeconds(r) {
+    return ({'1h':3600,'6h':6*3600,'24h':24*3600,'7d':7*86400,'30d':30*86400})[r] || 6*3600;
+  }
+
+  function paintEndpoint(root, data) {
+    setEndpointMethod(root, data.method);
+    const pathEl = root.querySelector('#ep-path');
+    if (pathEl) pathEl.textContent = data.path;
+    const total = data.total_requests || 0;
+    const errs = data.error_count != null ? data.error_count : Math.round(total * (data.error_rate_pct || 0) / 100);
+    const rps = total / Math.max(1, rangeSeconds(data.range));
+    root.querySelector('#ep-total').textContent = fmtNum(total);
+    root.querySelector('#ep-rps').textContent = rps >= 10 ? rps.toFixed(1) : rps.toFixed(2);
+    const errEl = root.querySelector('#ep-err');
+    errEl.textContent = (data.error_rate_pct || 0).toFixed(2) + '%';
+    errEl.style.color = (data.error_rate_pct || 0) > 5 ? 'var(--error)' : ((data.error_rate_pct || 0) > 1 ? 'var(--warning)' : 'var(--body)');
+    root.querySelector('#ep-err-count').textContent = fmtNum(errs);
+    root.querySelector('#ep-p50').textContent = data.p50_ms != null ? data.p50_ms : '—';
+    root.querySelector('#ep-p95').textContent = data.p95_ms != null ? data.p95_ms : '—';
+    root.querySelector('#ep-peak').textContent = data.peak_p99_ms != null ? data.peak_p99_ms : '—';
+    root.querySelector('#ep-apdex').textContent = data.apdex != null ? Number(data.apdex).toFixed(2) : '—';
+    const trendEl = root.querySelector('#ep-p95-trend');
+    if (trendEl) trendEl.textContent = data.p95_delta_pct == null ? '—' : data.p95_delta_pct.toFixed(1) + '%';
+    renderEndpointChart(root, data.buckets || []);
+    renderEndpointRibbon(root, data.buckets || []);
+    renderEndpointDonut(root, data.buckets || []);
+    renderEndpointSamples(root, data.samples || []);
+    renderEndpointStatusBars(root, data.buckets || []);
+  }
+
+  function renderEndpointChart(root, buckets) {
+    const svg = root.querySelector('#ep-chart');
+    const tip = root.querySelector('#ep-tip');
     if (!buckets.length) {
       svg.innerHTML = '<text x="50%" y="50%" fill="var(--muted)" font-size="12" text-anchor="middle" font-family="monospace">no data</text>';
       if (tip) tip.style.display = 'none';
@@ -618,8 +714,133 @@
     }
   }
 
-  function renderEndpointStatusBars(buckets) {
-    const container = document.getElementById('ep-status-bars');
+  function renderEndpointRibbon(root, buckets) {
+    const ribbon = root.querySelector('#ep-ribbon');
+    const axis = root.querySelector('#ep-ribbon-axis');
+    const winLbl = root.querySelector('#ep-ribbon-window');
+    if (!ribbon) return;
+    ribbon.innerHTML = '';
+    if (!buckets.length) {
+      ribbon.innerHTML = '<div class="text-[11px] mono text-muted">no data</div>';
+      if (axis) axis.innerHTML = '';
+      if (winLbl) winLbl.textContent = '—';
+      return;
+    }
+    for (const b of buckets) {
+      const s2=b.status_2xx||0, s3=b.status_3xx||0, s4=b.status_4xx||0, s5=b.status_5xx||0;
+      const total = s2+s3+s4+s5;
+      let cls = 'rnone';
+      if (total > 0) {
+        if (s5 > 0 && s2 > 0) cls = 'rmix-crit';
+        else if (s5 > 0) cls = 'r5xx';
+        else if (s4 > Math.max(1, total*0.05) && s2 > 0) cls = 'rmix-warn';
+        else if (s4 > Math.max(1, total*0.05)) cls = 'r4xx';
+        else if (s3 > total*0.5) cls = 'r3xx';
+        else cls = 'r2xx';
+      }
+      const cell = document.createElement('div');
+      cell.className = 'seg ' + cls;
+      ribbon.appendChild(cell);
+    }
+    if (winLbl) {
+      const first = buckets[0].ts_ms ? new Date(buckets[0].ts_ms) : null;
+      const last = buckets[buckets.length-1].ts_ms ? new Date(buckets[buckets.length-1].ts_ms) : null;
+      const fmt = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false}) : '';
+      winLbl.textContent = first && last ? fmt(first) + ' -> ' + fmt(last) : '—';
+    }
+    if (axis) {
+      axis.innerHTML = '';
+      const ticks = Math.min(5, buckets.length);
+      for (let i = 0; i < ticks; i++) {
+        const idx = ticks === 1 ? 0 : Math.round(i * (buckets.length - 1) / (ticks - 1));
+        const ts = buckets[idx] && buckets[idx].ts_ms;
+        const span = document.createElement('span');
+        span.textContent = ts ? new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false}) : '';
+        axis.appendChild(span);
+      }
+    }
+  }
+
+  function renderEndpointDonut(root, buckets) {
+    const svg = root.querySelector('#ep-donut');
+    const list = root.querySelector('#ep-dist-list');
+    const pctEl = root.querySelector('#ep-donut-pct');
+    if (!svg || !list) return;
+    const totals = { '2xx':0, '3xx':0, '4xx':0, '5xx':0 };
+    for (const b of buckets) {
+      totals['2xx'] += b.status_2xx || 0;
+      totals['3xx'] += b.status_3xx || 0;
+      totals['4xx'] += b.status_4xx || 0;
+      totals['5xx'] += b.status_5xx || 0;
+    }
+    const total = totals['2xx'] + totals['3xx'] + totals['4xx'] + totals['5xx'];
+    const colors = { '2xx':'#4CAF50', '3xx':'#6B6B7A', '4xx':'#FFA726', '5xx':'#EF5350' };
+    if (total === 0) {
+      svg.innerHTML = '<circle cx="60" cy="60" r="44" fill="none" stroke="rgba(107,107,122,.25)" stroke-width="14"/>';
+      if (pctEl) pctEl.textContent = '—';
+      list.innerHTML = '<div class="text-[11px] mono text-muted">no data</div>';
+      return;
+    }
+    const okPct = (totals['2xx'] / total) * 100;
+    if (pctEl) pctEl.textContent = okPct.toFixed(1) + '%';
+    const cx=60, cy=60, r=44, sw=14, C=2*Math.PI*r;
+    let offset = 0;
+    let segs = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="rgba(107,107,122,.18)" stroke-width="'+sw+'"/>';
+    for (const k of ['2xx','3xx','4xx','5xx']) {
+      const v = totals[k];
+      if (!v) continue;
+      const len = (v/total) * C;
+      segs += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+colors[k]+'" stroke-width="'+sw+'"' +
+        ' stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-offset).toFixed(2)+'"' +
+        ' transform="rotate(-90 '+cx+' '+cy+')" stroke-linecap="butt"/>';
+      offset += len;
+    }
+    svg.innerHTML = segs;
+    list.innerHTML = '';
+    for (const k of ['2xx','3xx','4xx','5xx']) {
+      const v = totals[k], pct = (v/total)*100;
+      const row = document.createElement('div');
+      row.className = 'ep-dist-item';
+      row.innerHTML =
+        '<span class="ep-dist-sw" style="background:'+colors[k]+'"></span>' +
+        '<span class="ep-dist-k mono">'+k+'</span>' +
+        '<div class="ep-dist-bar"><span style="width:'+pct.toFixed(1)+'%;background:'+colors[k]+'"></span></div>' +
+        '<span class="ep-dist-v mono">'+v.toLocaleString()+'</span>' +
+        '<span class="ep-dist-p mono text-muted">'+pct.toFixed(1)+'%</span>';
+      list.appendChild(row);
+    }
+  }
+
+  function renderEndpointSamples(root, samples) {
+    const tbody = root.querySelector('#ep-samples');
+    const meta = root.querySelector('#ep-samples-meta');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!samples || !samples.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-[11px] mono">no recent samples</td></tr>';
+      if (meta) meta.textContent = '0 samples';
+      return;
+    }
+    if (meta) meta.textContent = samples.length + ' samples';
+    for (const s of samples.slice(0, 30)) {
+      const tr = document.createElement('tr');
+      const code = s.status || 0;
+      const cls = code >= 500 ? 'badge-crit' : code >= 400 ? 'badge-warn' : code >= 300 ? 'badge-muted' : 'badge-ok';
+      const ts = s.ts_ms ? new Date(s.ts_ms) : null;
+      const tStr = ts ? ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}) : '—';
+      tr.innerHTML =
+        '<td class="mono text-muted">'+esc(tStr)+'</td>' +
+        '<td><span class="badge '+cls+' mono">'+code+'</span></td>' +
+        '<td class="text-right mono">'+(s.latency_ms!=null ? s.latency_ms+' ms' : '—')+'</td>' +
+        '<td class="mono">'+esc(s.client_ip || '—')+'</td>' +
+        '<td class="mono text-muted" title="'+esc(s.ua || '')+'">'+esc(s.ua || '—')+'</td>';
+      tbody.appendChild(tr);
+    }
+  }
+
+  function renderEndpointStatusBars(root, buckets) {
+    const container = root.querySelector('#ep-status-bars');
+    if (!container) return;
     const totals = { '2xx':0, '3xx':0, '4xx':0, '5xx':0 };
     for (const b of buckets) {
       totals['2xx'] += b.status_2xx || 0;
@@ -732,13 +953,12 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    const epClose = document.getElementById('ep-close');
-    if (epClose) epClose.addEventListener('click', closeEndpointModal);
-    const epModal = document.getElementById('endpoint-modal');
-    if (epModal) epModal.addEventListener('click', (e) => { if (e.target.id === 'endpoint-modal') closeEndpointModal(); });
     document.addEventListener('keydown', (e) => {
       if (window._termHasFocus && window._termHasFocus()) return;
-      if (e.key === 'Escape') closeEndpointModal();
+      if (e.key === 'Escape') {
+        document.querySelectorAll('tr.ep-drilldown-row').forEach(r => r.remove());
+        document.querySelectorAll('tr.ep-row-open').forEach(r => r.classList.remove('ep-row-open'));
+      }
     });
 
     // One-time seed from the server so control actions never trigger a prompt.
@@ -1042,4 +1262,3 @@ window.addEventListener('beforeunload', () => {
     try { STATE.terms[k].ws && STATE.terms[k].ws.close(1000, 'tab-close'); } catch(_){}
   }
 });
-

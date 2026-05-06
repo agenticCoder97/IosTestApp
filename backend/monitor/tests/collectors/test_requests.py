@@ -127,7 +127,9 @@ async def test_collect_defaults_to_app_traffic_only():
 
     assert block.status_codes.two_xx == 1
     assert block.status_codes.four_xx == 0
-    assert [endpoint.path for endpoint in block.slowest] == ["/api/v1/comics"]
+    paths = [endpoint.path for endpoint in block.slowest]
+    assert paths[0] == "/api/v1/comics"
+    assert "/api/v1/comics/{id}" in paths
 
 
 @pytest.mark.asyncio

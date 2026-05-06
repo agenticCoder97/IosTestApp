@@ -131,3 +131,26 @@ async def test_endpoint_cache_normalizes_raw_paths():
     body = resp.json()
     assert body["total_requests"] == 3
     assert body["path"] == "/api/v1/comics/{id}/chapters/{id}/pages"
+
+
+@pytest.mark.asyncio
+async def test_endpoint_detail_returns_empty_payload_for_catalog_endpoint_without_data():
+    from monitor import bg
+    from monitor.main import app
+
+    bg.NGINX_ENDPOINT_CACHE.clear()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get(
+            "/metrics/endpoint",
+            params={"method": "GET", "path": "/api/v1/comics", "range": "6h"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["method"] == "GET"
+    assert body["path"] == "/api/v1/comics"
+    assert body["total_requests"] == 0
+    assert body["error_rate_pct"] == 0.0
+    assert body["buckets"] == []

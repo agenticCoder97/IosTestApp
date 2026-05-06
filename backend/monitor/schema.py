@@ -57,6 +57,15 @@ class ServiceBlock(BaseModel):
     spark_cpu: list[float]
 
 
+class StatusCodes(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    two_xx:   int = Field(alias="2xx")
+    three_xx: int = Field(alias="3xx")
+    four_xx:  int = Field(alias="4xx")
+    five_xx:  int = Field(alias="5xx")
+
+
 class SlowEndpoint(BaseModel):
     method: str
     path: str
@@ -65,15 +74,11 @@ class SlowEndpoint(BaseModel):
     p99_ms: int
     count: int
     error_rate_pct: float = 0.0
-
-
-class StatusCodes(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    two_xx:   int = Field(alias="2xx")
-    three_xx: int = Field(alias="3xx")
-    four_xx:  int = Field(alias="4xx")
-    five_xx:  int = Field(alias="5xx")
+    status_codes: StatusCodes = Field(
+        default_factory=lambda: StatusCodes.model_validate(
+            {"2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0}
+        )
+    )
 
 
 class RequestsBlock(BaseModel):
@@ -219,9 +224,16 @@ class EndpointDetail(BaseModel):
     path: str
     window: Literal["1h", "6h", "24h", "7d", "30d"]
     total_requests: int
+    error_count: int = 0
     error_rate_pct: float
+    p50_ms: int = 0
+    p95_ms: int = 0
+    p99_ms: int = 0
     peak_p99_ms: int
+    apdex: float = 0.0
+    p95_delta_pct: Optional[float] = None
     buckets: list[EndpointBucket]
+    samples: list[dict] = Field(default_factory=list)
 
 
 class RequestDebugResponse(BaseModel):

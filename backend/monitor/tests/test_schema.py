@@ -71,6 +71,7 @@ GOLDEN = {
     },
     "logs": [{"ts": "2026-04-21T14:23:00.412Z", "svc": "nginx",
               "lvl": "info", "msg": "GET /x 200"}],
+    "deploys": {"recent": []},
 }
 
 
