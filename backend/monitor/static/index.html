@@ -751,6 +751,38 @@
   </div>
 
   <div class="section-body" data-for="sec-requests">
+  <!-- AST-93 request filter controls -->
+  <div id="req-controls" class="flex flex-wrap gap-2 mb-3 items-center">
+    <select id="req-traffic" class="sel">
+      <option value="app">app</option>
+      <option value="noise">noise</option>
+      <option value="static">static</option>
+      <option value="monitor">monitor</option>
+      <option value="unknown">unknown</option>
+    </select>
+    <select id="req-method" class="sel">
+      <option value="all">all methods</option>
+      <option value="GET">GET</option>
+      <option value="POST">POST</option>
+      <option value="PUT">PUT</option>
+      <option value="DELETE">DELETE</option>
+      <option value="PATCH">PATCH</option>
+    </select>
+    <select id="req-status" class="sel">
+      <option value="all">all status</option>
+      <option value="2xx">2xx</option>
+      <option value="3xx">3xx</option>
+      <option value="4xx">4xx</option>
+      <option value="5xx">5xx</option>
+    </select>
+    <select id="req-rank" class="sel">
+      <option value="p95">rank p95</option>
+      <option value="count">rank count</option>
+      <option value="error_rate">rank error</option>
+    </select>
+    <input id="req-q" type="text" placeholder="filter path…" class="sel w-36"
+           value="" autocomplete="off" spellcheck="false">
+  </div>
   <section class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
     <!-- Left: line chart -->
     <div class="card p-4 sm:p-5">
@@ -1224,6 +1256,13 @@ const STATE = {
   logFilter: '',
   svcFilter: 'all',
   data: null,
+  filters: {
+    traffic: 'app',
+    method: 'all',
+    status: 'all',
+    q: '',
+    rank: 'p95',
+  },
 };
 // Expose STATE so the controls.js companion can read the current
 // range / service filter without duplicating state.
@@ -1367,14 +1406,7 @@ function normalizeMetrics(d){
     return base;
   });
   // requests: series are [[ts, val], ...] tuples; renderer expects flat [val, val, ...]
-  const r = d.requests;
-  if(r){
-    r.series_rps    = (r.series_rps    || []).map(p => Array.isArray(p) ? p[1] : p);
-    r.series_p95_ms = (r.series_p95_ms || []).map(p => Array.isArray(p) ? p[1] : p);
-    if(r.series_rps.length === 0)    r.series_rps = [0];
-    if(r.series_p95_ms.length === 0) r.series_p95_ms = [0];
-    r.total = Object.values(r.status_codes || {}).reduce((a,b) => a + (b||0), 0);
-  }
+  if (d.requests) normalizeRequestBlock(d.requests);
   // storage: defaults when OCI/statvfs sources returned null (degraded paths)
   const st = d.storage;
   if(st){
@@ -1386,6 +1418,72 @@ function normalizeMetrics(d){
   }
   return d;
 }
+
+// AST-93 — shared normalization for a RequestsBlock from either /metrics or
+// /metrics/requests. Mutates in-place and returns the block.
+function normalizeRequestBlock(r) {
+  r.series_rps    = (r.series_rps    || []).map(p => Array.isArray(p) ? p[1] : p);
+  r.series_p95_ms = (r.series_p95_ms || []).map(p => Array.isArray(p) ? p[1] : p);
+  if (r.series_rps.length === 0)    r.series_rps    = [0];
+  if (r.series_p95_ms.length === 0) r.series_p95_ms = [0];
+  r.total = Object.values(r.status_codes || {}).reduce((a, b) => a + (b || 0), 0);
+  return r;
+}
+
+const monitorDebugEnabled = () => !!localStorage.getItem('monitor_debug');
+function debugLog(...args) {
+  if (monitorDebugEnabled()) console.log('[monitor]', ...args);
+}
+
+// Fetch /metrics/requests with the active filters and re-render just the
+// Requests panel — no full metrics reload.
+async function refreshRequestsOnly() {
+  if (!STATE.data) return;
+  const f = STATE.filters;
+  const params = new URLSearchParams({
+    range: STATE.range,
+    traffic: f.traffic,
+    method: f.method,
+    status: f.status,
+    q: f.q,
+    rank: f.rank,
+  });
+  try {
+    const resp = await fetch('/metrics/requests?' + params.toString(), {credentials: 'include'});
+    if (!resp.ok) throw new Error('requests fetch failed: ' + resp.status);
+    STATE.data.requests = normalizeRequestBlock(await resp.json());
+    debugLog('refreshRequestsOnly', params.toString(), STATE.data.requests.total, 'reqs');
+  } catch (e) {
+    console.error('refreshRequestsOnly failed', e);
+  }
+  renderRequests();
+}
+
+function installRequestControls() {
+  for (const [id, key] of [['req-traffic','traffic'],['req-method','method'],['req-status','status'],['req-rank','rank']]) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.addEventListener('change', () => { STATE.filters[key] = el.value; refreshRequestsOnly(); });
+  }
+  const qEl = document.getElementById('req-q');
+  if (qEl) {
+    let _t;
+    qEl.addEventListener('input', () => {
+      clearTimeout(_t);
+      _t = setTimeout(() => { STATE.filters.q = qEl.value; refreshRequestsOnly(); }, 300);
+    });
+  }
+}
+
+window.__diagRequests = async function(limit = 10) {
+  const f = STATE.filters;
+  const params = new URLSearchParams({ range: STATE.range, traffic: f.traffic, method: f.method, status: f.status, q: f.q, rank: f.rank, limit });
+  const resp = await fetch('/metrics/requests/debug?' + params.toString(), {credentials: 'include'});
+  const data = await resp.json();
+  console.table(data.reason_counts);
+  console.log('traffic_counts:', data.traffic_counts, '· sampler:', data.sampler);
+  return data;
+};
 
 // Show an amber "degraded" dot on a section header when *_meta.degraded === true.
 function setDegradedDot(sectionId, meta){
@@ -1760,6 +1858,12 @@ async function refreshAll(){
     }
   }
   renderAll();
+  // /metrics always returns the default app-traffic block; if the user has
+  // changed filters, re-fetch the requests panel with the active filter set.
+  const f = STATE.filters;
+  if (f.traffic !== 'app' || f.method !== 'all' || f.status !== 'all' || f.q !== '' || f.rank !== 'p95') {
+    await refreshRequestsOnly();
+  }
 }
 
 // AST-86 — six-card skeleton driven by a static list, never by STATE.data.services.
@@ -2458,6 +2562,7 @@ document.addEventListener('keydown', e=>{
    ========================================================================= */
 refreshAll();
 applyAllCollapsed();
+installRequestControls();
 </script>
 
 <!-- control plane UI — decorated after the main renderer settles.
