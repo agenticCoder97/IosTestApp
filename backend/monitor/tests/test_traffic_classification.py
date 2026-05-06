@@ -1,6 +1,7 @@
 from monitor.traffic import (
     RequestFilters,
     classify_request,
+    normalize_path,
     record_matches_filters,
     redact_sample,
     status_band,
@@ -164,3 +165,99 @@ def test_redact_sample_removes_authorization_bearer_header_value():
 
     assert "header-secret" not in sample
     assert sample == "Authorization: Bearer REDACTED"
+
+
+# ── normalize_path ──────────────────────────────────────────────────────────
+
+def test_normalize_comics_pages_collapses_ids():
+    assert normalize_path("/api/v1/comics/abc123/chapters/7/pages") == "/api/v1/comics/{id}/chapters/{id}/pages"
+
+def test_normalize_comics_detail_collapses_id():
+    assert normalize_path("/api/v1/comics/abc123") == "/api/v1/comics/{id}"
+
+def test_normalize_comics_patch_collapses_id():
+    assert normalize_path("/api/v1/comics/abc123") == "/api/v1/comics/{id}"
+
+def test_normalize_comics_archive_collapses_id():
+    assert normalize_path("/api/v1/comics/abc123/archive") == "/api/v1/comics/{id}/archive"
+
+def test_normalize_comics_unarchive_collapses_id():
+    assert normalize_path("/api/v1/comics/abc123/unarchive") == "/api/v1/comics/{id}/unarchive"
+
+def test_normalize_comics_delete_permanent_collapses_id():
+    assert normalize_path("/api/v1/comics/abc123/permanent") == "/api/v1/comics/{id}/permanent"
+
+def test_normalize_comics_list_is_unchanged():
+    assert normalize_path("/api/v1/comics") == "/api/v1/comics"
+
+def test_normalize_fanfic_chapter_collapses_ids():
+    assert normalize_path("/api/v1/fanfic/xyz789/chapters/3") == "/api/v1/fanfic/{id}/chapters/{id}"
+
+def test_normalize_fanfic_random_is_unchanged():
+    assert normalize_path("/api/v1/fanfic/random") == "/api/v1/fanfic/random"
+
+def test_normalize_fanfic_detail_collapses_id():
+    assert normalize_path("/api/v1/fanfic/xyz789") == "/api/v1/fanfic/{id}"
+
+def test_normalize_fanfic_permanent_collapses_id():
+    assert normalize_path("/api/v1/fanfic/xyz789/permanent") == "/api/v1/fanfic/{id}/permanent"
+
+def test_normalize_fanfic_list_is_unchanged():
+    assert normalize_path("/api/v1/fanfic") == "/api/v1/fanfic"
+
+def test_normalize_fanfic_thumbnails_random_unchanged():
+    assert normalize_path("/api/v1/fanfic-thumbnails/random") == "/api/v1/fanfic-thumbnails/random"
+
+def test_normalize_scrape_retry_collapses_id():
+    assert normalize_path("/api/v1/scrape/job99/retry") == "/api/v1/scrape/{id}/retry"
+
+def test_normalize_scrape_update_collapses_id():
+    assert normalize_path("/api/v1/scrape/story42/update") == "/api/v1/scrape/{id}/update"
+
+def test_normalize_scrape_logs_collapses_id():
+    assert normalize_path("/api/v1/scrape/job99/logs") == "/api/v1/scrape/{id}/logs"
+
+def test_normalize_scrape_comic_literal_unchanged():
+    assert normalize_path("/api/v1/scrape/comic") == "/api/v1/scrape/comic"
+
+def test_normalize_scrape_fanfic_literal_unchanged():
+    assert normalize_path("/api/v1/scrape/fanfic") == "/api/v1/scrape/fanfic"
+
+def test_normalize_scrape_id_collapses():
+    assert normalize_path("/api/v1/scrape/job99") == "/api/v1/scrape/{id}"
+
+def test_normalize_scrape_list_unchanged():
+    assert normalize_path("/api/v1/scrape") == "/api/v1/scrape"
+
+def test_normalize_progress_comic_collapses_id():
+    assert normalize_path("/api/v1/progress/comic/story123") == "/api/v1/progress/comic/{id}"
+
+def test_normalize_progress_fanfic_collapses_id():
+    assert normalize_path("/api/v1/progress/fanfic/story456") == "/api/v1/progress/fanfic/{id}"
+
+def test_normalize_progress_generic_type_id_collapses():
+    assert normalize_path("/api/v1/progress/comic/story123") == "/api/v1/progress/comic/{id}"
+    assert normalize_path("/api/v1/progress/fanfic/story456") == "/api/v1/progress/fanfic/{id}"
+
+def test_normalize_authors_detail_collapses_id():
+    assert normalize_path("/api/v1/authors/author99") == "/api/v1/authors/{id}"
+
+def test_normalize_authors_list_unchanged():
+    assert normalize_path("/api/v1/authors") == "/api/v1/authors"
+
+def test_normalize_health_unchanged():
+    assert normalize_path("/api/v1/health") == "/api/v1/health"
+
+def test_normalize_stats_unchanged():
+    assert normalize_path("/api/v1/stats") == "/api/v1/stats"
+
+def test_normalize_unknown_path_passthrough():
+    assert normalize_path("/some/random/path") == "/some/random/path"
+
+def test_normalize_strips_query_string_before_matching():
+    assert normalize_path("/api/v1/comics?page=2") == "/api/v1/comics"
+    assert normalize_path("/api/v1/comics/abc123?include=chapters") == "/api/v1/comics/{id}"
+    assert normalize_path("/api/v1/fanfic?q=naruto&page=3") == "/api/v1/fanfic"
+
+def test_normalize_unknown_path_strips_query_string():
+    assert normalize_path("/some/path?foo=bar") == "/some/path"
