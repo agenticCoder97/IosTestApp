@@ -9,6 +9,7 @@ from typing import Any
 from monitor.schema import RequestsBlock
 from monitor.traffic import (
     RequestFilters,
+    normalize_path,
     record_matches_filters,
     redact_sample,
     status_band,
@@ -64,7 +65,7 @@ def build_requests_block(
         rt_ms = _coerce_int(record.get("rt_ms"))
         ts_ms = _coerce_int(record.get("ts_ms"))
 
-        by_endpoint.setdefault((method, path), []).append(record)
+        by_endpoint.setdefault((method, normalize_path(path)), []).append(record)
         bucket = (ts_ms // bucket_ms) * bucket_ms
         series_rps_buckets[bucket] += 1
         series_p95_buckets.setdefault(bucket, []).append(rt_ms)
@@ -80,6 +81,7 @@ def build_requests_block(
     slowest = []
     for (method, path), endpoint_records in by_endpoint.items():
         rts = [_coerce_int(record.get("rt_ms")) for record in endpoint_records]
+        err_rate = _error_rate(endpoint_records)
         slowest.append(
             {
                 "method": method,
@@ -88,7 +90,8 @@ def build_requests_block(
                 "p95_ms": _pct(rts, 95),
                 "p99_ms": _pct(rts, 99),
                 "count": len(endpoint_records),
-                "_error_rate": _error_rate(endpoint_records),
+                "error_rate_pct": round(err_rate * 100, 1),
+                "_error_rate": err_rate,
             }
         )
 
@@ -193,12 +196,13 @@ def _pct(values: list[int], p: int) -> int:
 
 
 def _error_rate(records: list[dict]) -> float:
+    """Return fraction of records with 4xx or 5xx status. Consistent with the endpoint modal."""
     if not records:
         return 0.0
     errors = 0
     for record in records:
         status = _optional_int(record.get("status"))
-        if status is not None and status_band(status) == "5xx":
+        if status is not None and status_band(status) in ("4xx", "5xx"):
             errors += 1
     return errors / len(records)
 

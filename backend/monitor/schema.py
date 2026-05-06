@@ -64,6 +64,7 @@ class SlowEndpoint(BaseModel):
     p95_ms: int
     p99_ms: int
     count: int
+    error_rate_pct: float = 0.0
 
 
 class StatusCodes(BaseModel):

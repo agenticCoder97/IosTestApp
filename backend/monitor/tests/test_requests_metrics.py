@@ -263,3 +263,51 @@ def test_1xx_status_does_not_crash_or_increment_5xx():
     block = build_requests_block(records, "6h", RequestFilters())
     assert block.status_codes.five_xx == 0
     assert block.slowest[0].path == "/api/switch"
+
+
+def test_slowest_includes_error_rate_pct_counts_4xx_and_5xx():
+    records = [
+        {"ts_ms": 1000, "method": "GET", "path": "/api/v1/comics",
+         "status": 200, "rt_ms": 10, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 2000, "method": "GET", "path": "/api/v1/comics",
+         "status": 500, "rt_ms": 20, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 3000, "method": "GET", "path": "/api/v1/comics",
+         "status": 404, "rt_ms": 5, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 4000, "method": "GET", "path": "/api/v1/comics",
+         "status": 200, "rt_ms": 40, "traffic_class": "app", "classification_reason": "api_path"},
+    ]
+    block = build_requests_block(records, "6h", RequestFilters())
+    ep = block.slowest[0]
+    assert ep.path == "/api/v1/comics"
+    # 1 x 5xx + 1 x 4xx = 2 of 4 -> 50.0%
+    assert ep.error_rate_pct == 50.0
+
+
+def test_slowest_normalizes_path_before_grouping():
+    records = [
+        {"ts_ms": 1000, "method": "GET", "path": "/api/v1/comics/abc/chapters/1/pages",
+         "status": 200, "rt_ms": 400, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 2000, "method": "GET", "path": "/api/v1/comics/xyz/chapters/3/pages",
+         "status": 200, "rt_ms": 420, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 3000, "method": "GET", "path": "/api/v1/comics/xyz/chapters/3/pages",
+         "status": 200, "rt_ms": 380, "traffic_class": "app", "classification_reason": "api_path"},
+    ]
+    block = build_requests_block(records, "6h", RequestFilters())
+    assert len(block.slowest) == 1
+    assert block.slowest[0].path == "/api/v1/comics/{id}/chapters/{id}/pages"
+    assert block.slowest[0].count == 3
+
+
+def test_slowest_normalizes_query_strings_before_grouping():
+    records = [
+        {"ts_ms": 1000, "method": "GET", "path": "/api/v1/comics?page=1",
+         "status": 200, "rt_ms": 80, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 2000, "method": "GET", "path": "/api/v1/comics?page=2",
+         "status": 200, "rt_ms": 90, "traffic_class": "app", "classification_reason": "api_path"},
+        {"ts_ms": 3000, "method": "GET", "path": "/api/v1/comics",
+         "status": 200, "rt_ms": 85, "traffic_class": "app", "classification_reason": "api_path"},
+    ]
+    block = build_requests_block(records, "6h", RequestFilters())
+    assert len(block.slowest) == 1
+    assert block.slowest[0].path == "/api/v1/comics"
+    assert block.slowest[0].count == 3
