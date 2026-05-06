@@ -593,12 +593,16 @@
     const tbody = document.getElementById('deploys-rows');
     if (!tbody) return;
     const deploys = (window.STATE && window.STATE.data && window.STATE.data.deploys) || { recent: [] };
-    if (!deploys.recent || !deploys.recent.length) {
+    const deployStatusFilter = (window.STATE && window.STATE.filters && window.STATE.filters.deploys && window.STATE.filters.deploys.status) || 'all';
+    const deployRows = deployStatusFilter === 'healthy' ? (deploys.recent || []).filter(d => d.healthy)
+                     : deployStatusFilter === 'failed'  ? (deploys.recent || []).filter(d => !d.healthy)
+                     : (deploys.recent || []);
+    if (!deployRows.length) {
       tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-sm mono">No deploys recorded yet.</td></tr>';
       return;
     }
     tbody.innerHTML = '';
-    for (const d of deploys.recent) {
+    for (const d of deployRows) {
       const imgs = (d.images_pulled || [])
         .map((x) => '<span class="badge badge-muted mono">' + esc(x) + '</span>').join(' ');
       const outcome = d.healthy
@@ -623,12 +627,16 @@
       const resp = await authFetch('control/audit?limit=20');
       if (!resp.ok) throw new Error('audit fetch failed: ' + resp.status);
       const data = await resp.json();
-      if (!data.entries.length) {
+      const auditActionFilter = (window.STATE && window.STATE.filters && window.STATE.filters.audit && window.STATE.filters.audit.action) || '';
+      const auditEntries = auditActionFilter
+        ? (data.entries || []).filter(e => e.action && e.action.includes(auditActionFilter))
+        : (data.entries || []);
+      if (!auditEntries.length) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-sm mono">No actions recorded.</td></tr>';
         return;
       }
       tbody.innerHTML = '';
-      for (const e of data.entries.reverse()) {
+      for (const e of auditEntries.reverse()) {
         const outcome = e.ok
           ? '<span class="badge badge-ok">ok</span>'
           : '<span class="badge badge-crit">fail</span>';
@@ -646,6 +654,12 @@
       tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-sm mono">' + esc(err.message) + '</td></tr>';
     }
   }
+
+  // ── AST-95: expose panel renderers so installPanelControls() can re-invoke
+  // them when panel-local filter state changes without a full /metrics reload ──
+  window.renderDeploys  = renderDeploys;
+  window.loadAudit      = loadAudit;
+  window.renderSQLTable = renderSQLTable;
 
   // ── Post-render decoration (the base dashboard re-renders on refresh) ──
   function installMutationHooks() {

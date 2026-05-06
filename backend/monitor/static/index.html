@@ -1080,6 +1080,14 @@
     <span class="mono text-[11px] text-muted">from <code>/var/lib/astral-monitor/deploys.jsonl</code></span>
   </div>
   <div class="section-body" data-for="sec-deploys">
+  <!-- AST-95 deploy status filter -->
+  <div class="flex gap-2 mb-3">
+    <select id="deploy-status" class="sel">
+      <option value="all">all deploys</option>
+      <option value="healthy">healthy only</option>
+      <option value="failed">failed only</option>
+    </select>
+  </div>
   <section class="card overflow-hidden">
     <div class="table-scroll">
       <table class="z">
@@ -1132,6 +1140,11 @@
     <span class="mono text-[11px] text-muted">last control-plane actions</span>
   </div>
   <div class="section-body" data-for="sec-audit">
+  <!-- AST-95 audit action filter -->
+  <div class="flex gap-2 mb-3">
+    <input id="audit-action" type="text" placeholder="filter by action…" class="sel w-44"
+           value="" autocomplete="off" spellcheck="false">
+  </div>
   <section class="card overflow-hidden">
     <div class="table-scroll">
       <table class="z">
@@ -1262,6 +1275,8 @@ const STATE = {
     status: 'all',
     q: '',
     rank: 'p95',
+    deploys: { status: 'all' },
+    audit:   { action: '' },
   },
   ui: {
     serviceCards: {},   // name → 'front' | 'back'
@@ -1474,6 +1489,29 @@ function installRequestControls() {
     qEl.addEventListener('input', () => {
       clearTimeout(_t);
       _t = setTimeout(() => { STATE.filters.q = qEl.value; refreshRequestsOnly(); }, 300);
+    });
+  }
+}
+
+// AST-95 — panel-local filter controls (deploys, audit). controls.js exposes
+// renderDeploys / loadAudit as window globals so we can re-invoke them here.
+function installPanelControls() {
+  const deployStatus = document.getElementById('deploy-status');
+  if (deployStatus) {
+    deployStatus.addEventListener('change', () => {
+      STATE.filters.deploys.status = deployStatus.value;
+      if (window.renderDeploys) window.renderDeploys();
+    });
+  }
+  const auditAction = document.getElementById('audit-action');
+  if (auditAction) {
+    let _t;
+    auditAction.addEventListener('input', () => {
+      clearTimeout(_t);
+      _t = setTimeout(() => {
+        STATE.filters.audit.action = auditAction.value.trim();
+        if (window.loadAudit) window.loadAudit();
+      }, 300);
     });
   }
 }
@@ -2583,6 +2621,7 @@ document.addEventListener('keydown', e=>{
 refreshAll();
 applyAllCollapsed();
 installRequestControls();
+installPanelControls();
 </script>
 
 <!-- control plane UI — decorated after the main renderer settles.
