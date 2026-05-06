@@ -100,6 +100,8 @@ Request body per scrape:
 
 Public fics require no login cookies.
 
+> **Implementation note:** Confirm the exact `source_key` values for AO3 and FFNet by grepping the scrapers directory (`grep -r "source_key\|source_name" backend/app/scrapers/`) before writing the script. AO3 is confirmed as `"ao3"` (from CookieStore domain mapping). FFNet is assumed `"ffnet"` — verify.
+
 **Fic list — AO3 (15 fics):**  
 Well-known multi-chapter works sourced from AO3's all-time kudos statistics. Fandoms: Harry Potter, MCU, Supernatural, Teen Wolf, Check Please. A handful may return 404 or restricted at scrape time — treated as expected failures.
 
