@@ -545,22 +545,78 @@
 
   function renderEndpointChart(buckets) {
     const svg = document.getElementById('ep-chart');
+    const tip = document.getElementById('ep-tip');
     if (!buckets.length) {
       svg.innerHTML = '<text x="50%" y="50%" fill="var(--muted)" font-size="12" text-anchor="middle" font-family="monospace">no data</text>';
+      if (tip) tip.style.display = 'none';
       return;
     }
     const W = 800, H = 220, pad = 30;
     const maxL = Math.max.apply(null, buckets.map((b) => b.p99_ms).concat([1]));
-    const xAt = (i) => pad + (W - 2 * pad) * (i / Math.max(1, buckets.length - 1));
+    const step = (W - 2 * pad) / Math.max(1, buckets.length - 1);
+    const xAt = (i) => pad + i * step;
     const yAt = (v) => H - pad - (H - 2 * pad) * (v / maxL);
-    const line = (sel) => buckets.map((b, i) => (i === 0 ? 'M' : 'L') + xAt(i) + ',' + yAt(b[sel])).join(' ');
+    const line = (sel) => buckets.map((b, i) => (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(b[sel]).toFixed(1)).join(' ');
+
+    let xlabels = '';
+    const nTicks = Math.min(5, buckets.length);
+    for (let i = 0; i < nTicks; i++) {
+      const idx = nTicks === 1 ? 0 : Math.round(i * (buckets.length - 1) / (nTicks - 1));
+      if (!buckets[idx] || !buckets[idx].ts_ms) continue;
+      const hhmm = new Date(buckets[idx].ts_ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      xlabels += '<text x="' + xAt(idx).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="monospace">' + hhmm + '</text>';
+    }
+
     svg.innerHTML =
       '<path d="' + line('p99_ms') + '" stroke="#EF5350" stroke-width="1.5" fill="none"/>' +
       '<path d="' + line('p95_ms') + '" stroke="#FFA726" stroke-width="1.5" fill="none"/>' +
       '<path d="' + line('p50_ms') + '" stroke="#C9A84C" stroke-width="1.5" fill="none"/>' +
-      '<g font-family="monospace" font-size="10" fill="var(--muted)">' +
-      '<text x="' + pad + '" y="14">p99 ' + maxL + 'ms</text>' +
-      '<text x="' + (W - 160) + '" y="14">— p50 — p95 — p99</text></g>';
+      xlabels +
+      '<text x="' + pad + '" y="14" font-family="monospace" font-size="10" fill="var(--muted)">p99 ' + maxL + 'ms</text>' +
+      '<line x1="' + (W-155) + '" x2="' + (W-143) + '" y1="10" y2="10" stroke="#C9A84C" stroke-width="1.5"/>' +
+      '<text x="' + (W-139) + '" y="14" font-family="monospace" font-size="10" fill="var(--muted)">p50</text>' +
+      '<line x1="' + (W-115) + '" x2="' + (W-103) + '" y1="10" y2="10" stroke="#FFA726" stroke-width="1.5"/>' +
+      '<text x="' + (W-99) + '" y="14" font-family="monospace" font-size="10" fill="var(--muted)">p95</text>' +
+      '<line x1="' + (W-75) + '" x2="' + (W-63) + '" y1="10" y2="10" stroke="#EF5350" stroke-width="1.5"/>' +
+      '<text x="' + (W-59) + '" y="14" font-family="monospace" font-size="10" fill="var(--muted)">p99</text>' +
+      '<line id="ep-xhair" x1="-1" x2="-1" y1="' + pad + '" y2="' + (H-pad) + '" stroke="var(--muted)" stroke-width="0.8" stroke-dasharray="2 2" opacity="0"/>' +
+      '<rect id="ep-hover-zone" x="' + pad + '" y="' + pad + '" width="' + (W-2*pad) + '" height="' + (H-2*pad) + '" fill="transparent" style="cursor:crosshair"/>';
+
+    const zone = svg.querySelector('#ep-hover-zone');
+    const xhair = svg.querySelector('#ep-xhair');
+    if (zone && tip) {
+      const wrap = svg.parentElement;
+      zone.addEventListener('mousemove', e => {
+        const wRect = wrap.getBoundingClientRect();
+        const svgRect = svg.getBoundingClientRect();
+        const svgX = (e.clientX - svgRect.left) / svgRect.width * W;
+        const rawIdx = (svgX - pad) / step;
+        const idx = Math.max(0, Math.min(buckets.length - 1, Math.round(rawIdx)));
+        const ptX = xAt(idx);
+        xhair.setAttribute('x1', ptX.toFixed(1));
+        xhair.setAttribute('x2', ptX.toFixed(1));
+        xhair.setAttribute('opacity', '1');
+        const b = buckets[idx];
+        const timeStr = b.ts_ms ? new Date(b.ts_ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+        const parts = [];
+        if (timeStr) parts.push('<span style="color:var(--muted)">' + timeStr + '</span>');
+        parts.push('<span style="color:#C9A84C">p50 ' + b.p50_ms + 'ms</span>');
+        parts.push('<span style="color:#FFA726">p95 ' + b.p95_ms + 'ms</span>');
+        parts.push('<span style="color:#EF5350">p99 ' + b.p99_ms + 'ms</span>');
+        parts.push('<span style="color:var(--muted)">n=' + b.count + '</span>');
+        tip.innerHTML = parts.join('  ');
+        tip.style.display = 'block';
+        const tx = e.clientX - wRect.left;
+        const ty = e.clientY - wRect.top;
+        tip.style.left = (tx + 12) + 'px';
+        tip.style.top  = Math.max(0, ty - 32) + 'px';
+        if (tx + 12 + tip.offsetWidth > wRect.width) tip.style.left = (tx - tip.offsetWidth - 12) + 'px';
+      });
+      zone.addEventListener('mouseleave', () => {
+        xhair.setAttribute('opacity', '0');
+        tip.style.display = 'none';
+      });
+    }
   }
 
   function renderEndpointStatusBars(buckets) {
