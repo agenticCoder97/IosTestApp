@@ -823,10 +823,17 @@
       <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-3">Status codes</div>
       <div id="statusBars" class="space-y-2 mb-5"></div>
 
-      <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-2">Slowest endpoints</div>
+      <div class="text-[11px] tracking-[.14em] uppercase text-muted mb-2">Top endpoints</div>
       <div class="table-scroll">
         <table class="z">
-          <thead><tr><th>endpoint</th><th class="text-right">p95</th><th class="text-right">n</th></tr></thead>
+          <thead><tr>
+            <th>endpoint</th>
+            <th class="text-right">p50</th>
+            <th class="text-right">p95</th>
+            <th class="text-right">p99</th>
+            <th class="text-right">n</th>
+            <th class="text-right">err%</th>
+          </tr></thead>
           <tbody id="slowest"></tbody>
         </table>
       </div>
@@ -1356,6 +1363,9 @@ document.addEventListener('click', (e) => {
 /* ---------- deterministic-ish PRNG seeded per refresh --------------- */
 let RNG_SEED = Date.now() & 0xffff;
 function rnd(){ RNG_SEED = (RNG_SEED * 1664525 + 1013904223) & 0xffffffff; return ((RNG_SEED >>> 0) / 0xffffffff); }
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 function rint(a,b){ return Math.floor(a + rnd()*(b-a+1)); }
 function noise(base, amp){ return base + (rnd()-0.5)*2*amp; }
 
@@ -1594,14 +1604,25 @@ function genDataMock(range){
     '5xx': rint(0, 4),
   };
   const endpoints = [
-    ['GET','/comics/{slug}/chapters',  412, 1284],
-    ['POST','/fanfic/scrape',          980, 38],
-    ['GET','/comics/{slug}/pages',     288, 1542],
-    ['GET','/auth/session',            204, 4211],
-    ['POST','/arq/enqueue',            176, 56],
+    ['GET',  '/api/v1/comics/{id}/chapters/{id}/pages', 412, 1284, 0.3],
+    ['POST', '/api/v1/scrape/comic',                    980,   38, 2.6],
+    ['GET',  '/api/v1/fanfic/{id}/chapters/{id}',       288, 1542, 0.1],
+    ['GET',  '/api/v1/fanfic/{id}',                     204, 4211, 0.0],
+    ['POST', '/api/v1/scrape/fanfic',                   176,   56, 5.4],
+    ['GET',  '/api/v1/comics/{id}',                     120,  890, 0.0],
+    ['GET',  '/api/v1/comics',                           88, 2100, 0.0],
+    ['GET',  '/api/v1/fanfic',                           74, 1850, 0.0],
+    ['PUT',  '/api/v1/progress/comic/{id}',              52,  620, 0.0],
+    ['GET',  '/api/v1/health',                           18, 8400, 0.0],
   ];
-  const slowest = endpoints.map(([m,p,p95,c])=>({
-    method:m, path:p, p50_ms: Math.round(p95/4 + rnd()*20), p95_ms: p95 + rint(-40,40), count: c + rint(-50,50),
+  const slowest = endpoints.map(([m,p,p95,c,err])=>({
+    method: m,
+    path: p,
+    p50_ms: Math.round(p95/3 + rnd()*15),
+    p95_ms: p95 + rint(-30,30),
+    p99_ms: Math.round(p95 * 2.1 + rnd()*40),
+    count: c + rint(-30,30),
+    error_rate_pct: +(err + (rnd()*0.4 - 0.2)).toFixed(1),
   })).sort((a,b)=>b.p95_ms-a.p95_ms);
 
   // arq
@@ -2235,13 +2256,22 @@ function renderRequests(){
     });
   });
 
-  // slowest table
-  document.getElementById('slowest').innerHTML = r.slowest.map(e=>`
-    <tr>
-      <td class="mono"><span style="color:var(--gold)">${e.method}</span> <span class="text-body">${e.path}</span></td>
-      <td class="text-right mono ${e.p95_ms>500?'text-[color:var(--warning)]':'text-white'}">${e.p95_ms}<span class="text-muted">ms</span></td>
-      <td class="text-right mono text-muted">${e.count.toLocaleString()}</td>
-    </tr>`).join('');
+  // endpoint breakdown table — escapeHtml guards against HTML in nginx-sourced paths
+  document.getElementById('slowest').innerHTML = r.slowest.map(e => {
+    const err   = Math.max(0, e.error_rate_pct ?? 0);
+    const m     = escapeHtml(e.method);
+    const p     = escapeHtml(e.path);
+    const errColor = err > 5 ? 'var(--error)' : err > 1 ? 'var(--warning)' : 'var(--success)';
+    const p99cls   = (e.p99_ms ?? 0) > 1000 ? 'text-[color:var(--error)]' : (e.p99_ms ?? 0) > 500 ? 'text-[color:var(--warning)]' : 'text-white';
+    return '<tr data-method="' + m + '" data-path="' + p + '">'
+      + '<td class="mono"><span style="color:var(--gold)">' + m + '</span> <span class="text-body">' + p + '</span></td>'
+      + '<td class="text-right mono text-muted">' + (e.p50_ms ?? '\u2014') + '<span class="text-muted text-[11px]">ms</span></td>'
+      + '<td class="text-right mono ' + (e.p95_ms > 500 ? 'text-[color:var(--warning)]' : 'text-white') + '">' + e.p95_ms + '<span class="text-muted text-[11px]">ms</span></td>'
+      + '<td class="text-right mono ' + p99cls + '">' + (e.p99_ms ?? '\u2014') + '<span class="text-muted text-[11px]">ms</span></td>'
+      + '<td class="text-right mono text-muted">' + e.count.toLocaleString() + '</td>'
+      + '<td class="text-right mono" style="color:' + errColor + '">' + err.toFixed(1) + '%</td>'
+      + '</tr>';
+  }).join('');
 }
 
 function renderArq(){

@@ -506,10 +506,9 @@
       tr.setAttribute('data-ep-wired', '1');
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', () => {
-        const cells = tr.querySelectorAll('td');
-        if (cells.length < 2) return;
-        const method = (cells[0].textContent || 'GET').trim().toUpperCase();
-        const path = (cells[1].textContent || '').trim();
+        const method = (tr.dataset.method || 'GET').trim().toUpperCase();
+        const path   = (tr.dataset.path   || '').trim();
+        if (!path) return;
         openEndpointModal(method, path);
       });
     });
