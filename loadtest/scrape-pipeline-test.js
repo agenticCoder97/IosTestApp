@@ -24,10 +24,15 @@ const fics = new SharedArray('fics', () => [
 ]);
 
 export const options = {
-  // 30 VUs, 1 iteration each. Each VU owns one fic: fires the scrape, then polls to completion.
-  vus: 30,
-  iterations: 30,
-  maxDuration: '35m',
+  scenarios: {
+    scrape: {
+      // shared-iterations: 30 VUs, 1 iteration each. Each VU owns one fic.
+      executor: 'shared-iterations',
+      vus: 30,
+      iterations: 30,
+      maxDuration: '35m',
+    },
+  },
   thresholds: {
     // AO3: at least 80% of AO3 jobs must reach 'complete'
     'scrape_complete{source:ao3}':   ['rate>=0.8'],
