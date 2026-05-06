@@ -77,7 +77,7 @@ async def test_index_html_ast92_terminal_markers():
         "@xterm/addon-fit",              # fit addon
         'data-min-term="',               # minimize button data attr
         'data-term-body="',              # term-body data attr
-        "controls.js?v=12",              # cache bust
+        "controls.js?v=13",              # cache bust
     ]
     for needle in required:
         assert needle in html, f"AST-92 marker missing: {needle}"

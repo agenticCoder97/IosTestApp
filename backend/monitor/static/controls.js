@@ -619,16 +619,25 @@
     const total = data.total_requests || 0;
     const errs = data.error_count != null ? data.error_count : Math.round(total * (data.error_rate_pct || 0) / 100);
     const rps = total / Math.max(1, rangeSeconds(data.range));
-    root.querySelector('#ep-total').textContent = fmtNum(total);
-    root.querySelector('#ep-rps').textContent = rps >= 10 ? rps.toFixed(1) : rps.toFixed(2);
+    const totalEl = root.querySelector('#ep-total');
+    if (totalEl) totalEl.textContent = fmtNum(total);
+    const rpsEl = root.querySelector('#ep-rps');
+    if (rpsEl) rpsEl.textContent = rps >= 10 ? rps.toFixed(1) : rps.toFixed(2);
     const errEl = root.querySelector('#ep-err');
-    errEl.textContent = (data.error_rate_pct || 0).toFixed(2) + '%';
-    errEl.style.color = (data.error_rate_pct || 0) > 5 ? 'var(--error)' : ((data.error_rate_pct || 0) > 1 ? 'var(--warning)' : 'var(--body)');
-    root.querySelector('#ep-err-count').textContent = fmtNum(errs);
-    root.querySelector('#ep-p50').textContent = data.p50_ms != null ? data.p50_ms : '—';
-    root.querySelector('#ep-p95').textContent = data.p95_ms != null ? data.p95_ms : '—';
-    root.querySelector('#ep-peak').textContent = data.peak_p99_ms != null ? data.peak_p99_ms : '—';
-    root.querySelector('#ep-apdex').textContent = data.apdex != null ? Number(data.apdex).toFixed(2) : '—';
+    if (errEl) {
+      errEl.textContent = (data.error_rate_pct || 0).toFixed(2) + '%';
+      errEl.style.color = (data.error_rate_pct || 0) > 5 ? 'var(--error)' : ((data.error_rate_pct || 0) > 1 ? 'var(--warning)' : 'var(--body)');
+    }
+    const errCountEl = root.querySelector('#ep-err-count');
+    if (errCountEl) errCountEl.textContent = fmtNum(errs);
+    const p50El = root.querySelector('#ep-p50');
+    if (p50El) p50El.textContent = data.p50_ms != null ? data.p50_ms : '—';
+    const p95El = root.querySelector('#ep-p95');
+    if (p95El) p95El.textContent = data.p95_ms != null ? data.p95_ms : '—';
+    const peakEl = root.querySelector('#ep-peak');
+    if (peakEl) peakEl.textContent = data.peak_p99_ms != null ? data.peak_p99_ms : '—';
+    const apdexEl = root.querySelector('#ep-apdex');
+    if (apdexEl) apdexEl.textContent = data.apdex != null ? Number(data.apdex).toFixed(2) : '—';
     const trendEl = root.querySelector('#ep-p95-trend');
     if (trendEl) trendEl.textContent = data.p95_delta_pct == null ? '—' : data.p95_delta_pct.toFixed(1) + '%';
     renderEndpointChart(root, data.buckets || []);
