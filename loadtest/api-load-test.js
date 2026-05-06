@@ -16,7 +16,7 @@ export const options = {
     { duration: '1m',  target: 0   },  // cool-down
   ],
   thresholds: {
-    http_req_duration:                          ['p(95)<500', 'p(95)<2000'],
+    http_req_duration:                          ['p(95)<500'],
     http_req_failed:                            ['rate<0.05'],
     'http_req_duration{name:progress_write}':   ['p(95)<1000'],
   },

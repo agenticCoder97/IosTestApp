@@ -13,8 +13,8 @@ const POLL_INTERVAL_S = 10;
 const POLL_TIMEOUT_S  = 30 * 60; // 30 minutes
 
 // Custom metrics for per-source threshold tracking
-const scrapeComplete  = new Rate('scrape_complete');  // tracks source:ao3 complete rate
-const scrapeTerminal  = new Rate('scrape_terminal');  // tracks source:ffnet terminal rate
+const scrapeComplete  = new Rate('scrape_complete');  // 1 if job reached 'complete'; tagged by source
+const scrapeTerminal  = new Rate('scrape_terminal');  // 1 if job reached any terminal state; tagged by source
 
 // SharedArray is read-once at init time, shared across all VUs (read-only).
 // 30 entries: 15 AO3 then 15 FFNet, so VU index maps directly to a unique fic.
@@ -47,7 +47,7 @@ export default function () {
   // ── Phase A: enqueue the scrape job ──────────────────────────────────────
   const enqueueRes = http.post(
     `${BASE_URL}/api/v1/scrape/fanfic`,
-    JSON.stringify({ url: fic.url, source_key: fic.source, cookies: [], user_agent: UA }),
+    JSON.stringify({ url: fic.url, source_key: fic.source, cookies: [], user_agent: UA, content_type: 'fanfic' }),
     { headers, tags: { name: 'scrape_enqueue' } },
   );
 
