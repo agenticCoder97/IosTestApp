@@ -44,7 +44,7 @@ Mixed read/write VU ramp. Simulates a realistic reader session loop.
 | 1 | `GET /api/v1/comics?page=1&page_size=20` | `comics_list` |
 | 2 | `GET /api/v1/comics/{id}` (random from step 1) | `comic_detail` |
 | 3 | `GET /api/v1/comics/{id}/chapters/{chapter_id}/pages` | `chapter_pages` |
-| 4 | `PUT /api/v1/progress/comic/{id}` | `progress_write` |
+| 4 | `PUT /api/v1/progress/comic/{id}` body: `{"last_chapter_number": <int>}` | `progress_write` |
 | 5 | `GET /api/v1/stats` | `stats` |
 | — | Sleep 0.5–1s between steps | — |
 
@@ -68,15 +68,23 @@ Comic and chapter IDs are resolved in k6's `setup()` function (one `GET /api/v1/
 
 **Total: ~16 minutes.**
 
-**Thresholds:**
+**Thresholds (valid k6 syntax):**
 
-```
-http_req_duration{p:95} < 500ms    (green — healthy ops)
-http_req_duration{p:95} < 2000ms   (amber — degraded but functional)
-http_req_failed rate < 0.05         (hard error gate: >5% = notable failure)
+```js
+thresholds: {
+  // Two gates: crossing either marks the threshold failed in the summary.
+  // p(95)<500 is the "healthy" gate; p(95)<2000 is the "still functional" gate.
+  // Read the degradation curve from the per-stage summary, not just pass/fail.
+  http_req_duration: ['p(95)<500', 'p(95)<2000'],
+  http_req_failed:   ['rate<0.05'],
+  // Per-route thresholds using the `name` tag applied in the script:
+  'http_req_duration{name:progress_write}': ['p(95)<1000'],
+},
 ```
 
-Per-route breakdown via `name` tag in k6 summary — identifies which endpoint degrades first. `progress_write` expected to degrade before read routes due to Postgres write lock contention.
+`p(95)<500` and `p(95)<2000` are separate pass/fail gates — k6 reports both in the summary. The degradation curve (which VU stage crossed each gate) is read from the time-series in `results-*.json`, not from the threshold pass/fail alone.
+
+Per-route breakdown via `name` tag — identifies which endpoint degrades first. `progress_write` expected to degrade before read routes due to Postgres write lock contention.
 
 ---
 
@@ -100,13 +108,13 @@ Request body per scrape:
 
 Public fics require no login cookies.
 
-> **Implementation note:** Confirm the exact `source_key` values for AO3 and FFNet by grepping the scrapers directory (`grep -r "source_key\|source_name" backend/app/scrapers/`) before writing the script. AO3 is confirmed as `"ao3"` (from CookieStore domain mapping). FFNet is assumed `"ffnet"` — verify.
+> **Implementation note:** Both source keys confirmed from `backend/app/core/constants.py` `SourceKey` enum: AO3 = `"ao3"`, FFNet = `"ffnet"`.
 
 **Fic list — AO3 (15 fics):**  
 Well-known multi-chapter works sourced from AO3's all-time kudos statistics. Fandoms: Harry Potter, MCU, Supernatural, Teen Wolf, Check Please. A handful may return 404 or restricted at scrape time — treated as expected failures.
 
 **Fic list — FFNet (15 fics):**  
-Well-known long-running works from FFNet's all-time favorites list. Same fandoms. FFNet scrapes may fail due to FicHub/FanFicFare instability — any terminal state (`completed` or `failed`) is treated as a pass.
+Well-known long-running works from FFNet's all-time favorites list. Same fandoms. FFNet scrapes may fail due to FicHub/FanFicFare instability — any terminal state (`complete`, `partial`, or `failed`) is treated as a pass.
 
 **Phase A threshold:**
 ```
@@ -116,7 +124,7 @@ POST p(95) < 300ms  (it's just a DB insert + Redis enqueue)
 
 **Phase B — Pipeline drain (~15–20 min, passive):**
 
-After all 30 jobs are enqueued, k6 polls a random sample of 10 job IDs every 30s via `GET /api/v1/scrape/{id}`. Reports `pending / running / completed / failed` counts until all jobs reach a terminal state or a 30-minute timeout fires.
+After all 30 jobs are enqueued, k6 polls **all 30 job IDs** every 30s via `GET /api/v1/scrape/{id}`. Reports `queued / running / partial / complete / failed` counts (matching `JobStatus` in `backend/app/core/constants.py`) until every job reaches a terminal state (`complete`, `partial`, or `failed`) or a 30-minute timeout fires. Polling all 30 is required to accurately compute the AO3 ≥80% completion threshold — a sampled subset cannot validate that gate.
 
 ARQ processes 3 jobs concurrently. Drain time estimate: ~10–20 minutes depending on fic length.
 
@@ -124,8 +132,8 @@ ARQ processes 3 jobs concurrently. Drain time estimate: ~10–20 minutes dependi
 
 | Check | Threshold | Rationale |
 |-------|-----------|-----------|
-| AO3 completed | ≥ 80% of AO3 jobs | Some fics may be restricted or deleted |
-| FFNet terminal | any state | Known flaky source; failure is informative |
+| AO3 `complete` | ≥ 80% of all 15 AO3 jobs | Some fics may be restricted or deleted |
+| FFNet terminal (`complete`, `partial`, or `failed`) | 100% of all 15 FFNet jobs | Known flaky source; any terminal state means the pipeline ran |
 
 ---
 
@@ -238,14 +246,16 @@ The `log_requests` middleware logs every `elapsed_ms` — latency climbs are vis
 
 ## What to Compare Between Runs
 
+> **Caveat:** This comparison is directional, not controlled. Run A runs k6 inside the OCI host, adding local CPU pressure to the same machine the stack runs on. Run B runs from your Mac, adding home network latency. Both runs also overlap with the ARQ scrape queue at different drain points (Run A starts earlier, Run B starts when more jobs have already completed), so background Postgres pressure differs between them. Differences in the comparison table may reflect client placement or scrape activity, not just nginx/TLS overhead. Treat the delta as a rough signal, not a precise isolation.
+
 | Metric | Expected delta | Interpretation |
 |--------|---------------|----------------|
-| Baseline p95 at 5 VUs | 20–80ms higher on Run B | Home network RTT + TLS handshake overhead |
-| Saturation VU count | Same on both | Server is the bottleneck, not the network |
-| p95 at 100 VUs | Within ~50ms | nginx adds negligible overhead at saturation |
-| Error onset VU | Same on both | Errors are server-side, not network drops |
+| Baseline p95 at 5 VUs | 20–80ms higher on Run B | Primarily home network RTT + TLS handshake; Run A has no network cost but adds OCI host CPU contention |
+| Saturation VU count | Similar on both | If identical: server is the bottleneck; if Run B saturates earlier: network or nginx is a factor |
+| p95 at 100 VUs | Run B likely higher by 20–100ms | Combination of nginx overhead, TLS, and network — not cleanly separable |
+| Error onset VU | Similar on both | Large divergence would suggest network-level drops on Run B |
 
-If Run B saturates at significantly fewer VUs than Run A: nginx is a bottleneck (unlikely given current config).
+If Run B saturates at significantly fewer VUs than Run A: check nginx `worker_connections` and TLS session reuse before concluding nginx is a bottleneck.
 
 ---
 
