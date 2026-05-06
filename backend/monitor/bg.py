@@ -364,6 +364,7 @@ from monitor.requests_metrics import (
 from monitor.traffic import (
     RequestFilters as _RequestFilters,
     classify_request as _classify_request,
+    normalize_path as _normalize_path,
     redact_sample as _redact_sample,
     status_band as _status_band,
 )
@@ -459,7 +460,7 @@ def _build_endpoint_cache(records: list[dict], window: str) -> None:
 
     for r in records:
         method = str(r.get("method", ""))
-        path = str(r.get("path", ""))
+        path = _normalize_path(str(r.get("path", "")))
         key = (method, path)
         by_path.setdefault(key, []).append(r)
         bucket = (_coerce_int(r.get("ts_ms")) // bucket_ms) * bucket_ms
