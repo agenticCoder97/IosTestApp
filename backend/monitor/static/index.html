@@ -1263,6 +1263,9 @@ const STATE = {
     q: '',
     rank: 'p95',
   },
+  ui: {
+    serviceCards: {},   // name → 'front' | 'back'
+  },
 };
 // Expose STATE so the controls.js companion can read the current
 // range / service filter without duplicating state.
@@ -1484,6 +1487,20 @@ window.__diagRequests = async function(limit = 10) {
   console.log('traffic_counts:', data.traffic_counts, '· sampler:', data.sampler);
   return data;
 };
+
+// AST-94 — persist which face (front/back) each service card shows across
+// re-renders. renderServices() calls restoreServiceFaces() after rebuilding
+// the grid so flip state survives full-page refreshes.
+function rememberServiceFace(name, face) {
+  STATE.ui.serviceCards[name] = face;
+}
+
+function restoreServiceFaces() {
+  for (const [name, face] of Object.entries(STATE.ui.serviceCards)) {
+    const wrap = document.querySelector(`.svc-flip[data-service-card="${name}"]`);
+    if (wrap) wrap.classList.toggle('flipped', face === 'back');
+  }
+}
 
 // Show an amber "degraded" dot on a section header when *_meta.degraded === true.
 function setDegradedDot(sectionId, meta){
@@ -1993,6 +2010,7 @@ function renderServices(){
       if (!wrap) return;
       wrap.classList.add('flipped');
       openTerminal(wrap, name);
+      rememberServiceFace(name, 'back');
     });
   });
   document.querySelectorAll('.term-dot-min').forEach(btn => {
@@ -2010,6 +2028,7 @@ function renderServices(){
       const wrap = btn.closest('.svc-flip');
       if (wrap) {
         wrap.classList.remove('flipped');
+        rememberServiceFace(name, 'front');
         if (wrap._termResizeObs) {
           try { wrap._termResizeObs.disconnect(); } catch(_){}
           wrap._termResizeObs = null;
@@ -2070,6 +2089,7 @@ function renderServices(){
       if (entry) { try { entry.term.focus(); } catch(_){} }
     });
   });
+  restoreServiceFaces();
 }
 
 function renderRequests(){
