@@ -223,6 +223,17 @@ class EndpointDetail(BaseModel):
     buckets: list[EndpointBucket]
 
 
+class RequestDebugResponse(BaseModel):
+    filters: dict[str, str]
+    traffic_counts: dict[str, int]
+    reason_counts: dict[str, int]
+    included_count: int
+    excluded_count: int
+    included_samples: list[dict]
+    excluded_samples: list[dict]
+    sampler: dict
+
+
 class MetricsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

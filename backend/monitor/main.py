@@ -34,7 +34,11 @@ from monitor.collectors import requests_ as requests_coll
 from monitor.collectors import services as services_coll
 from monitor.collectors import storage
 from monitor.control.routes import router as control_router
-from monitor.schema import EndpointDetail, MetricsResponse
+from typing import cast
+
+from monitor.requests_metrics import build_request_debug, records_for_window
+from monitor.schema import EndpointDetail, MetricsResponse, RequestDebugResponse
+from monitor.traffic import RankMode, RequestFilters, StatusBand, TrafficClass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("monitor")
@@ -223,6 +227,49 @@ def _empty_cert():
 def _empty_deploys():
     from monitor.schema import DeploysBlock
     return DeploysBlock(recent=[])
+
+
+@app.get("/metrics/requests")
+async def metrics_requests(
+    range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$"),
+    traffic: str = Query("app", pattern="^(app|static|monitor|noise|unknown)$"),
+    method: str = Query("all"),
+    status: str = Query("all", pattern="^(all|2xx|3xx|4xx|5xx)$"),
+    q: str = Query(""),
+    rank: str = Query("p95", pattern="^(p95|count|error_rate)$"),
+) -> JSONResponse:
+    filters = RequestFilters(
+        traffic=cast(TrafficClass, traffic),
+        method=method,
+        status=cast(StatusBand, status),
+        q=q,
+        rank=cast(RankMode, rank),
+    )
+    block = await requests_coll.collect(range, filters)
+    return JSONResponse(block.model_dump(mode="json", by_alias=True))
+
+
+@app.get("/metrics/requests/debug")
+async def metrics_requests_debug(
+    range: str = Query("6h", pattern="^(1h|6h|24h|7d|30d)$"),
+    traffic: str = Query("app", pattern="^(app|static|monitor|noise|unknown)$"),
+    method: str = Query("all"),
+    status: str = Query("all", pattern="^(all|2xx|3xx|4xx|5xx)$"),
+    q: str = Query(""),
+    rank: str = Query("p95", pattern="^(p95|count|error_rate)$"),
+    limit: int = Query(25, ge=1, le=100),
+) -> JSONResponse:
+    filters = RequestFilters(
+        traffic=cast(TrafficClass, traffic),
+        method=method,
+        status=cast(StatusBand, status),
+        q=q,
+        rank=cast(RankMode, rank),
+    )
+    window_records = records_for_window(list(bg.NGINX_ACCESS_RECORDS), range)
+    debug = build_request_debug(window_records, filters, limit, sampler_meta=dict(bg.NGINX_SAMPLER_META))
+    validated = RequestDebugResponse.model_validate(debug)
+    return JSONResponse(validated.model_dump(mode="json"))
 
 
 @app.get("/metrics/service/{name}")
