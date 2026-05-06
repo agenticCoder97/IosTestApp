@@ -16,7 +16,16 @@ LOG_METRICS_LIMIT = 400        # lines sliced from LOG_DEQUE per /metrics call
 
 SERVICE_CACHE: dict[str, dict[str, Any]] = {}
 LOG_DEQUE: Deque[dict[str, Any]] = deque(maxlen=_LOG_DEQUE_MAXLEN)
+# App-default request metric blocks, populated by nginx_access_sampler.
 NGINX_WINDOW_CACHE: dict[str, dict[str, Any]] = {}
+NGINX_TOTAL_WINDOW_CACHE: dict[str, dict[str, Any]] = {}
+NGINX_ACCESS_RECORDS: Deque[dict[str, Any]] = deque(maxlen=100_000)
+NGINX_SAMPLER_META: dict[str, Any] = {
+    "last_sample_at": None,
+    "elapsed_ms": 0,
+    "parse_failures": 0,
+    "parse_failure_samples": [],
+}
 
 # Per-endpoint bucketed series, keyed by (method, path) → {window: [buckets]}.
 # Populated by nginx_access_sampler alongside NGINX_WINDOW_CACHE.
@@ -185,7 +194,7 @@ async def _fetch_service_extra(svc: str, started_at_iso: str, now_ms: int, redis
                     "active_connections": stub["active_connections"],
                     "reqs_total":         stub["total_requests"],
                 }
-            cached = NGINX_WINDOW_CACHE.get("1h", {})
+            cached = NGINX_TOTAL_WINDOW_CACHE.get("1h") or NGINX_WINDOW_CACHE.get("1h", {})
             sc = cached.get("status_codes", {}) or {}
             total = sum(int(sc.get(k, 0) or 0) for k in ("2xx", "3xx", "4xx", "5xx"))
             return {"active_connections": 0, "reqs_total": total}
@@ -342,8 +351,22 @@ async def log_tailer() -> None:
 # ─── nginx access log sampler ─────────────────────────────────────────
 
 import re as _re
+import time as _time
+from collections import Counter as _Counter
 from datetime import datetime as _dt, timezone as _tz
 from pathlib import Path as _Path
+
+from monitor.requests_metrics import (
+    WINDOWS_S as _REQUEST_WINDOWS_S,
+    build_requests_block as _build_requests_block,
+    records_for_window as _records_for_window,
+)
+from monitor.traffic import (
+    RequestFilters as _RequestFilters,
+    classify_request as _classify_request,
+    redact_sample as _redact_sample,
+    status_band as _status_band,
+)
 
 NGINX_ACCESS_PATH = _Path("/var/log/nginx/access.log")
 
@@ -356,8 +379,7 @@ _LOG_RE = _re.compile(
     r'"(?P<referer>[^"]*)" "(?P<ua>[^"]*)"$'
 )
 
-_WINDOWS_S = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000,
-              "1m_api": 60}
+_WINDOWS_S = _REQUEST_WINDOWS_S
 
 
 def _parse_log_line(line: str) -> dict | None:
@@ -374,12 +396,15 @@ def _parse_log_line(line: str) -> dict | None:
         rt_ms = int(float(m["rt"]) * 1000)
     except Exception:
         rt_ms = 0
+    classification = _classify_request(m["method"], m["path"])
     return {
         "ts_ms": int(ts.timestamp() * 1000),
         "method": m["method"],
         "path": m["path"],
         "status": int(m["status"]),
         "rt_ms": rt_ms,
+        "traffic_class": classification.traffic_class,
+        "classification_reason": classification.reason,
     }
 
 
@@ -389,10 +414,6 @@ def _compute_window(records: list[dict], window: str) -> dict:
     bucket_ms = max(60_000, _WINDOWS_S[window] * 1000 // 60)
     series_rps_buckets: dict[int, int] = {}
     series_p95_buckets: dict[int, list[int]] = {}
-
-    # Per-endpoint bucketed latency + status accumulators, used to feed
-    # the endpoint drill-down view (AST-76).
-    endpoint_buckets: dict[tuple[str, str], dict[int, dict]] = {}
 
     for r in records:
         s = r["status"]
@@ -406,14 +427,6 @@ def _compute_window(records: list[dict], window: str) -> dict:
         bucket = (r["ts_ms"] // bucket_ms) * bucket_ms
         series_rps_buckets[bucket] = series_rps_buckets.get(bucket, 0) + 1
         series_p95_buckets.setdefault(bucket, []).append(r["rt_ms"])
-
-        ep = endpoint_buckets.setdefault((r["method"], r["path"]), {})
-        b = ep.setdefault(bucket, {
-            "rts": [],
-            "status_2xx": 0, "status_3xx": 0, "status_4xx": 0, "status_5xx": 0,
-        })
-        b["rts"].append(r["rt_ms"])
-        b[f"status_{band}"] += 1
 
     series_rps = [[b, series_rps_buckets[b] / (bucket_ms / 1000)] for b in sorted(series_rps_buckets)]
     series_p95 = [[b, _pct(series_p95_buckets[b], 95)] for b in sorted(series_p95_buckets)]
@@ -430,15 +443,39 @@ def _compute_window(records: list[dict], window: str) -> dict:
     slowest.sort(key=lambda r: r["p95_ms"], reverse=True)
     top_slowest = slowest[:10]
 
-    # Keep only the top 20 endpoints per window by request count for
-    # drill-down — memory bound. by_count ≠ by_latency: both high-traffic
-    # and slow endpoints are useful drill-down targets.
+    return {
+        "window": window,
+        "series_rps": series_rps,
+        "series_p95_ms": series_p95,
+        "status_codes": status_codes,
+        "slowest": top_slowest,
+    }
+
+
+def _build_endpoint_cache(records: list[dict], window: str) -> None:
+    bucket_ms = max(60_000, _WINDOWS_S[window] * 1000 // 60)
+    by_path: dict[tuple[str, str], list[dict]] = {}
+    endpoint_buckets: dict[tuple[str, str], dict[int, dict]] = {}
+
+    for r in records:
+        method = str(r.get("method", ""))
+        path = str(r.get("path", ""))
+        key = (method, path)
+        by_path.setdefault(key, []).append(r)
+        bucket = (_coerce_int(r.get("ts_ms")) // bucket_ms) * bucket_ms
+        band = _status_band(_coerce_int(r.get("status"))) or "5xx"
+        ep = endpoint_buckets.setdefault(key, {})
+        b = ep.setdefault(bucket, {
+            "rts": [],
+            "status_2xx": 0, "status_3xx": 0, "status_4xx": 0, "status_5xx": 0,
+        })
+        b["rts"].append(_coerce_int(r.get("rt_ms")))
+        b[f"status_{band}"] += 1
+
     top_by_count = sorted(by_path.items(), key=lambda kv: len(kv[1]), reverse=True)[:20]
-    endpoint_cache: dict[tuple[str, str], list[dict]] = {}
-    for key, _rts in top_by_count:
-        if key not in endpoint_buckets:
-            continue
-        buckets_sorted = sorted(endpoint_buckets[key].items())
+    endpoint_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for key, _records in top_by_count:
+        buckets_sorted = sorted(endpoint_buckets.get(key, {}).items())
         endpoint_cache[key] = [
             {
                 "ts_ms": ts,
@@ -455,14 +492,6 @@ def _compute_window(records: list[dict], window: str) -> dict:
         ]
     NGINX_ENDPOINT_CACHE[window] = endpoint_cache
 
-    return {
-        "window": window,
-        "series_rps": series_rps,
-        "series_p95_ms": series_p95,
-        "status_codes": status_codes,
-        "slowest": top_slowest,
-    }
-
 
 def _pct(values: list[int], p: int) -> int:
     if not values:
@@ -472,41 +501,104 @@ def _pct(values: list[int], p: int) -> int:
     return xs[min(k, len(xs) - 1)]
 
 
-def _read_access_log_records() -> list[dict]:
+def _coerce_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _read_access_log_records() -> tuple[list[dict], int, list[str]]:
     """Synchronous file read — invoked via asyncio.to_thread so the event
-    loop stays free during the read. Returns parsed records."""
+    loop stays free during the read. Returns parsed records and parse metadata."""
     from collections import deque as _deque
 
     if not NGINX_ACCESS_PATH.exists():
-        return []
+        return [], 0, []
     tail_buf: "deque[str]" = _deque(maxlen=100_000)
     with NGINX_ACCESS_PATH.open("r", errors="replace") as fh:
         for line in fh:
             tail_buf.append(line)
     out = []
+    parse_failures = 0
+    failure_samples: list[str] = []
     for line in tail_buf:
         rec = _parse_log_line(line)
         if rec is not None:
             out.append(rec)
-    return out
+            continue
+        parse_failures += 1
+        if len(failure_samples) < 10:
+            failure_samples.append(_redact_sample(line.rstrip("\n")))
+    return out, parse_failures, failure_samples
+
+
+def _refresh_nginx_request_caches(
+    all_records: list[dict],
+    parse_failures: int,
+    failure_samples: list[str],
+    *,
+    now_ms: int | None = None,
+    elapsed_ms: int = 0,
+) -> dict[str, Any]:
+    if now_ms is None:
+        now_ms = int(_dt.now(_tz.utc).timestamp() * 1000)
+
+    NGINX_ACCESS_RECORDS.clear()
+    NGINX_ACCESS_RECORDS.extend(all_records)
+
+    class_counts = _Counter(str(r.get("traffic_class", "unknown")) for r in all_records)
+    NGINX_SAMPLER_META.update({
+        "last_sample_at": now_ms,
+        "elapsed_ms": elapsed_ms,
+        "parse_failures": parse_failures,
+        "parse_failure_samples": failure_samples,
+    })
+
+    default_filters = _RequestFilters()
+    for w in _WINDOWS_S:
+        window_records = _records_for_window(all_records, w, now_ms=now_ms)
+        app_block = _build_requests_block(window_records, w, default_filters)
+        NGINX_WINDOW_CACHE[w] = app_block.model_dump(mode="json", by_alias=True)
+        NGINX_TOTAL_WINDOW_CACHE[w] = _compute_window(window_records, w)
+
+        if w != "1m_api":
+            app_records = [
+                r for r in window_records if r.get("traffic_class") == default_filters.traffic
+            ]
+            _build_endpoint_cache(app_records, w)
+
+    return {
+        "total_records": len(all_records),
+        "parse_failures": parse_failures,
+        "class_counts": dict(class_counts),
+        "elapsed_ms": elapsed_ms,
+    }
 
 
 async def nginx_access_sampler() -> None:
-    """Every 60s: tail access.log, compute all 5 windows, write NGINX_WINDOW_CACHE."""
+    """Every 60s: tail access.log and refresh request metric caches."""
     while True:
         try:
-            all_records = await asyncio.to_thread(_read_access_log_records)
-            now_ms = int(_dt.now(_tz.utc).timestamp() * 1000)
-            for w, seconds in _WINDOWS_S.items():
-                cutoff = now_ms - seconds * 1000
-                window_records = [r for r in all_records if r["ts_ms"] >= cutoff]
-                # 1m_api: narrow to prod API paths only — used by the
-                # fastapi service card for live RPS. Other windows stay
-                # full-traffic (they drive the Request Metrics chart).
-                if w == "1m_api":
-                    window_records = [r for r in window_records
-                                      if r["path"].startswith("/api/")]
-                NGINX_WINDOW_CACHE[w] = _compute_window(window_records, w)
+            started = _time.perf_counter()
+            all_records, parse_failures, failure_samples = await asyncio.to_thread(
+                _read_access_log_records
+            )
+            elapsed_ms = int((_time.perf_counter() - started) * 1000)
+            summary = _refresh_nginx_request_caches(
+                all_records,
+                parse_failures,
+                failure_samples,
+                elapsed_ms=elapsed_ms,
+            )
+            logger.info(
+                "nginx_access_sampler tick total_records=%d parse_failures=%d "
+                "class_counts=%s elapsed_ms=%d",
+                summary["total_records"],
+                summary["parse_failures"],
+                summary["class_counts"],
+                summary["elapsed_ms"],
+            )
         except Exception as e:
             logger.warning("nginx_access_sampler failed: %s", e)
         await asyncio.sleep(60)
