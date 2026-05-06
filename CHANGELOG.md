@@ -4,6 +4,10 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/ast-99-endpoint-normalization-error-rate — 2026-05-06
+
+- **[AST-99](https://linear.app/nnetraganti/issue/AST-99)** — Endpoint breakdown table: route template normalization + error rate column. Adds `normalize_path()` in `traffic.py` (30 ordered regex→template patterns covering all `/api/v1/` routes, query-string stripping via `urlsplit`). `requests_metrics.py` groups by normalized key and exposes `error_rate_pct` (4xx+5xx, consistent with the endpoint modal). `schema.py` adds `error_rate_pct: float = 0.0` to `SlowEndpoint`. `bg.py` endpoint cache keyed on normalized path so drill-down modal still resolves. Dashboard table expanded to 6 columns (endpoint / p50 / p95 / p99 / n / err%) with color-coded err%, `escapeHtml()` XSS guard on nginx-sourced paths, and `data-method`/`data-path` attributes on rows so `decorateSlowest()` reads structured attrs instead of parsing cell text.
+
 ## feature/ast-92-terminal-polish — 2026-04-23
 
 - **[AST-92](https://linear.app/nnetraganti/issue/AST-92) follow-up** — Monitor dashboard terminal polish, purely frontend on top of the landed AST-92 shell. Adds a per-service preset-command dropdown with 5 dev-oriented commands each (postgres `\dt` / row counts / active queries, redis `bigkeys` + live `monitor`, fastapi `alembic current` + route list + astral env, arq worker queue depth + in-progress jobs, nginx `-t` / status-code histogram / 5xx tail, certbot list/dry-run/expiry). Redesigns the back-face header as a macOS-Terminal-style bar: service name on the left, three traffic-light buttons on the right (red close, yellow minimize, green commands-with-chevron). Terminal now fills the card edge-to-edge with 11px mono. Commands render via a custom popover (the native 12px `<select>` Safari refused to open). Click anywhere in the terminal body to refocus xterm. Cache-busted controls.js through v=11.
