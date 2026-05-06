@@ -1,4 +1,9 @@
-from monitor.traffic import classify_request, redact_sample
+from monitor.traffic import (
+    RequestFilters,
+    classify_request,
+    record_matches_filters,
+    redact_sample,
+)
 
 
 def test_classifies_astral_api_as_app():
@@ -13,10 +18,22 @@ def test_classifies_static_as_static():
     assert c.reason == "static_path"
 
 
+def test_classifies_monitor_owned_static_as_monitor():
+    c = classify_request("GET", "/static/controls.js")
+    assert c.traffic_class == "monitor"
+    assert c.reason == "monitor_path"
+
+
 def test_classifies_monitor_control_as_monitor():
     c = classify_request("POST", "/monitor/control/exec/start")
     assert c.traffic_class == "monitor"
     assert c.reason == "monitor_path"
+
+
+def test_classifies_monitoring_as_unknown():
+    c = classify_request("GET", "/monitoring")
+    assert c.traffic_class == "unknown"
+    assert c.reason == "valid_unknown_path"
 
 
 def test_classifies_cgi_traversal_probe_as_noise():
@@ -60,3 +77,49 @@ def test_redact_sample_caps_and_removes_query_values():
     assert "secret-value" not in sample
     assert "token=REDACTED" in sample
     assert len(sample) <= 36
+
+
+def test_record_filter_does_not_match_invalid_status_for_concrete_filter():
+    record = {
+        "traffic_class": "app",
+        "method": "GET",
+        "path": "/api/v1/comics",
+        "status": "-",
+    }
+    filters = RequestFilters(status="5xx")
+
+    assert record_matches_filters(record, filters) is False
+
+
+def test_record_filter_does_not_treat_missing_status_as_5xx():
+    record = {"traffic_class": "app", "method": "GET", "path": "/api/v1/comics"}
+    filters = RequestFilters(status="5xx")
+
+    assert record_matches_filters(record, filters) is False
+
+
+def test_record_filter_all_status_allows_missing_or_invalid_status():
+    filters = RequestFilters(status="all")
+    missing = {"traffic_class": "app", "method": "GET", "path": "/api/v1/comics"}
+    invalid = {
+        "traffic_class": "app",
+        "method": "GET",
+        "path": "/api/v1/comics",
+        "status": "-",
+    }
+
+    assert record_matches_filters(missing, filters) is True
+    assert record_matches_filters(invalid, filters) is True
+
+
+def test_redact_sample_removes_extended_sensitive_query_values():
+    sample = redact_sample(
+        "/api/v1/comics?"
+        "session=alpha1&jwt=beta2&signature=gamma3&credential=delta4&code=epsilon5&"
+        "authorization=zeta6"
+    )
+
+    for secret in ("alpha1", "beta2", "gamma3", "delta4", "epsilon5", "zeta6"):
+        assert secret not in sample
+    for key in ("session", "jwt", "signature", "credential", "code", "authorization"):
+        assert f"{key}=REDACTED" in sample

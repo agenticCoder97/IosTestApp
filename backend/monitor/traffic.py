@@ -26,7 +26,11 @@ class RequestFilters:
     rank: RankMode = "p95"
 
 
-_TOKEN_RE = re.compile(r"(?i)(token|auth|password|secret|key)=([^&\s]+)")
+_TOKEN_RE = re.compile(
+    r"(?i)"
+    r"(token|auth|password|secret|key|session|jwt|signature|credential|code|authorization)"
+    r"=([^&\s]+)"
+)
 _HEX_ESCAPE_RE = re.compile(r"\\x[0-9a-fA-F]{2}")
 _CGI_TRAVERSAL_RE = re.compile(r"(?i)^/cgi-bin/.*(%2e|%%32%65|\.\.).*/bin/sh")
 _KNOWN_PROBE_PREFIXES = (
@@ -53,17 +57,17 @@ def classify_request(method: str, path: str) -> TrafficClassification:
     if raw.startswith("/api/") or raw == "/api":
         return TrafficClassification("app", "api_path")
 
-    if raw.startswith("/static/"):
-        return TrafficClassification("static", "static_path")
-
     if (
         raw == "/metrics"
         or raw.startswith("/metrics?")
-        or raw.startswith("/monitor")
+        or _matches_path_boundary(raw, "/monitor")
         or raw.startswith("/control/")
-        or raw.startswith("/static/controls.js")
+        or _matches_path_boundary(raw, "/static/controls.js")
     ):
         return TrafficClassification("monitor", "monitor_path")
+
+    if raw.startswith("/static/"):
+        return TrafficClassification("static", "static_path")
 
     if _CGI_TRAVERSAL_RE.search(raw) or _CGI_TRAVERSAL_RE.search(decoded_twice):
         return TrafficClassification("noise", "cgi_traversal_probe")
@@ -90,8 +94,10 @@ def record_matches_filters(record: dict, filters: RequestFilters) -> bool:
     method = filters.method.upper()
     if method != "ALL" and str(record.get("method", "")).upper() != method:
         return False
-    if filters.status != "all" and status_band(int(record.get("status", 0))) != filters.status:
-        return False
+    if filters.status != "all":
+        status = _parse_http_status(record.get("status"))
+        if status is None or status_band(status) != filters.status:
+            return False
     q = filters.q.strip().lower()
     if q and q not in str(record.get("path", "")).lower():
         return False
@@ -108,6 +114,20 @@ def _safe_unquote(value: str) -> str:
         return unquote(value)
     except Exception:
         return value
+
+
+def _matches_path_boundary(path: str, prefix: str) -> bool:
+    return path == prefix or path.startswith(f"{prefix}/") or path.startswith(f"{prefix}?")
+
+
+def _parse_http_status(value: object) -> int | None:
+    try:
+        status = int(value)
+    except (TypeError, ValueError):
+        return None
+    if 100 <= status <= 599:
+        return status
+    return None
 
 
 def _looks_binary_or_malformed(value: str) -> bool:
