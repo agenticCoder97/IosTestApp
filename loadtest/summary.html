@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Astral Backend Load Test — Summary</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 32px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: #7d8590; font-size: 13px; margin-bottom: 32px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { font-size: 13px; font-weight: 600; color: #7d8590; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 16px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat { background: #0d1117; border-radius: 8px; padding: 14px 16px; }
+  .stat .label { font-size: 11px; color: #7d8590; margin-bottom: 4px; }
+  .stat .value { font-size: 22px; font-weight: 700; }
+  .stat .sub { font-size: 11px; color: #7d8590; margin-top: 2px; }
+  .green { color: #3fb950; }
+  .yellow { color: #d29922; }
+  .blue { color: #58a6ff; }
+  .purple { color: #bc8cff; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #7d8590; font-weight: 500; padding: 6px 12px; border-bottom: 1px solid #30363d; }
+  td { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+  td.right { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge.pass { background: #1a4a2e; color: #3fb950; }
+  .badge.warn { background: #3d2f0a; color: #d29922; }
+  .stage-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+  .stage-bar div { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+  .finding { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid #21262d; font-size: 13px; }
+  .finding:last-child { border-bottom: none; }
+  .finding .icon { font-size: 15px; flex-shrink: 0; }
+  .finding .text { color: #c9d1d9; line-height: 1.5; }
+  .finding .text strong { color: #e6edf3; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<h1>Astral Backend — Load Test Results</h1>
+<div class="subtitle">2026-05-06 &nbsp;·&nbsp; astral-reader.duckdns.org (OCI A1 ARM, Always Free) &nbsp;·&nbsp; k6, 100 VU peak, 16 min ramp</div>
+
+<div class="grid">
+
+  <!-- Run A stats -->
+  <div class="card">
+    <h2>Run A — OCI Internal (fastapi:8000 direct)</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="label">p95 latency</div><div class="value green">17.7ms</div><div class="sub">gate: 500ms</div></div>
+      <div class="stat"><div class="label">p90 latency</div><div class="value green">13.2ms</div><div class="sub">avg 9.7ms</div></div>
+      <div class="stat"><div class="label">error rate</div><div class="value green">0.00%</div><div class="sub">gate: &lt;5%</div></div>
+      <div class="stat"><div class="label">total requests</div><div class="value blue">52,691</div><div class="sub">10,537 iterations</div></div>
+      <div class="stat"><div class="label">peak throughput</div><div class="value blue">~55 req/s</div><div class="sub">at 100 VUs</div></div>
+      <div class="stat"><div class="label">max spike</div><div class="value yellow">644ms</div><div class="sub">isolated outlier</div></div>
+    </div>
+  </div>
+
+  <!-- Run B stats -->
+  <div class="card">
+    <h2>Run B — Mac External (nginx + TLS)</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="label">p95 latency</div><div class="value green">74.3ms</div><div class="sub">gate: 500ms</div></div>
+      <div class="stat"><div class="label">p90 latency</div><div class="value green">67.3ms</div><div class="sub">avg 46.6ms</div></div>
+      <div class="stat"><div class="label">error rate</div><div class="value green">0.00%</div><div class="sub">gate: &lt;5%</div></div>
+      <div class="stat"><div class="label">total requests</div><div class="value blue">50,271</div><div class="sub">~10,054 iterations</div></div>
+      <div class="stat"><div class="label">network overhead</div><div class="value purple">+56ms</div><div class="sub">vs Run A p95</div></div>
+      <div class="stat"><div class="label">max spike</div><div class="value yellow">684ms</div><div class="sub">isolated outlier</div></div>
+    </div>
+  </div>
+
+  <!-- Latency curve chart -->
+  <div class="card wide">
+    <h2>p95 Latency Over Time — Run A vs Run B (10s buckets)</h2>
+    <canvas id="latencyChart" height="90"></canvas>
+  </div>
+
+  <!-- Threshold table -->
+  <div class="card">
+    <h2>Threshold Results</h2>
+    <table>
+      <tr><th>Threshold</th><th>Run A</th><th>Run B</th></tr>
+      <tr>
+        <td>http_req_duration p(95)&lt;500ms</td>
+        <td class="right"><span class="badge pass">✓ 17.7ms</span></td>
+        <td class="right"><span class="badge pass">✓ 74.3ms</span></td>
+      </tr>
+      <tr>
+        <td>http_req_failed rate&lt;5%</td>
+        <td class="right"><span class="badge pass">✓ 0.00%</span></td>
+        <td class="right"><span class="badge pass">✓ 0.00%</span></td>
+      </tr>
+      <tr>
+        <td>progress_write p(95)&lt;1000ms</td>
+        <td class="right"><span class="badge pass">✓ 20.8ms</span></td>
+        <td class="right"><span class="badge pass">✓ 57.8ms</span></td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Per-route table -->
+  <div class="card">
+    <h2>Per-Route p95 (Run B)</h2>
+    <table>
+      <tr><th>Route</th><th class="right">p95</th><th class="right">avg</th></tr>
+      <tr><td>GET /comics (list)</td><td class="right">~68ms</td><td class="right">~45ms</td></tr>
+      <tr><td>GET /comics/{id}</td><td class="right">~69ms</td><td class="right">~46ms</td></tr>
+      <tr><td>GET /chapters/{id}/pages</td><td class="right">~70ms</td><td class="right">~47ms</td></tr>
+      <tr><td>PUT /progress/comic/{id}</td><td class="right">57.8ms</td><td class="right">45.2ms</td></tr>
+      <tr><td>GET /stats</td><td class="right">~68ms</td><td class="right">~45ms</td></tr>
+    </table>
+  </div>
+
+  <!-- Key findings -->
+  <div class="card wide">
+    <h2>Key Findings</h2>
+    <div class="finding">
+      <div class="icon">✅</div>
+      <div class="text"><strong>No saturation at 100 VUs.</strong> p95 peaked at 17.7ms (internal) and 74.3ms (external) — both well under the 500ms gate. The FastAPI + async SQLAlchemy stack handled 100 concurrent VUs comfortably. Saturation point is above 100 VUs.</div>
+    </div>
+    <div class="finding">
+      <div class="icon">⚡</div>
+      <div class="text"><strong>Internal baseline: ~10ms p95.</strong> No nginx, no TLS, no network hop. This is the raw FastAPI + Postgres floor. The stack is healthy and responsive at low VU counts.</div>
+    </div>
+    <div class="finding">
+      <div class="icon">🌐</div>
+      <div class="text"><strong>nginx + TLS overhead: ~56ms.</strong> Run B p95 (74ms) minus Run A p95 (18ms) = ~56ms. This is home network RTT + TLS handshake. Both measurements have confounds (Run A adds OCI CPU pressure; Run B adds external network variability), so treat as directional.</div>
+    </div>
+    <div class="finding">
+      <div class="icon">⚠️</div>
+      <div class="text"><strong>Transient spikes at 100 VU peak (~750–870s).</strong> Both runs show isolated p95 spikes of 112–395ms during the 100 VU hold stage. These recover fully within 30–60s and didn't trigger the error threshold. Likely momentary Postgres connection pool contention or ARQ worker competing for connections.</div>
+    </div>
+    <div class="finding">
+      <div class="icon">🔍</div>
+      <div class="text"><strong>progress_write degrades last.</strong> Expected to be the first route to saturate (Postgres write locks), but it tracked at or below read routes throughout. Write contention is not a bottleneck at 100 VUs — Postgres pool headroom remains.</div>
+    </div>
+    <div class="finding">
+      <div class="icon">📈</div>
+      <div class="text"><strong>Next ceiling step: push to 200–300 VUs.</strong> To find the true saturation point, increase peak VUs. Predicted first failure signal: Postgres connection pool exhaustion (watch pool wait time before 5xx errors appear).</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const stagesBoundaries = [0, 60, 180, 300, 420, 540, 660, 780, 900, 960];
+const stageLabels = ['Warm-up\n0→5 VU', 'Baseline\n5 VU', 'Ramp\n5→25', 'Hold\n25 VU', 'Ramp\n25→50', 'Hold\n50 VU', 'Ramp\n50→100', 'Hold\n100 VU', 'Cool-down'];
+
+const runA = [[0,9.6],[10,11.1],[20,9.7],[30,9.5],[40,9.9],[50,9.5],[60,9.5],[70,9.8],[80,9.4],[90,9.6],[100,9.7],[110,9.3],[120,9.4],[130,9.5],[140,9.3],[150,9.5],[160,9.5],[170,9.6],[180,9.3],[190,9.3],[200,9.3],[210,9.7],[220,9.7],[230,10.0],[240,9.5],[250,9.4],[260,9.4],[270,10.2],[280,11.4],[290,10.3],[300,11.6],[310,10.2],[320,11.0],[330,11.5],[340,11.4],[350,11.0],[360,10.8],[370,10.1],[380,9.5],[390,11.0],[400,10.9],[410,10.9],[420,11.7],[430,10.6],[440,11.3],[450,11.5],[460,11.9],[470,11.0],[480,12.1],[490,11.0],[500,13.3],[510,11.6],[520,12.1],[530,13.9],[540,13.7],[550,12.4],[560,13.8],[570,12.8],[580,11.9],[590,14.3],[600,12.0],[610,11.9],[620,13.7],[630,12.2],[640,17.1],[650,11.9],[660,12.6],[670,13.8],[680,13.3],[690,15.9],[700,17.4],[710,14.2],[720,30.5],[730,15.1],[740,19.6],[750,112.0],[760,20.0],[770,18.1],[780,20.7],[790,20.3],[800,20.2],[810,20.5],[820,167.5],[830,90.7],[840,159.0],[850,65.0],[860,133.3],[870,25.3],[880,25.7],[890,23.9],[900,19.4],[910,15.1],[920,15.1],[930,13.7],[940,11.2],[950,10.8],[960,12.3]];
+
+const runB = [[0,80.8],[10,73.2],[20,69.4],[30,66.1],[40,69.8],[50,68.5],[60,64.5],[70,45.0],[80,67.0],[90,64.4],[100,65.9],[110,64.7],[120,69.7],[130,69.8],[140,66.6],[150,66.1],[160,57.7],[170,64.9],[180,69.4],[190,66.3],[200,65.5],[210,70.2],[220,67.0],[230,66.8],[240,66.5],[250,67.2],[260,71.0],[270,67.5],[280,67.9],[290,69.3],[300,72.4],[310,67.7],[320,69.0],[330,70.4],[340,68.3],[350,69.8],[360,68.9],[370,68.6],[380,70.0],[390,68.1],[400,67.8],[410,67.0],[420,67.4],[430,71.0],[440,66.8],[450,66.3],[460,66.9],[470,70.3],[480,68.6],[490,67.9],[500,69.7],[510,65.3],[520,68.4],[530,69.3],[540,70.0],[550,68.2],[560,69.8],[570,68.5],[580,79.6],[590,67.5],[600,67.4],[610,69.7],[620,67.9],[630,67.1],[640,67.5],[650,71.1],[660,73.9],[670,69.2],[680,68.4],[690,70.3],[700,74.2],[710,70.5],[720,73.3],[730,112.0],[740,395.9],[750,117.1],[760,87.1],[770,70.9],[780,74.3],[790,74.8],[800,85.9],[810,73.7],[820,75.3],[830,74.6],[840,72.5],[850,73.9],[860,71.1],[870,136.4],[880,73.2],[890,76.5],[900,73.3],[910,74.7],[920,67.8],[930,70.3],[940,67.1],[950,65.4],[960,45.4]];
+
+const labels = runA.map(d => d[0]);
+
+// Stage background colors
+const stageColors = ['#1a2535','#162a1e','#1a2535','#162a1e','#1a2535','#162a1e','#1a2535','#231a1a','#162a1e'];
+
+function stageAnnotations() {
+  const ann = {};
+  const names = ['Warm-up 0→5','Baseline 5VU','Ramp 5→25','Hold 25VU','Ramp 25→50','Hold 50VU','Ramp 50→100','Hold 100VU','Cool-down'];
+  const colors = ['rgba(88,166,255,0.06)','rgba(63,185,80,0.06)','rgba(88,166,255,0.06)','rgba(63,185,80,0.06)','rgba(88,166,255,0.06)','rgba(63,185,80,0.06)','rgba(188,140,255,0.08)','rgba(210,41,41,0.08)','rgba(63,185,80,0.06)'];
+  for (let i = 0; i < stagesBoundaries.length - 1; i++) {
+    ann['stage' + i] = {
+      type: 'box',
+      xMin: stagesBoundaries[i],
+      xMax: stagesBoundaries[i+1],
+      backgroundColor: colors[i],
+      borderWidth: 0,
+      label: { display: true, content: names[i], color: 'rgba(200,200,200,0.35)', font: { size: 9 }, position: 'start', yAdjust: -6 }
+    };
+  }
+  return ann;
+}
+
+Chart.register({
+  id: 'annotation',
+  beforeDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea) return;
+    const xScale = scales.x;
+    const boundaries = stagesBoundaries;
+    const colors = ['rgba(88,166,255,0.06)','rgba(63,185,80,0.06)','rgba(88,166,255,0.06)','rgba(63,185,80,0.06)','rgba(88,166,255,0.06)','rgba(63,185,80,0.06)','rgba(188,140,255,0.08)','rgba(210,41,41,0.08)','rgba(63,185,80,0.06)'];
+    const names = ['Warm-up\n0→5 VU','Baseline\n5 VU','Ramp\n5→25','Hold\n25 VU','Ramp\n25→50','Hold\n50 VU','Ramp\n50→100','Hold\n100 VU','Cool-down'];
+    ctx.save();
+    for (let i = 0; i < boundaries.length - 1; i++) {
+      const x0 = xScale.getPixelForValue(boundaries[i]);
+      const x1 = xScale.getPixelForValue(boundaries[i+1]);
+      ctx.fillStyle = colors[i];
+      ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.height);
+      ctx.fillStyle = 'rgba(160,160,160,0.3)';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      const lines = names[i].split('\n');
+      lines.forEach((line, li) => {
+        ctx.fillText(line, (x0+x1)/2, chartArea.top + 10 + li * 11);
+      });
+    }
+    ctx.restore();
+  }
+});
+
+const ctx = document.getElementById('latencyChart').getContext('2d');
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [
+      {
+        label: 'Run A — Internal p95 (ms)',
+        data: runA.map(d => d[1]),
+        borderColor: '#3fb950',
+        backgroundColor: 'rgba(63,185,80,0.08)',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: true,
+      },
+      {
+        label: 'Run B — External p95 (ms)',
+        data: runB.map(d => d[1]),
+        borderColor: '#58a6ff',
+        backgroundColor: 'rgba(88,166,255,0.08)',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: true,
+      },
+      {
+        label: '500ms gate',
+        data: labels.map(() => 500),
+        borderColor: 'rgba(248,81,73,0.4)',
+        borderWidth: 1,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        fill: false,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: {
+        type: 'linear',
+        title: { display: true, text: 'Elapsed (seconds)', color: '#7d8590', font: { size: 11 } },
+        ticks: { color: '#7d8590', font: { size: 10 }, stepSize: 60,
+          callback: v => v % 60 === 0 ? v + 's' : '' },
+        grid: { color: 'rgba(48,54,61,0.6)' },
+      },
+      y: {
+        title: { display: true, text: 'p95 latency (ms)', color: '#7d8590', font: { size: 11 } },
+        ticks: { color: '#7d8590', font: { size: 10 } },
+        grid: { color: 'rgba(48,54,61,0.6)' },
+        min: 0,
+        max: 450,
+      }
+    },
+    plugins: {
+      legend: {
+        labels: { color: '#c9d1d9', font: { size: 12 }, boxWidth: 14 }
+      },
+      tooltip: {
+        backgroundColor: '#161b22',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        titleColor: '#e6edf3',
+        bodyColor: '#c9d1d9',
+        callbacks: {
+          title: items => `t=${items[0].label}s`,
+          label: item => ` ${item.dataset.label}: ${item.formattedValue}ms`
+        }
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>
