@@ -3,6 +3,7 @@ from monitor.traffic import (
     classify_request,
     record_matches_filters,
     redact_sample,
+    status_band,
 )
 
 
@@ -28,6 +29,23 @@ def test_classifies_monitor_control_as_monitor():
     c = classify_request("POST", "/monitor/control/exec/start")
     assert c.traffic_class == "monitor"
     assert c.reason == "monitor_path"
+
+
+def test_classifies_metrics_descendants_as_monitor():
+    for path in (
+        "/metrics/service/fastapi",
+        "/metrics/logs/stream",
+        "/metrics/endpoint",
+    ):
+        c = classify_request("GET", path)
+        assert c.traffic_class == "monitor"
+        assert c.reason == "monitor_path"
+
+
+def test_classifies_metrics_prefix_without_boundary_as_unknown():
+    c = classify_request("GET", "/metricsfoo")
+    assert c.traffic_class == "unknown"
+    assert c.reason == "valid_unknown_path"
 
 
 def test_classifies_monitoring_as_unknown():
@@ -112,6 +130,22 @@ def test_record_filter_all_status_allows_missing_or_invalid_status():
     assert record_matches_filters(invalid, filters) is True
 
 
+def test_status_band_returns_none_for_1xx_status():
+    assert status_band(101) is None
+
+
+def test_record_filter_does_not_match_1xx_status_as_5xx():
+    record = {
+        "traffic_class": "app",
+        "method": "GET",
+        "path": "/api/v1/comics",
+        "status": 101,
+    }
+    filters = RequestFilters(status="5xx")
+
+    assert record_matches_filters(record, filters) is False
+
+
 def test_redact_sample_removes_extended_sensitive_query_values():
     sample = redact_sample(
         "/api/v1/comics?"
@@ -123,3 +157,10 @@ def test_redact_sample_removes_extended_sensitive_query_values():
         assert secret not in sample
     for key in ("session", "jwt", "signature", "credential", "code", "authorization"):
         assert f"{key}=REDACTED" in sample
+
+
+def test_redact_sample_removes_authorization_bearer_header_value():
+    sample = redact_sample("Authorization: Bearer header-secret")
+
+    assert "header-secret" not in sample
+    assert sample == "Authorization: Bearer REDACTED"

@@ -31,6 +31,7 @@ _TOKEN_RE = re.compile(
     r"(token|auth|password|secret|key|session|jwt|signature|credential|code|authorization)"
     r"=([^&\s]+)"
 )
+_AUTH_HEADER_RE = re.compile(r"(?i)(authorization\s*:\s*bearer\s+)([^\s&]+)")
 _HEX_ESCAPE_RE = re.compile(r"\\x[0-9a-fA-F]{2}")
 _CGI_TRAVERSAL_RE = re.compile(r"(?i)^/cgi-bin/.*(%2e|%%32%65|\.\.).*/bin/sh")
 _KNOWN_PROBE_PREFIXES = (
@@ -58,8 +59,7 @@ def classify_request(method: str, path: str) -> TrafficClassification:
         return TrafficClassification("app", "api_path")
 
     if (
-        raw == "/metrics"
-        or raw.startswith("/metrics?")
+        _matches_path_boundary(raw, "/metrics")
         or _matches_path_boundary(raw, "/monitor")
         or raw.startswith("/control/")
         or _matches_path_boundary(raw, "/static/controls.js")
@@ -78,14 +78,16 @@ def classify_request(method: str, path: str) -> TrafficClassification:
     return TrafficClassification("unknown", "valid_unknown_path")
 
 
-def status_band(status: int) -> Literal["2xx", "3xx", "4xx", "5xx"]:
+def status_band(status: int) -> Literal["2xx", "3xx", "4xx", "5xx"] | None:
     if 200 <= status < 300:
         return "2xx"
     if 300 <= status < 400:
         return "3xx"
     if 400 <= status < 500:
         return "4xx"
-    return "5xx"
+    if 500 <= status < 600:
+        return "5xx"
+    return None
 
 
 def record_matches_filters(record: dict, filters: RequestFilters) -> bool:
@@ -106,6 +108,7 @@ def record_matches_filters(record: dict, filters: RequestFilters) -> bool:
 
 def redact_sample(value: str, max_len: int = 120) -> str:
     redacted = _TOKEN_RE.sub(lambda m: f"{m.group(1)}=REDACTED", value or "")
+    redacted = _AUTH_HEADER_RE.sub(lambda m: f"{m.group(1)}REDACTED", redacted)
     return redacted[:max_len]
 
 
@@ -125,7 +128,7 @@ def _parse_http_status(value: object) -> int | None:
         status = int(value)
     except (TypeError, ValueError):
         return None
-    if 100 <= status <= 599:
+    if 200 <= status <= 599:
         return status
     return None
 
