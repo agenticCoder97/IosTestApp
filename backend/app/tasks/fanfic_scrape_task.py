@@ -9,6 +9,10 @@ from app.models.fanfic import Fanfic, FanficChapter, FanficAuthor
 from app.models.author import Author
 from app.models.scrape import ScrapeJob, ScrapeLog
 from app.utils.image_utils import ensure_fanfic_covers, random_fanfic_cover
+from app.services.fanfic_source_thumbnail_resolver import (
+    is_generic_fanfic_thumbnail,
+    resolve_fanfic_source_thumbnail,
+)
 from app.core.constants import ScrapeStatus, JobStatus
 from app.scrapers.base import CookieExpiredError, ScraperError
 from app.scrapers.validation import validate_chapter_content
@@ -172,11 +176,15 @@ async def fanfic_scrape_task(ctx, job_id: str):
                     if not existing_fa.scalar_one_or_none():
                         db.add(FanficAuthor(fanfic_id=fanfic.id, author_id=author.id))
 
-                # ── Thumbnail (generic placeholder) ────────────────────
-                if not fanfic.thumbnail_path:
+                # ── Thumbnail ──────────────────────────────────────────
+                if is_generic_fanfic_thumbnail(fanfic.thumbnail_path):
                     from app.core.config import settings
-                    ensure_fanfic_covers(settings.block_volume_path)
-                    fanfic.thumbnail_path = random_fanfic_cover()
+                    source_thumbnail_path = await resolve_fanfic_source_thumbnail(fanfic, settings.block_volume_path)
+                    if source_thumbnail_path:
+                        fanfic.thumbnail_path = source_thumbnail_path
+                    elif not fanfic.thumbnail_path:
+                        ensure_fanfic_covers(settings.block_volume_path)
+                        fanfic.thumbnail_path = random_fanfic_cover()
                     logger.info("fanfic_scrape_task thumbnail assigned | job_id=%s path=%s", job_id, fanfic.thumbnail_path)
 
             await db.commit()

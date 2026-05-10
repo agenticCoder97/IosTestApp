@@ -25,6 +25,12 @@ def _build_engine():
             pool_timeout=30,
             echo=False,
         )
+    elif settings.database_url.startswith("sqlite"):
+        logger.info("Connecting to SQLite database")
+        engine = create_async_engine(
+            settings.database_url,
+            echo=False,
+        )
     else:
         logger.info("Connecting to PostgreSQL database")
         engine = create_async_engine(
