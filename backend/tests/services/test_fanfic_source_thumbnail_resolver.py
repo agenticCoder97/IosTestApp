@@ -27,6 +27,21 @@ def test_ao3_source_candidates_prefer_english_pipe_aliases():
     assert candidates == ["Genshin Impact"]
 
 
+def test_ao3_source_candidates_collapse_related_star_wars_tags():
+    candidates = ao3_source_candidates(
+        "Star Wars - All Media Types, Star Wars Prequel Trilogy, "
+        "Star Wars: The Clone Wars (2008) - All Media Types"
+    )
+    assert candidates == ["Star Wars"]
+
+
+def test_ao3_source_candidates_collapse_highschool_dxd_aliases():
+    candidates = ao3_source_candidates(
+        "Highschool DxD (Anime), ハイスクール DxD - 石踏 一榮 | High School DxD - Ishibumi Ichiei"
+    )
+    assert candidates == ["High School DxD"]
+
+
 def test_ao3_source_candidates_skip_rpf_and_original_work():
     assert ao3_source_candidates("Football RPF") == []
     assert ao3_source_candidates("Original Work") == []

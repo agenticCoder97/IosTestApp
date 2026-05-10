@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 SOURCE_THUMBNAIL_DIR = "fanfic-source-thumbnails"
 WIKIPEDIA_API_URL = "https://en.wikipedia.org/w/api.php"
 REQUEST_HEADERS = {
-    "User-Agent": "Astral/1.0 fanfic source thumbnail resolver",
+    "User-Agent": "Astral/1.0 fanfic source thumbnail resolver (https://github.com/agenticCoder97/IosTestApp)",
 }
 
 _ALIASES = {
@@ -21,9 +21,14 @@ _ALIASES = {
     "harry potter": "Harry Potter",
     "naruto": "Naruto",
     "star wars - all media types": "Star Wars",
+    "star wars prequel trilogy": "Star Wars",
+    "star wars: the clone wars": "Star Wars",
+    "star wars: the clone wars (2008)": "Star Wars",
     "star wars": "Star Wars",
     "marvel cinematic universe": "Marvel Cinematic Universe",
     "the avengers (marvel movies)": "Marvel Cinematic Universe",
+    "marvel (comics)": "Marvel Comics",
+    "x-men - all media types": "X-Men",
     "batman - all media types": "Batman",
     "batman": "Batman",
     "supernatural (tv 2005)": "Supernatural (American TV series)",
@@ -36,6 +41,9 @@ _ALIASES = {
     "bungo stray dogs": "Bungo Stray Dogs",
     "haikyuu!!": "Haikyu!!",
     "haikyu!!": "Haikyu!!",
+    "highschool dxd": "High School DxD",
+    "high school dxd": "High School DxD",
+    "rwby": "RWBY",
 }
 
 _AMBIGUOUS_RE = re.compile(
