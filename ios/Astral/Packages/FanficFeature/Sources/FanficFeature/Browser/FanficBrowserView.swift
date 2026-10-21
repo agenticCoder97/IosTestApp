@@ -20,42 +20,6 @@ struct FanficBrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button("Import text file", systemImage: "folder") { showFileImport = true }
-                Spacer()
-            }.padding(.horizontal, 16).padding(.vertical, 8)
-            Text("UTF-8 .txt; saved as a single chapter.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16)
-
-            // Source dropdown
-            HStack {
-                Menu {
-                    ForEach(FanficSource.allCases, id: \.self) { source in
-                        Button {
-                            viewModel.selectedSource = source
-                        } label: {
-                            Label(sourceLabel(source), systemImage: viewModel.selectedSource == source ? "checkmark" : "")
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "globe")
-                            .font(.system(size: 14))
-                        Text(sourceLabel(viewModel.selectedSource))
-                            .font(AstralTypography.bodyMedium)
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(AstralColors.muted)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(AstralColors.elevated, in: Capsule())
-                }
-                .tint(AstralColors.gold)
-                .disabled(viewModel.isScraping)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
 
             if viewModel.isScraping {
                 HStack { Text("Importing on this device…").font(.callout); Spacer(); Button("Cancel") { cancelImport() } }.padding(.horizontal, 16)
@@ -164,9 +128,12 @@ struct FanficBrowserView: View {
             // WebView
             FanficWebViewRepresentable(viewModel: viewModel)
                 .allowsHitTesting(!viewModel.isScraping)
-                .ignoresSafeArea(edges: .bottom)
         }
         .background(AstralColors.background)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { sourceMenu }
+            ToolbarItem(placement: .topBarTrailing) { fileImportButton }
+        }
         .fileImporter(isPresented: $showFileImport, allowedContentTypes: [.plainText]) { result in
             do {
                 let story = try LocalFileImportService.importText(result.get(), context: modelContext)
@@ -206,6 +173,36 @@ struct FanficBrowserView: View {
             }
         }
         .animation(AstralAnimation.smooth, value: viewModel.scrapeToast?.message)
+    }
+
+    private var sourceMenu: some View {
+        Menu {
+            ForEach(FanficSource.allCases, id: \.self) { source in
+                Button {
+                    viewModel.selectedSource = source
+                } label: {
+                    Label(sourceLabel(source), systemImage: viewModel.selectedSource == source ? "checkmark" : "")
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "globe")
+                Text(sourceLabel(viewModel.selectedSource))
+                Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+            }
+            .font(.subheadline.weight(.medium))
+        }
+        .accessibilityLabel("Choose source")
+        .accessibilityValue(sourceLabel(viewModel.selectedSource))
+        .disabled(viewModel.isScraping)
+    }
+
+    private var fileImportButton: some View {
+        Button("Import text file", systemImage: "doc.badge.plus") { showFileImport = true }
+            .labelStyle(.iconOnly)
+            .accessibilityHint("Choose a UTF-8 text file to save as a single chapter.")
+            .accessibilityIdentifier("fanfic.browser.fileImport")
+            .disabled(viewModel.isScraping)
     }
 
     private func sourceLabel(_ source: FanficSource) -> String {

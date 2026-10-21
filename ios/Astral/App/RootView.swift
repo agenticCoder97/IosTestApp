@@ -18,10 +18,12 @@ struct RootView: View {
             ZStack {
                 ComicTabView(onSwitchTab: { activeType = "fanfic" })
                     .opacity(activeType == "comic" ? 1 : 0)
+                    .zIndex(activeType == "comic" ? 1 : 0)
                     .allowsHitTesting(activeType == "comic")
                     .accessibilityHidden(activeType != "comic")
                 FanficTabView(onSwitchTab: { activeType = "comic" })
                     .opacity(activeType == "fanfic" ? 1 : 0)
+                    .zIndex(activeType == "fanfic" ? 1 : 0)
                     .allowsHitTesting(activeType == "fanfic")
                     .accessibilityHidden(activeType != "fanfic")
             }
