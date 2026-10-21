@@ -37,6 +37,8 @@ struct FanficSidebarView: View {
                 .frame(width: sidebarWidth)
                 .background(AstralColors.surface)
             }
+            .accessibilityHidden(!isOpen)
+            .allowsHitTesting(isOpen)
             .offset(x: isOpen ? 0 : sidebarWidth)
         }
         .animation(.spring(duration: 0.35, bounce: 0.15), value: isOpen)

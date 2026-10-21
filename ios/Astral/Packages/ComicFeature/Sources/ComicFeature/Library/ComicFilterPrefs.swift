@@ -1,7 +1,7 @@
 import Foundation
 
 /// Codable snapshot of ComicFilterState for @AppStorage persistence.
-struct ComicFilterPrefs: Codable {
+struct ComicFilterPrefs: Codable, Equatable {
     var showArchived: Bool = false
     var completionStatus: String? = nil
     var tagsKeyword: String = ""

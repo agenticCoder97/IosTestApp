@@ -27,6 +27,7 @@ final class FanficFilterState {
             || !relationship.isEmpty
             || sourceKey != nil
             || sortBy != .lastRead
+            || sortAscending
     }
 
     func reset() {

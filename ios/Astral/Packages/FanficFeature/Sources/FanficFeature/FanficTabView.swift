@@ -1,150 +1,82 @@
 import SwiftUI
+import SwiftData
 import Core
 import DesignSystem
 
 public struct FanficTabView: View {
     @State private var navigation = FanficNavigation()
+    @Query private var fanfics: [LocalFanfic]
     @State private var showFilter = false
-    @AppStorage("fanfic.filter.v1") private var filterPrefsJSON: String = ""
-    var onSwitchTab: () -> Void
-
-    public init(onSwitchTab: @escaping () -> Void = {}) {
-        self.onSwitchTab = onSwitchTab
-    }
-
+    @AppStorage("fanfic.filter.v1") private var filterPrefsJSON = ""
+    private let onSwitchTab: () -> Void
+    public init(onSwitchTab: @escaping () -> Void = {}) { self.onSwitchTab = onSwitchTab }
     public var body: some View {
-        ZStack {
-            AstralColors.background
-                .ignoresSafeArea()
-
+        TabView(selection: $navigation.activeSection) {
             NavigationStack {
                 VStack(spacing: 0) {
-                    // Search bar — slides in when active
-                    AstralSearchBar(
-                        text: $navigation.searchText,
-                        isActive: $navigation.isSearchActive,
-                        placeholder: "Title, fandom, character, relationship..."
-                    )
-
-                    // Main content
-                    Group {
-                        switch navigation.activeSection {
-                        case .library:
-                            FanficLibraryView(searchText: $navigation.searchText, filterFavourites: false, filterState: navigation.filterState)
-                        case .favourites:
-                            FanficLibraryView(searchText: .constant(""), filterFavourites: true, filterState: navigation.filterState)
-                        case .browse:
-                            FanficBrowserView()
-                        case .scrapes:
-                            FanficScrapesView()
-                        case .stats:
-                            FanficStatsView()
-                        }
-                    }
+                    AstralSearchBar(text: $navigation.searchText, isActive: $navigation.isSearchActive,
+                                    placeholder: "Title, author, tag…")
+                    FanficLibraryView(searchText: $navigation.searchText, filterFavourites: navigation.showFavourites, filterState: navigation.filterState)
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    onSwitchTab()
-                                }
-                            } label: {
-                                Label("Comics", systemImage: "book.fill")
-                            }
-                            Button {
-                                // Already on Fan Fiction tab
-                            } label: {
-                                Label("Fan Fiction", systemImage: "scroll.fill")
-                            }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "scroll.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                Text("Fan Fiction")
-                                    .font(AstralTypography.title)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(AstralColors.muted)
-                            }
-                        }
-                        .tint(AstralColors.gold)
+                            Button("Switch to Comics", action: onSwitchTab)
+                        } label: { HStack(spacing: 6) { Image(systemName: "scroll.fill"); Text("Fan Fiction") }.font(.headline) }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 14) {
-                            // Search toggle
-                            Button {
-                                withAnimation(AstralAnimation.quick) {
-                                    navigation.isSearchActive.toggle()
-                                    if !navigation.isSearchActive {
-                                        navigation.searchText = ""
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: navigation.isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
-                                    .foregroundStyle(navigation.isSearchActive ? AstralColors.gold : AstralColors.body)
+                        HStack(spacing: 0) {
+                            Button { navigation.showFavourites.toggle() } label: {
+                                Image(systemName: navigation.showFavourites ? "heart.fill" : "heart")
                             }
-
-                            // Filter
-                            Button {
-                                showFilter = true
-                            } label: {
-                                Image(systemName: navigation.filterState.isActive
-                                    ? "line.3.horizontal.decrease.circle.fill"
-                                    : "line.3.horizontal.decrease.circle")
-                                    .foregroundStyle(navigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
+                            .accessibilityLabel("Favourites")
+                            .accessibilityValue(navigation.showFavourites ? "Showing favourites" : "Showing all")
+                            .frame(minWidth: 44, minHeight: 44)
+                            Button { navigation.isSearchActive.toggle() } label: { Image(systemName: "magnifyingglass") }
+                                .accessibilityLabel("Search library").frame(minWidth: 44, minHeight: 44)
+                            Button { showFilter = true } label: {
+                                Image(systemName: navigation.filterState.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                             }
-                            .buttonStyle(PressButtonStyle(scale: 0.88))
-
-                            // Sidebar
-                            Button {
-                                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                                    navigation.isSidebarOpen.toggle()
-                                }
-                            } label: {
-                                Image(systemName: "line.3.horizontal")
-                                    .foregroundStyle(AstralColors.body)
-                            }
-                            .accessibilityIdentifier(AccessibilityID.sidebarToggle)
+                            .accessibilityLabel("Filter library").frame(minWidth: 44, minHeight: 44)
                         }
                     }
                 }
             }
-            .environment(\.fanficNavigation, navigation)
-            .onAppear {
-                if let data = filterPrefsJSON.data(using: .utf8),
-                   let prefs = try? JSONDecoder().decode(FanficFilterPrefs.self, from: data) {
-                    navigation.filterState.load(from: prefs)
+            .tabItem { Label("Library", systemImage: "books.vertical") }.tag(FanficSection.library)
+            NavigationStack { FanficBrowserView() }
+                .tabItem { Label("Add", systemImage: "plus.circle") }.tag(FanficSection.browse)
+            NavigationStack {
+                LocalActivityView(contentType: "fanfic", retry: { job in navigation.ao3WorkURL = job.sourceUrl.flatMap(URL.init(string:)); navigation.activeSection = .browse }) { job in
+                    if let story = fanfics.first(where: { $0.id == job.storyId }) {
+                        FanficDetailView(fanfic: story)
+                    } else { ContentUnavailableView("Story is no longer in your library", systemImage: "books.vertical") }
                 }
             }
-            .onChange(of: navigation.filterState.snapshotForPersistence.sortBy) { _, _ in saveFilterPrefs() }
-            .onChange(of: navigation.filterState.snapshotForPersistence.fandom) { _, _ in saveFilterPrefs() }
-            .onChange(of: navigation.filterState.snapshotForPersistence.completionStatus) { _, _ in saveFilterPrefs() }
-            .onChange(of: navigation.filterState.snapshotForPersistence.sourceKey) { _, _ in saveFilterPrefs() }
-            .sheet(isPresented: $showFilter) {
-                FanficFilterView(filterState: navigation.filterState)
-                    .presentationDetents([.medium, .large])
-            }
-
-            FanficSidebarView(
-                isOpen: $navigation.isSidebarOpen,
-                activeSection: $navigation.activeSection
-            )
+                .tabItem { Label("Activity", systemImage: "arrow.down.circle") }.tag(FanficSection.scrapes)
+            NavigationStack { LibrarySettingsView { FanficStatsView() } }
+                .tabItem { Label("Settings", systemImage: "gearshape") }.tag(FanficSection.settings)
         }
-    }
-
-    private func saveFilterPrefs() {
-        if let data = try? JSONEncoder().encode(navigation.filterState.snapshotForPersistence),
-           let str = String(data: data, encoding: .utf8) {
-            filterPrefsJSON = str
+        .tint(AstralColors.gold)
+        .environment(\.fanficNavigation, navigation)
+        .onAppear {
+            if let data = filterPrefsJSON.data(using: .utf8),
+               let prefs = try? JSONDecoder().decode(FanficFilterPrefs.self, from: data) { navigation.filterState.load(from: prefs) }
+        }
+        .onChange(of: navigation.filterState.snapshotForPersistence) { _, value in
+            if let data = try? JSONEncoder().encode(value), let text = String(data: data, encoding: .utf8) { filterPrefsJSON = text }
+        }
+        .sheet(isPresented: $showFilter) {
+            FanficFilterView(filterState: navigation.filterState).presentationDetents([.medium, .large])
         }
     }
 }
 
 @Observable
 final class FanficNavigation {
+    var ao3WorkURL: URL?
     var activeSection: FanficSection = .library
     var isSidebarOpen = false
+    var showFavourites = false
     var searchText = ""
     var isSearchActive = false
     var filterState = FanficFilterState()
@@ -170,9 +102,10 @@ extension EnvironmentValues {
 enum FanficSection: String, CaseIterable {
     case library = "Library"
     case favourites = "Favourites"
-    case browse = "Browse"
-    case scrapes = "Scrapes"
+    case browse = "Add"
+    case scrapes = "Activity"
     case stats = "Stats"
+    case settings = "Settings"
 
     var icon: String {
         switch self {
@@ -181,6 +114,7 @@ enum FanficSection: String, CaseIterable {
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
         case .stats: "chart.bar"
+        case .settings: "gearshape"
         }
     }
 }

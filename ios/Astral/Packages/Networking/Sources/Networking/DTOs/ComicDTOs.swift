@@ -33,6 +33,9 @@ public struct ComicChapterResponse: Codable, Sendable, Identifiable {
 }
 
 public struct PageResponse: Codable, Sendable, Identifiable {
+    public init(id: UUID, pageNumber: Int, filePath: String, sourceUrl: String? = nil, widthPx: Int? = nil, heightPx: Int? = nil) {
+        self.id = id; self.pageNumber = pageNumber; self.filePath = filePath; self.sourceUrl = sourceUrl; self.widthPx = widthPx; self.heightPx = heightPx
+    }
     public let id: UUID
     public let pageNumber: Int
     public let filePath: String

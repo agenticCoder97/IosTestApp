@@ -27,6 +27,7 @@ final class ComicFilterState {
             || category != nil
             || sourceKey != nil
             || sortBy != .lastRead
+            || sortAscending
     }
 
     func reset() {

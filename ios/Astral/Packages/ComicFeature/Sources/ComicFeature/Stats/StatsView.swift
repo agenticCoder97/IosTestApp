@@ -8,7 +8,7 @@ import StatsUI
 /// FanficStatsView; both are now ~10-line wrappers around
 /// `SharedStatsView` in the `StatsUI` package.
 struct StatsView: View {
-    var body: some View { SharedStatsView() }
+    var body: some View { SharedStatsView(initialScope: "comic") }
 }
 
 #Preview("Full Stats") {

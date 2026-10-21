@@ -12,6 +12,9 @@ struct FanficFilterView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
+                    if let low = filterState.wordCountMin, let high = filterState.wordCountMax, low > high {
+                        Text("Minimum words must not exceed maximum words.").foregroundStyle(AstralColors.error)
+                    }
                     // MARK: Sort
                     FilterSectionCard("Sort") {
                         FlowLayout(spacing: 8) {
@@ -133,6 +136,7 @@ struct FanficFilterView: View {
         case .general: "G"
         case .teen: "T"
         case .mature: "M"
+        case .notRated: "Not rated"
         case .explicit: "E"
         }
     }

@@ -1,84 +1,45 @@
 import Foundation
 import SwiftData
+import Observation
 import Core
 
-/// Orchestrates permanent deletion of a story (comic or fanfic).
-/// Local SwiftData + downloaded files are purged first; backend
-/// call is attempted and, on failure, queued for launch-time retry.
-@MainActor
+/// Commits model deletion and a tombstone before removing saved files. A failed
+/// database save rolls back without touching the sole on-device content copy.
+@MainActor @Observable
 public final class StoryDeletionService {
     public static let shared = StoryDeletionService()
+    public private(set) var errorMessage: String?
     private init() {}
+    public func clearError() { errorMessage = nil }
 
-    public func permanentlyDelete(
-        comic: LocalComic,
-        modelContext: ModelContext,
-        deleteFiles: @MainActor @escaping () -> Void
-    ) async {
-        let id = comic.id
-        AstralLogger.info("permanentlyDelete comic | id=\(id)", context: "StoryDeletion")
-
-        deleteFiles()
-        await purgeLocalReferences(storyId: id, contentType: "comic", modelContext: modelContext)
-        modelContext.delete(comic)
-        try? modelContext.save()
-
-        do {
-            try await APIClient.shared.requestVoid(.permanentDeleteComic(id: id))
-            AstralLogger.info("permanentlyDelete comic backend ok | id=\(id)", context: "StoryDeletion")
-        } catch {
-            AstralLogger.warning("permanentlyDelete comic backend failed, queueing | id=\(id) error=\(error)", context: "StoryDeletion")
-            modelContext.insert(PendingRemoteDeletion(storyId: id, contentType: "comic"))
-            try? modelContext.save()
-        }
+    public func permanentlyDelete(comic: LocalComic, modelContext: ModelContext, deleteFiles: @MainActor @escaping () -> Void) async {
+        await delete(story: comic, id: comic.id, type: "comic", remote: !["local", "mangadex-device", "nhentai", "toongod", "hentai20"].contains(comic.sourceKey), context: modelContext)
     }
-
-    public func permanentlyDelete(
-        fanfic: LocalFanfic,
-        modelContext: ModelContext,
-        deleteFiles: @MainActor @escaping () -> Void
-    ) async {
-        let id = fanfic.id
-        AstralLogger.info("permanentlyDelete fanfic | id=\(id)", context: "StoryDeletion")
-
-        deleteFiles()
-        await purgeLocalReferences(storyId: id, contentType: "fanfic", modelContext: modelContext)
-        modelContext.delete(fanfic)
-        try? modelContext.save()
-
-        do {
-            try await APIClient.shared.requestVoid(.permanentDeleteFanfic(id: id))
-            AstralLogger.info("permanentlyDelete fanfic backend ok | id=\(id)", context: "StoryDeletion")
-        } catch {
-            AstralLogger.warning("permanentlyDelete fanfic backend failed, queueing | id=\(id) error=\(error)", context: "StoryDeletion")
-            modelContext.insert(PendingRemoteDeletion(storyId: id, contentType: "fanfic"))
-            try? modelContext.save()
-        }
+    public func permanentlyDelete(fanfic: LocalFanfic, modelContext: ModelContext, deleteFiles: @MainActor @escaping () -> Void) async {
+        await delete(story: fanfic, id: fanfic.id, type: "fanfic", remote: !["ao3", "ffnet", "local"].contains(fanfic.sourceKey), context: modelContext)
     }
-
-    private func purgeLocalReferences(storyId: UUID, contentType: String, modelContext: ModelContext) async {
-        let targetStoryId = storyId
-        let targetContentType = contentType
-
-        let bookmarkFetch = FetchDescriptor<LocalBookmark>(
-            predicate: #Predicate { $0.storyId == targetStoryId && $0.contentType == targetContentType }
-        )
-        if let bookmarks = try? modelContext.fetch(bookmarkFetch) {
-            bookmarks.forEach { modelContext.delete($0) }
+    private func delete<T: PersistentModel>(story: T, id: UUID, type: String, remote: Bool, context: ModelContext) async {
+        do {
+            try LocalStorageService.ensureIdle(id, context: context)
+            try context.save()
+            let bookmarks = try context.fetch(FetchDescriptor<LocalBookmark>(predicate: #Predicate { $0.storyId == id }))
+            let sessions = try context.fetch(FetchDescriptor<LocalReadingSession>(predicate: #Predicate { $0.storyId == id }))
+            let jobs = try context.fetch(FetchDescriptor<LocalScrapeJob>(predicate: #Predicate { $0.storyId == id }))
+            bookmarks.forEach { context.delete($0) }; sessions.forEach { context.delete($0) }; jobs.forEach { context.delete($0) }
+            if remote { context.insert(PendingRemoteDeletion(storyId: id, contentType: type)) }
+            context.delete(story)
+            try context.save()
+        } catch {
+            context.rollback(); errorMessage = "The story could not be deleted. Saved files were retained. " + error.localizedDescription
+            return
         }
-
-        let sessionFetch = FetchDescriptor<LocalReadingSession>(
-            predicate: #Predicate { $0.storyId == targetStoryId && $0.contentType == targetContentType }
-        )
-        if let sessions = try? modelContext.fetch(sessionFetch) {
-            sessions.forEach { modelContext.delete($0) }
-        }
-
-        let scrapeFetch = FetchDescriptor<LocalScrapeJob>(
-            predicate: #Predicate { $0.storyId == targetStoryId }
-        )
-        if let jobs = try? modelContext.fetch(scrapeFetch) {
-            jobs.forEach { modelContext.delete($0) }
-        }
+        let directory = URL.documentsDirectory.appendingPathComponent((type == "comic" ? "comics/" : "fanfics/") + id.uuidString)
+        do { if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) } }
+        catch { errorMessage = "The story was removed from the library, but its files could not be removed: " + error.localizedDescription }
+        if type == "comic" { try? FileManager.default.removeItem(at: URL.documentsDirectory.appendingPathComponent("comicSources/" + id.uuidString)) }
+        guard remote, AppConfig.companionEnabled else { return }
+        do {
+            try await APIClient.shared.requestVoid(type == "comic" ? .permanentDeleteComic(id: id) : .permanentDeleteFanfic(id: id))
+        } catch { AstralLogger.warning("Companion deletion pending; local tombstone retained.", context: "Deletion") }
     }
 }

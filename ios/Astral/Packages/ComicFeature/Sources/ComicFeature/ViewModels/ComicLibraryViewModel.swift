@@ -11,6 +11,7 @@ final class ComicLibraryViewModel {
     private static let syncInterval: TimeInterval = 120 // 2 minutes
 
     func fetchComics(modelContext: ModelContext, force: Bool = false) async {
+        guard AppConfig.companionEnabled else { return }
         if !force, let last = lastSyncTime, Date().timeIntervalSince(last) < Self.syncInterval {
             AstralLogger.info("fetchComics skipped — last sync \(Int(Date().timeIntervalSince(last)))s ago", context: "ComicLibraryVM")
             return
@@ -21,12 +22,18 @@ final class ComicLibraryViewModel {
         AstralLogger.info("fetchComics started", context: "ComicLibraryVM")
 
         do {
-            let response: PaginatedResponse<ComicResponse> = try await APIClient.shared.request(
-                .comics()
-            )
+            var response: PaginatedResponse<ComicResponse> = try await APIClient.shared.request(.comics())
+            var allItems = response.items
+            var page = 1
+            while page < response.totalPages {
+                page += 1
+                response = try await APIClient.shared.request(.comics(page: page))
+                allItems += response.items
+            }
             AstralLogger.info("fetchComics got \(response.items.count) comics (page \(response.page)/\(response.totalPages))", context: "ComicLibraryVM")
 
-            for dto in response.items {
+            let deleted = Set(try modelContext.fetch(FetchDescriptor<PendingRemoteDeletion>()).map(\.storyId))
+            for dto in allItems where !deleted.contains(dto.id) {
                 let descriptor = FetchDescriptor<LocalComic>(
                     predicate: #Predicate<LocalComic> { $0.id == dto.id }
                 )
@@ -65,33 +72,16 @@ final class ComicLibraryViewModel {
                     localComic = comic
                 }
 
+                UserDefaults.standard.set(dto.sourceUrl, forKey: "reading.source." + dto.id.uuidString)
                 if let chapters = dto.chapters {
                     try upsertChapters(chapters, for: localComic, in: modelContext)
                 }
             }
             try modelContext.save()
 
-            // Sync server reading progress — restores position after a SwiftData wipe.
-            // Only advances local progress; never overwrites a chapter the user has read further.
-            let progressList: [ProgressResponse] = try await APIClient.shared.request(.allProgress(contentType: "comic"))
-            let progressByStoryId = Dictionary(uniqueKeysWithValues: progressList.map { ($0.storyId, $0) })
-
-            let allComicsDescriptor = FetchDescriptor<LocalComic>()
-            let allComics = (try? modelContext.fetch(allComicsDescriptor)) ?? []
-            for comic in allComics {
-                guard let progress = progressByStoryId[comic.id],
-                      progress.lastChapterNumber > comic.lastReadChapterNumber else { continue }
-                comic.lastReadChapterNumber = progress.lastChapterNumber
-                if comic.totalChapters > 0 {
-                    comic.progressPercent = Double(progress.lastChapterNumber) / Double(comic.totalChapters)
-                }
-            }
-            for comic in allComics {
-                comic.lastSyncedAt = .now
-            }
-            try modelContext.save()
+            // Reading position belongs to this device; companion metadata never advances it.
             lastSyncTime = .now
-        } catch let error as APIError where error == .cookieRefreshNeeded {
+        } catch APIError.cookieRefreshNeeded {
             errorMessage = "Browser refresh needed"
             AstralLogger.warning("fetchComics: cookie refresh needed", context: "ComicLibraryVM")
         } catch let urlError as URLError where urlError.code == .cancelled {
@@ -125,18 +115,15 @@ final class ComicLibraryViewModel {
         in modelContext: ModelContext
     ) throws {
         let comicID = comic.id
-        let chapterIDs = Set(chapters.map(\.id))
         let existingDescriptor = FetchDescriptor<LocalComicChapter>(
             predicate: #Predicate<LocalComicChapter> { $0.comicId == comicID }
         )
         let existingChapters = try modelContext.fetch(existingDescriptor)
         let existingByID = Dictionary(uniqueKeysWithValues: existingChapters.map { ($0.id, $0) })
 
-        for existing in existingChapters where !chapterIDs.contains(existing.id) {
-            modelContext.delete(existing)
-        }
-
+        // A partial response must not delete chapters already saved on this device.
         for dto in chapters {
+            if let sourceURL = dto.sourceUrl { UserDefaults.standard.set(sourceURL, forKey: "reading.chapterSource." + dto.id.uuidString) }
             if let existing = existingByID[dto.id] {
                 existing.chapterNumber = dto.chapterNumber
                 existing.title = dto.title
@@ -156,12 +143,5 @@ final class ComicLibraryViewModel {
                 modelContext.insert(chapter)
             }
         }
-    }
-}
-
-extension APIError: Equatable {
-
-    public static func == (lhs: APIError, rhs: APIError) -> Bool {
-        lhs.localizedDescription == rhs.localizedDescription
     }
 }

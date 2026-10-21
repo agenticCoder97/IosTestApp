@@ -16,21 +16,28 @@ import DesignSystem
 ///   • Bookmark analytics section (AST-69)
 public struct SharedStatsView: View {
     @Query(filter: #Predicate<LocalComic> { $0.status != "deleted" })
-    private var comics: [LocalComic]
+    private var allComics: [LocalComic]
 
     @Query(filter: #Predicate<LocalFanfic> { $0.completionStatus != "deleted" })
-    private var fanfics: [LocalFanfic]
+    private var allFanfics: [LocalFanfic]
 
-    @Query private var bookmarks: [LocalBookmark]
+    @Query private var allBookmarks: [LocalBookmark]
 
     @Query(sort: \LocalReadingSession.startedAt, order: .reverse)
-    private var sessions: [LocalReadingSession]
+    private var allSessions: [LocalReadingSession]
 
-    @Query private var comicChapters: [LocalComicChapter]
+    @Query private var allComicChapters: [LocalComicChapter]
 
     @State private var selectedDay: SelectedDay?
 
-    public init() {}
+    @State private var scope: String
+    public init(initialScope: String = "all") { _scope = State(initialValue: initialScope) }
+    private var comics: [LocalComic] { scope == "fanfic" ? [] : allComics }
+    private var fanfics: [LocalFanfic] { scope == "comic" ? [] : allFanfics }
+    private var bookmarks: [LocalBookmark] { allBookmarks.filter { scope == "all" || $0.contentType == scope } }
+    private var sessions: [LocalReadingSession] { allSessions.filter { scope == "all" || $0.contentType == scope } }
+    private var comicChapters: [LocalComicChapter] { scope == "fanfic" ? [] : allComicChapters }
+
 
     private var agg: StatsAggregates {
         StatsAggregates(
@@ -44,12 +51,17 @@ public struct SharedStatsView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                heroSection.staggeredAppear(index: 0)
-                heatmapSection.staggeredAppear(index: 1)
-                backlogSection.staggeredAppear(index: 2)
-                breakdownSection.staggeredAppear(index: 3)
-                bookmarkAnalyticsSection.staggeredAppear(index: 4)
-                timelineSection.staggeredAppear(index: 5)
+                Picker("Reading history scope", selection: $scope) {
+                    Text("All").tag("all"); Text("Comics").tag("comic"); Text("Fanfic").tag("fanfic")
+                }.pickerStyle(.segmented).padding(.horizontal, 16)
+                Text("Words and pages are estimates from reading position. Chapter opens and session time describe activity, not proof of completion.")
+                    .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
+                heroSection
+                heatmapSection
+                backlogSection
+                breakdownSection
+                bookmarkAnalyticsSection
+                timelineSection
 
                 Spacer().frame(height: 100)
             }
@@ -68,7 +80,7 @@ public struct SharedStatsView: View {
         VStack(spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Reading Stats")
+                    Text("Reading history")
                         .font(AstralTypography.title)
                         .foregroundStyle(AstralColors.white)
                     Text("\(comics.count + fanfics.count) stories in library")
@@ -93,13 +105,13 @@ public struct SharedStatsView: View {
             HStack(spacing: 12) {
                 odometerCard(
                     value: StatsFormat.compactNumber(agg.totalWordsRead),
-                    label: "Words Read",
+                    label: "Estimated words",
                     icon: "text.word.spacing",
                     sublabel: agg.novelEquivalent >= 1 ? String(format: "%.1f novels", agg.novelEquivalent) : nil
                 )
                 odometerCard(
                     value: StatsFormat.compactNumber(agg.totalPagesViewed),
-                    label: "Pages Viewed",
+                    label: "Estimated pages",
                     icon: "photo.on.rectangle",
                     sublabel: nil
                 )
@@ -108,7 +120,7 @@ public struct SharedStatsView: View {
             HStack(spacing: 12) {
                 odometerCard(
                     value: "\(agg.totalChaptersRead)",
-                    label: "Chapters Read",
+                    label: "Chapter opens",
                     icon: "book.pages",
                     sublabel: nil
                 )
@@ -1028,6 +1040,7 @@ private struct HeatmapCell: View {
         }
         .buttonStyle(.plain)
         .disabled(count == 0)
+        .accessibilityLabel((date?.formatted(date: .complete, time: .omitted) ?? "No date") + ", \(count) reading sessions")
     }
 }
 

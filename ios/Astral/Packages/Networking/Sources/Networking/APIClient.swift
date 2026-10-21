@@ -24,6 +24,7 @@ public actor APIClient {
     }
 
     public func request<T: Decodable & Sendable>(_ endpoint: Endpoint) async throws -> T {
+        guard AppConfig.companionEnabled else { throw APIError.companionUnavailable }
         let urlRequest = try endpoint.urlRequest()
         let method = urlRequest.httpMethod ?? "GET"
         let path = urlRequest.url?.path ?? "?"
@@ -55,7 +56,7 @@ public actor APIClient {
             do {
                 return try decoder.decode(T.self, from: data)
             } catch {
-                let preview = String(data: data.prefix(200), encoding: .utf8) ?? "<binary>"
+                let preview = "[response omitted]"
                 AstralLogger.error("\(method) \(path) — decode failed: \(error)\nBody: \(preview)")
                 throw error
             }
@@ -69,17 +70,18 @@ public actor APIClient {
             AstralLogger.warning("\(method) \(path) → 429 rate limited (\(ms)ms)")
             throw APIError.rateLimited
         case 500...599:
-            let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            let body = "[response omitted]"
             AstralLogger.error("\(method) \(path) → \(status) server error (\(ms)ms)\n\(body)")
             throw APIError.serverError(status)
         default:
-            let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            let body = "[response omitted]"
             AstralLogger.error("\(method) \(path) → \(status) (\(ms)ms)\n\(body)")
             throw APIError.httpError(status)
         }
     }
 
     public func requestVoid(_ endpoint: Endpoint) async throws {
+        guard AppConfig.companionEnabled else { throw APIError.companionUnavailable }
         let urlRequest = try endpoint.urlRequest()
         let method = urlRequest.httpMethod ?? "GET"
         let path = urlRequest.url?.path ?? "?"
@@ -87,7 +89,7 @@ public actor APIClient {
 
         AstralLogger.network("\(method) \(path) →")
 
-        let (data, response) = try await session.data(for: urlRequest)
+        let (_, response) = try await session.data(for: urlRequest)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             AstralLogger.error("\(method) \(path) — invalid response")
@@ -98,9 +100,11 @@ public actor APIClient {
         let status = httpResponse.statusCode
 
         guard (200...299).contains(status) else {
-            let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            let body = "[response omitted]"
             AstralLogger.error("\(method) \(path) → \(status) (\(ms)ms)\n\(body)")
             if status == 428 { throw APIError.cookieRefreshNeeded }
+            if status == 404 { throw APIError.notFound }
+            if status == 429 { throw APIError.rateLimited }
             throw APIError.httpError(status)
         }
 
@@ -111,6 +115,7 @@ public actor APIClient {
     /// match-proposed response based on body shape. Both come back as 2xx.
     public func submitScrape(_ request: ScrapeRequest) async throws -> ScrapeOutcome {
         let endpoint = Endpoint.initiateScrape(request)
+        guard AppConfig.companionEnabled else { throw APIError.companionUnavailable }
         let urlRequest = try endpoint.urlRequest()
         let method = urlRequest.httpMethod ?? "POST"
         let path = urlRequest.url?.path ?? "?"
@@ -150,6 +155,7 @@ public actor APIClient {
 }
 
 public enum APIError: LocalizedError, Sendable {
+    case companionUnavailable
     case invalidResponse
     case cookieRefreshNeeded
     case notFound
@@ -161,6 +167,7 @@ public enum APIError: LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
+        case .companionUnavailable: "This source needs an optional companion. Configure its address in Settings."
         case .invalidResponse: "Invalid server response"
         case .cookieRefreshNeeded: "Browser refresh needed"
         case .notFound: "Resource not found"

@@ -17,58 +17,45 @@ class AstralAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct AstralApp: App {
     @UIApplicationDelegateAdaptor(AstralAppDelegate.self) var appDelegate
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            LocalComic.self,
-            LocalComicChapter.self,
-            LocalFanfic.self,
-            LocalFanficChapter.self,
-            LocalAuthor.self,
-            UserPreferences.self,
-            LocalScrapeJob.self,
-            LocalBookmark.self,
-            LocalReadingSession.self,
-            PendingRemoteDeletion.self,
-        ])
-        let modelConfiguration = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false
-        )
+    @State private var store = Self.openStore()
+
+    private static func openStore() -> Result<ModelContainer, Error> {
         do {
-            return try ModelContainer(
-                for: schema,
-                configurations: [modelConfiguration]
-            )
+            try LibraryBackupService.applyPendingRestore()
+            let schema = Schema([
+                LocalComic.self, LocalComicChapter.self, LocalFanfic.self, LocalFanficChapter.self,
+                LocalAuthor.self, UserPreferences.self, LocalScrapeJob.self, LocalBookmark.self,
+                LocalReadingSession.self, PendingRemoteDeletion.self,
+            ])
+            return .success(try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema)]))
         } catch {
-            AstralLogger.warning("SwiftData store incompatible — deleting and recreating: \(error)")
-            let storeURL = modelConfiguration.url
-            try? FileManager.default.removeItem(at: storeURL)
-            // SQLite also writes -wal and -shm sidecar files; remove them too.
-            for suffix in ["-wal", "-shm"] {
-                try? FileManager.default.removeItem(
-                    at: storeURL.deletingLastPathComponent()
-                        .appending(path: storeURL.lastPathComponent + suffix)
-                )
-            }
-            do {
-                return try ModelContainer(for: schema, configurations: [modelConfiguration])
-            } catch let retryError {
-                AstralLogger.error("ModelContainer creation failed after retry: \(retryError)")
-                fatalError("Could not create ModelContainer: \(retryError)")
-            }
+            AstralLogger.error("Library could not be opened. Files preserved: \(error)")
+            return .failure(error)
         }
-    }()
+    }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .task { ContentBlocker.shared.precompile() }
-                .task {
-                    let context = sharedModelContainer.mainContext
-                    OrphanCleanupService.cleanOnLaunch(modelContext: context)
-                    PendingDeletionDrainService.drain(modelContext: context)
-                }
+            switch store {
+            case .success(let container):
+                RootView()
+                    .modelContainer(container)
+                    .task { ContentBlocker.shared.precompile() }
+                    .task {
+                        #if DEBUG
+                        do { try DevelopmentReaderCorpus.installIfRequested(context: container.mainContext) }
+                        catch { AstralLogger.error("Reader fixture creation failed: \(error)") }
+                        #endif
+                        do { try LocalStorageService.recoverInterruptedRemoval(context: container.mainContext) }
+                        catch { AstralLogger.error("Storage recovery needs attention: \(error)") }
+                        OrphanCleanupService.cleanOnLaunch(modelContext: container.mainContext)
+                        if AppConfig.companionEnabled {
+                            PendingDeletionDrainService.drain(modelContext: container.mainContext)
+                        }
+                    }
+            case .failure(let error):
+                LibraryRecoveryView(message: error.localizedDescription) { store = Self.openStore() }
+            }
         }
-        .modelContainer(sharedModelContainer)
     }
 }

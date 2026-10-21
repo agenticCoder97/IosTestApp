@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import SwiftData
 import WebKit
 import Core
@@ -6,11 +7,25 @@ import DesignSystem
 import Networking
 
 struct FanficBrowserView: View {
+    @State private var showFileImport = false
+    @State private var fileImportMessage: String?
+
     @State private var viewModel = FanficBrowserViewModel()
+    @State private var importError: String?
+    @State private var importTask: Task<Void, Never>?
+    @State private var importedWork: LocalFanfic?
+    @State private var readImported = false
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.fanficNavigation) private var fanficNavigation
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Button("Import text file", systemImage: "folder") { showFileImport = true }
+                Spacer()
+            }.padding(.horizontal, 16).padding(.vertical, 8)
+            Text("UTF-8 .txt; saved as a single chapter.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16)
+
             // Source dropdown
             HStack {
                 Menu {
@@ -36,11 +51,24 @@ struct FanficBrowserView: View {
                     .background(AstralColors.elevated, in: Capsule())
                 }
                 .tint(AstralColors.gold)
+                .disabled(viewModel.isScraping)
                 Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
+            if viewModel.isScraping {
+                HStack { Text("Importing on this device…").font(.callout); Spacer(); Button("Cancel") { cancelImport() } }.padding(.horizontal, 16)
+            } else if let importedWork {
+                HStack {
+                    Text("Saved: " + importedWork.title).font(.callout).lineLimit(1)
+                    Button("Read now") { readImported = true }
+                    Button("View in library") { fanficNavigation?.activeSection = .library }
+                    Button("Dismiss", systemImage: "xmark") { self.importedWork = nil }.labelStyle(.iconOnly)
+                }.padding(12)
+            }
+            Text("Open a story, then tap Import. Chapters are saved on this device. Keep Astral open until the import finishes.")
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 6)
             // Loading progress bar
             if viewModel.isLoading {
                 ProgressView(value: viewModel.loadProgress)
@@ -89,8 +117,20 @@ struct FanficBrowserView: View {
                 .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 6))
 
                 Button(action: {
-                    Task {
-                        if let job = await viewModel.extractCookiesAndScrape() {
+                    importTask = Task { @MainActor in
+                        if [.ao3, .ffnet].contains(viewModel.selectedSource) {
+                            guard let webView = viewModel.webView else { return }
+                            viewModel.isScraping = true
+                            defer { viewModel.isScraping = false }
+                            do {
+                                importedWork = try await AO3ImportService.shared.importWork(from: webView, modelContext: modelContext, onCancel: { cancelImport() })
+                                fanficNavigation?.ao3WorkURL = nil
+                            } catch is CancellationError {
+                                // Leaving an import doesn't create a partial library entry.
+                            } catch {
+                                importError = error.localizedDescription
+                            }
+                        } else if let job = await viewModel.extractCookiesAndScrape() {
                             modelContext.insert(job)
                         }
                     }
@@ -105,8 +145,10 @@ struct FanficBrowserView: View {
                             .foregroundColor(viewModel.canScrape ? AstralColors.gold : .secondary)
                     }
                 }
-                .disabled(!viewModel.canScrape || viewModel.isScraping)
+                .disabled(!viewModel.canScrape || viewModel.isScraping || viewModel.isLoading)
                 .buttonStyle(PressButtonStyle(scale: 0.85))
+                .accessibilityLabel(viewModel.selectedSource == .ao3 ? "Import AO3 work" : "Import FFNet story")
+                .accessibilityIdentifier("fanfic.browser.import")
 
                 Button {
                     viewModel.resetToSourceHome()
@@ -115,14 +157,47 @@ struct FanficBrowserView: View {
                         .foregroundColor(.primary)
                 }
             }
+            .disabled(viewModel.isScraping)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
 
             // WebView
             FanficWebViewRepresentable(viewModel: viewModel)
+                .allowsHitTesting(!viewModel.isScraping)
                 .ignoresSafeArea(edges: .bottom)
         }
         .background(AstralColors.background)
+        .fileImporter(isPresented: $showFileImport, allowedContentTypes: [.plainText]) { result in
+            do {
+                let story = try LocalFileImportService.importText(result.get(), context: modelContext)
+                fileImportMessage = "Saved: " + story.title + ". Open it from Library or Activity."
+            } catch { fileImportMessage = error.localizedDescription }
+        }
+        .alert("File import", isPresented: Binding(get: { fileImportMessage != nil }, set: { if !$0 { fileImportMessage = nil } })) {
+            Button("OK") { fileImportMessage = nil }
+        } message: { Text(fileImportMessage ?? "") }
+
+        .navigationTitle("Add fan fiction").navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $readImported) {
+            if let importedWork {
+                ImportedFanficReader(fanfic: importedWork)
+            }
+        }
+        .onAppear {
+            if let url = fanficNavigation?.ao3WorkURL {
+                viewModel.selectedSource = AO3ImportService.ffnetURL(from: url) != nil ? .ffnet : .ao3
+                viewModel.savedURLs[viewModel.selectedSource] = url
+                viewModel.webView?.load(URLRequest(url: url))
+            }
+        }
+        .alert("Story import", isPresented: Binding(
+            get: { importError != nil },
+            set: { if !$0 { importError = nil } }
+        )) {
+            Button("OK", role: .cancel) { importError = nil }
+        } message: {
+            Text(importError ?? "")
+        }
         .overlay(alignment: .bottom) {
             if let toast = viewModel.scrapeToast {
                 ToastView(toast.message, isSuccess: toast.isSuccess)
@@ -139,6 +214,15 @@ struct FanficBrowserView: View {
         case .ffnet: "FFNet"
         }
     }
+    private func cancelImport() {
+        importTask?.cancel()
+        if let webView = viewModel.webView {
+            Task { @MainActor in
+                _ = try? await webView.callAsyncJavaScript("globalThis.__astralAO3ImportAbort?.abort()", arguments: [:], in: nil, contentWorld: .defaultClient)
+            }
+        }
+    }
+
 }
 
 @MainActor @Observable
@@ -189,7 +273,7 @@ final class FanficBrowserViewModel {
         isScraping = true
         defer { isScraping = false }
 
-        let store = await webView.configuration.websiteDataStore.httpCookieStore
+        let store = webView.configuration.websiteDataStore.httpCookieStore
         let allCookies = await store.allCookies()
 
         let sourceCookies = CookieStore.shared.filterCookies(
@@ -248,12 +332,11 @@ final class FanficBrowserViewModel {
             canScrape = false
             return
         }
-        let path = url.path
         switch selectedSource {
         case .ao3:
-            canScrape = path.contains("/works/")
+            canScrape = AO3ImportService.workURL(from: url) != nil
         case .ffnet:
-            canScrape = path.contains("/s/")
+            canScrape = AO3ImportService.ffnetURL(from: url) != nil
         }
     }
 
@@ -332,7 +415,7 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
             if navigationAction.navigationType == .other && navigationAction.targetFrame == nil {
                 decisionHandler(.cancel)
@@ -391,20 +474,35 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
 
         // MARK: - WKUIDelegate
 
-        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable () -> Void) {
             completionHandler()
         }
 
-        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
             completionHandler(false)
         }
 
-        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (String?) -> Void) {
             completionHandler(nil)
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             return nil
+        }
+    }
+}
+
+private struct ImportedFanficReader: View {
+    let fanfic: LocalFanfic
+    @Query private var chapters: [LocalFanficChapter]
+    init(fanfic: LocalFanfic) {
+        self.fanfic = fanfic
+        let id = fanfic.id
+        _chapters = Query(filter: #Predicate<LocalFanficChapter> { $0.fanficId == id }, sort: \LocalFanficChapter.chapterNumber)
+    }
+    var body: some View {
+        if let chapter = chapters.first(where: { $0.id == ReadingPositionStore.position(story: fanfic.id)?.chapterID }) ?? chapters.first {
+            FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: chapter)
         }
     }
 }

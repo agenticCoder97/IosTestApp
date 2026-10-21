@@ -125,6 +125,7 @@ public struct DebugShakeDetector<Content: View>: View {
     }
 
     public var body: some View {
+        #if DEBUG
         content
             .onShake {
                 showConsole = true
@@ -132,6 +133,9 @@ public struct DebugShakeDetector<Content: View>: View {
             .sheet(isPresented: $showConsole) {
                 DebugConsoleView()
             }
+        #else
+        content
+        #endif
     }
 }
 

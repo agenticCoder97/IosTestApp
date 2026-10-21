@@ -18,6 +18,11 @@ public final class OrphanCleanupService {
     /// Run all cleanup tasks. Call once on app launch.
     @MainActor
     public static func cleanOnLaunch(modelContext: ModelContext) {
+        if let jobs = try? modelContext.fetch(FetchDescriptor<LocalScrapeJob>()) {
+            for job in jobs where (job.jobType ?? "").hasPrefix("local") && ["running", "queued"].contains(job.status) {
+                job.status = "failed"; job.errorMessage = "Interrupted when Astral closed. Retry to continue; saved chapters were retained."; job.completedAt = .now
+            }
+        }
         cleanTempDirectory()
         reconcileComicDownloads(modelContext: modelContext)
         reconcileFanficDownloads(modelContext: modelContext)

@@ -28,9 +28,11 @@ struct FanficDetailView: View {
     }
 
     @State private var activeTab: FanficDetailTab = .chapters
+    @State private var downloadTask: Task<Void, Never>?
     @State private var isDownloading = false
     @State private var downloadProgress: (Int, Int) = (0, 0)
     @State private var isRescraping = false
+    @State private var selectedBookmark: LocalBookmark?
     @State private var selectedChapter: LocalFanficChapter?
     @State private var showDeleteAlert = false
 
@@ -42,13 +44,8 @@ struct FanficDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Metadata header
-                if fanfic.summary != nil || fanfic.fandom != nil || fanfic.wordCount != nil {
-                    metadataHeader
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                }
-
+                if let rating = fanfic.rating { Text(rating).font(.subheadline).padding(.horizontal, 16) }
+                if let warnings = fanfic.warnings, !warnings.isEmpty { Text(warnings).font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16) }
                 // Continue Reading
                 if !chapters.isEmpty {
                     FanficContinueReadingButton(
@@ -60,6 +57,13 @@ struct FanficDetailView: View {
                     )
                     .accessibilityIdentifier(AccessibilityID.detailContinueReading)
                     .padding(.horizontal, 16)
+                }
+
+                // Metadata header
+                if fanfic.summary != nil || fanfic.fandom != nil || fanfic.wordCount != nil {
+                    DisclosureGroup("Story details, rating and warnings") { metadataHeader }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
                 }
 
                 // MARK: Tab bar (Chapters / Bookmarks / Download)
@@ -77,26 +81,13 @@ struct FanficDetailView: View {
                         .buttonStyle(.plain)
                     }
 
-                    // Download to device icon
-                    Button {
-                        handleDownloadTap()
-                    } label: {
-                        Group {
-                            if isDownloading {
-                                ProgressView()
-                                    .tint(AstralColors.gold)
-                                    .scaleEffect(0.7)
-                            } else {
-                                let savedCount = chapters.filter { $0.localTextPath != nil }.count
-                                Image(systemName: savedCount == chapters.count && !chapters.isEmpty
-                                      ? "arrow.down.circle.fill" : "arrow.down.to.line")
-                                    .foregroundStyle(savedCount == chapters.count && !chapters.isEmpty
-                                                     ? AstralColors.success : AstralColors.muted)
-                            }
-                        }
-                        .frame(width: 44, height: 36)
+                    if !["ao3", "ffnet"].contains(fanfic.sourceKey) {
+                        Button("Download", systemImage: "arrow.down.to.line") { handleDownloadTap() }
+                            .labelStyle(.iconOnly).frame(width: 44, height: 44)
+                            .disabled(fanfic.sourceKey == "local" || isDownloading || fanfic.isFullyDownloaded)
+                            .accessibilityLabel(fanfic.isFullyDownloaded ? "Saved on this device" : "Download chapters")
                     }
-                    .buttonStyle(.plain)
+
                 }
                 .background(AstralColors.elevated)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -109,7 +100,7 @@ struct FanficDetailView: View {
                         EmptyStateView(
                             icon: "scroll",
                             title: "No Chapters Yet",
-                            message: "Scrape this story from the browser to load its chapters."
+                            message: "Open this story in Browse and import it to load its chapters."
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.top, 40)
@@ -122,8 +113,8 @@ struct FanficDetailView: View {
                                     FanficChapterRow(
                                         chapter: chapter,
                                         isLastRead: chapter.chapterNumber == (fanfic.lastReadChapterNumber ?? 0),
-                                        isRead: chapter.chapterNumber < (fanfic.lastReadChapterNumber ?? 0),
-                                        isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+                                        isRead: false,
+                                        isBookmarked: bookmarks.contains { BookmarkAnchorStore.chapter(for: $0.id).map { $0 == chapter.id } ?? ($0.chapterNumber == chapter.chapterNumber) }
                                     )
                                 }
                                 .accessibilityIdentifier(AccessibilityID.chapterRow(Int(chapter.chapterNumber)))
@@ -158,7 +149,8 @@ struct FanficDetailView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(bookmarks) { bookmark in
                                 Button {
-                                    if let chapter = chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
+                                    if let chapter = chapters.first(where: { $0.id == BookmarkAnchorStore.chapter(for: bookmark.id) }) ?? chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
+                                        selectedBookmark = bookmark
                                         selectedChapter = chapter
                                     }
                                 } label: {
@@ -212,8 +204,8 @@ struct FanficDetailView: View {
             .padding(.bottom, 100)
         }
         .background(AstralColors.background)
-        .fullScreenCover(item: $selectedChapter) { chapter in
-            FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter)
+        .fullScreenCover(item: $selectedChapter, onDismiss: { selectedBookmark = nil }) { chapter in
+            FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter, bookmark: selectedBookmark)
         }
         .navigationTitle(fanfic.title)
         .navigationBarTitleDisplayMode(.large)
@@ -231,7 +223,8 @@ struct FanficDetailView: View {
                             .foregroundStyle(AstralColors.gold)
                     }
                 }
-                .disabled(isRescraping)
+                .disabled(isRescraping || fanfic.sourceKey == "local")
+                .accessibilityLabel(["ao3", "ffnet"].contains(fanfic.sourceKey) ? "Update from source" : "Refresh story")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -269,29 +262,25 @@ struct FanficDetailView: View {
         )
         .onAppear {
             fanfic.seenTotalChapters = fanfic.totalChapters
-            fanfic.lastReadAt = .now
             try? modelContext.save()
         }
         .task { await syncChapters() }
     }
 
     private func syncChapters() async {
+        guard !["ao3", "ffnet"].contains(fanfic.sourceKey), AppConfig.companionEnabled else { return }
         do {
             let response: FanficResponse = try await APIClient.shared.request(
                 .fanficDetail(id: fanfic.id)
             )
             guard let dtoChapters = response.chapters else { return }
             let fid = fanfic.id
-            let chapterIDs = Set(dtoChapters.map(\.id))
             let descriptor = FetchDescriptor<LocalFanficChapter>(
                 predicate: #Predicate<LocalFanficChapter> { $0.fanficId == fid }
             )
             let existing = (try? modelContext.fetch(descriptor)) ?? []
             let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
 
-            for old in existing where !chapterIDs.contains(old.id) {
-                modelContext.delete(old)
-            }
             for dto in dtoChapters {
                 if let ch = existingByID[dto.id] {
                     ch.chapterNumber = dto.chapterNumber
@@ -347,7 +336,7 @@ struct FanficDetailView: View {
                 Text(summary)
                     .font(AstralTypography.body)
                     .foregroundStyle(AstralColors.body)
-                    .lineLimit(6)
+
             }
 
             // Status row
@@ -368,18 +357,18 @@ struct FanficDetailView: View {
 
             // Stats row — unified labels across AO3 and FFNet
             if fanfic.hits != nil || fanfic.kudos != nil || fanfic.commentsCount != nil || fanfic.bookmarksCount != nil {
-                HStack(spacing: 14) {
+                FlowLayout(spacing: 14) {
                     if let hits = fanfic.hits {
                         statPill(icon: "eye", value: formatStat(hits), label: "Views")
                     }
                     if let kudos = fanfic.kudos {
-                        statPill(icon: "heart", value: formatStat(kudos), label: "Likes")
+                        statPill(icon: "heart", value: formatStat(kudos), label: "Kudos")
                     }
                     if let comments = fanfic.commentsCount {
                         statPill(icon: "bubble.left", value: formatStat(comments), label: "Comments")
                     }
                     if let bookmarks = fanfic.bookmarksCount {
-                        statPill(icon: "bookmark", value: formatStat(bookmarks), label: "Saves")
+                        statPill(icon: "bookmark", value: formatStat(bookmarks), label: "Source bookmarks")
                     }
                 }
             }
@@ -454,9 +443,7 @@ struct FanficDetailView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AstralColors.muted)
                 .tracking(0.8)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) { content() }
-            }
+            FlowLayout(spacing: 8) { content() }
         }
     }
 
@@ -510,24 +497,26 @@ struct FanficDetailView: View {
     }
 
     private func handleDownloadTap() {
+        guard fanfic.sourceKey != "local" else { return }
         guard !isDownloading else { return }
 
-        let allComplete = !chapters.isEmpty && chapters.allSatisfy { $0.downloadStatus == .complete }
-        if allComplete {
-            FanficDownloadService.shared.deleteAllChapters(
-                fanfic: fanfic,
-                chapters: Array(chapters),
-                modelContext: modelContext
-            )
+        if ["ao3", "ffnet"].contains(fanfic.sourceKey) {
+            // The imported files are the only local copy. Updating them is
+            // an explicit reimport; never toggle the saved copy off here.
+            openAO3Import()
             return
         }
 
+        let allComplete = !chapters.isEmpty && chapters.allSatisfy { $0.downloadStatus == .complete }
+        guard !allComplete else { return }
+
         isDownloading = true
-        Task {
+        downloadTask = Task {
             await FanficDownloadService.shared.downloadAllChapters(
                 fanfic: fanfic,
                 chapters: Array(chapters),
                 modelContext: modelContext,
+                onCancel: { downloadTask?.cancel() },
                 onProgress: { completed, total in
                     downloadProgress = (completed, total)
                 }
@@ -544,10 +533,15 @@ struct FanficDetailView: View {
             scrollPercent: fanfic.scrollOffsetPercent
         )
         modelContext.insert(bookmark)
+        BookmarkAnchorStore.save(bookmark: bookmark.id, chapter: chapter.id)
         try? modelContext.save()
     }
 
     private func rescrape() {
+        if ["ao3", "ffnet"].contains(fanfic.sourceKey) {
+            openAO3Import()
+            return
+        }
         isRescraping = true
         Task {
             let _: ScrapeJobResponse? = try? await APIClient.shared.request(
@@ -557,9 +551,16 @@ struct FanficDetailView: View {
         }
     }
 
+    private func openAO3Import() {
+        guard let url = fanfic.sourceUrl.flatMap(URL.init(string:)),
+              (AO3ImportService.workURL(from: url) ?? AO3ImportService.ffnetURL(from: url)) != nil else { return }
+        fanficNavigation?.ao3WorkURL = url
+        dismiss()
+        fanficNavigation?.activeSection = .browse
+    }
+
     private func deleteBookmark(_ bookmark: LocalBookmark) {
-        modelContext.delete(bookmark)
-        try? modelContext.save()
+        BookmarkUndoService.shared.delete(bookmark, context: modelContext)
     }
 }
 

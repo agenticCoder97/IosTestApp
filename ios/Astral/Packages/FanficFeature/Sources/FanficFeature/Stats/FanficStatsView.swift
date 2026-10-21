@@ -7,7 +7,7 @@ import StatsUI
 /// `StatsUI.SharedStatsView` for the unified implementation used by
 /// both tabs.
 struct FanficStatsView: View {
-    var body: some View { SharedStatsView() }
+    var body: some View { SharedStatsView(initialScope: "fanfic") }
 }
 
 #Preview("Full Stats") {

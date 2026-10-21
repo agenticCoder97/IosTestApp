@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// LRU disk cache for thumbnail and cover images.
 /// Stores images in Library/Caches/thumbnails/ with a 200MB limit.
@@ -36,8 +37,9 @@ public actor ImageCacheService {
     /// Cache image data and return the local URL.
     public func cache(data: Data, for remotePath: String) throws -> URL {
         let fileURL = cacheDir.appendingPathComponent(cacheKey(for: remotePath))
-        try data.write(to: fileURL)
-        Task { await evictIfNeeded() }
+        try fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        try data.write(to: fileURL, options: .atomic)
+        evictIfNeeded()
         return fileURL
     }
 
@@ -72,11 +74,6 @@ public actor ImageCacheService {
     }
 
     private func cacheKey(for remotePath: String) -> String {
-        // Simple hash-based filename using djb2
-        let hash = remotePath.utf8.reduce(into: UInt64(5381)) { hash, byte in
-            hash = hash &* 33 &+ UInt64(byte)
-        }
-        let ext = (remotePath as NSString).pathExtension
-        return "\(hash).\(ext.isEmpty ? "jpg" : ext)"
+        SHA256.hash(data: Data(remotePath.utf8)).map { String(format: "%02x", $0) }.joined() + ".image"
     }
 }

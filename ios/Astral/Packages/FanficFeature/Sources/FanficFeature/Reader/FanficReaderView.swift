@@ -7,11 +7,14 @@ import Networking
 struct FanficReaderView: View {
     let fanfic: LocalFanfic
     let allChapters: [LocalFanficChapter]
+    private let initialBookmark: LocalBookmark?
+    @State private var appliedInitialBookmark = false
     private let previewContent: String?
 
     @State private var currentChapter: LocalFanficChapter
 
-    init(fanfic: LocalFanfic, chapters: [LocalFanficChapter], chapter: LocalFanficChapter, previewContent: String? = nil) {
+    init(fanfic: LocalFanfic, chapters: [LocalFanficChapter], chapter: LocalFanficChapter, previewContent: String? = nil, bookmark: LocalBookmark? = nil) {
+        self.initialBookmark = bookmark
         self.fanfic = fanfic
         self.allChapters = chapters
         self.previewContent = previewContent
@@ -20,10 +23,11 @@ struct FanficReaderView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var chapterContent = ""
     @State private var isLoading = true
-    @State private var showReaderBar = false
+    @State private var showReaderBar = true
     @State private var showReaderSettings = false
     @AppStorage("fanficReaderFontSize") private var fontSize: Double = 16
     @AppStorage("fanficReaderLineHeight") private var lineHeight: Double = 1.6
@@ -41,304 +45,163 @@ struct FanficReaderView: View {
     @State private var horizontalPage: String? = "current"
     @State private var scrollPercentThrottle = ThrottledSetter<Double>(interval: 0.08)
 
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @AppStorage("readerAlwaysShowControls") private var alwaysShowControls = false
+    @State private var capturedPixelOffset: Double?
+    @State private var capturedParagraph = 0
+    @State private var capturedLayoutSignature: String?
+    @State private var viewportWidth: CGFloat = 0
+    @State private var didRestoreAnchor = false
+    @State private var pendingLayoutSignature: String?
+    @State private var pendingPixelOffset: Double?
+    @State private var visibleParagraph: Int?
+    @State private var scrollController = ReaderScrollController()
+    @State private var pullProgress = 0.0
+    @State private var isTransitioning = false
+    @State private var transitionError: String?
+    @State private var failedChapter: LocalFanficChapter?
+    @State private var previousJump: LocalFanficChapter?
+
     var body: some View {
         ZStack {
             backgroundColor.ignoresSafeArea()
-
             if isLoading {
-                ProgressView()
-                    .tint(AstralColors.gold)
-                    .scaleEffect(1.2)
+                ProgressView("Opening chapter…").tint(AstralColors.gold)
             } else if offlineError && chapterContent.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "cloud.slash")
-                        .font(.system(size: 44))
-                        .foregroundStyle(AstralColors.muted)
-                    Text("Chapter not available offline")
-                        .font(AstralTypography.body)
-                        .foregroundStyle(AstralColors.body)
-                    Text("Download this chapter or connect to read")
-                        .font(AstralTypography.caption)
-                        .foregroundStyle(AstralColors.muted)
+                ContentUnavailableView {
+                    Label("Chapter unavailable", systemImage: "book.closed")
+                } description: {
+                    Text(["ao3", "ffnet"].contains(fanfic.sourceKey) ? "Return to the story and update from its source to restore the saved chapter." : "Save this chapter with a connected companion, then try again.")
+                } actions: {
+                    Button("Try again") { Task { await loadChapter() } }
+                    Button("Back") { dismiss() }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // Horizontal paging: prev chapter | current chapter | next chapter
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 0) {
-                        // Previous chapter placeholder
-                        if let prev = previousChapter {
-                            chapterPlaceholder(chapter: prev, direction: "Previous Chapter", icon: "chevron.left")
-                                .containerRelativeFrame([.horizontal, .vertical])
-                                .id("prev")
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: paragraphSpacing) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Chapter \(chapterDisplayNum)").font(.subheadline).foregroundStyle(textColor.opacity(0.75))
+                                if let title = currentChapter.title { Text(title).font(fontFamily.boldFont(size: fontSize * 1.2)).foregroundStyle(textColor) }
+                            }
+                            .padding(.bottom, 16)
+                            ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
+                                Text(isSceneBreak(paragraph) ? "* * *" : paragraph)
+                                    .font(fontFamily.font(size: fontSize))
+                                    .lineSpacing((lineHeight - 1) * fontSize)
+                                    .foregroundStyle(textColor)
+                                    .frame(maxWidth: .infinity, alignment: isSceneBreak(paragraph) ? .center : .leading)
+                                    .id(index)
+                                    .onTapGesture { toggleControls() }
+                                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                                        bookmarkParagraphIndex = index; showBookmarkSheet = true
+                                    })
+                                    .accessibilityAction(named: "Bookmark passage") {
+                                        bookmarkParagraphIndex = index; showBookmarkSheet = true
+                                    }
+                            }
                         }
-
-                        // Current chapter — vertical scroll content
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: paragraphSpacing) {
-                                    // Chapter header
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Chapter \(currentChapter.chapterNumber, specifier: "%.0f")")
-                                            .font(fontFamily.font(size: fontSize * 0.75))
-                                            .tracking(1.5)
-                                            .textCase(.uppercase)
-                                            .foregroundStyle(AstralColors.muted)
-
-                                        if let title = currentChapter.title {
-                                            Text(title)
-                                                .font(fontFamily.boldFont(size: fontSize * 1.2))
-                                                .foregroundStyle(textColor)
-                                        }
-
-
-                                    }
-                                    .padding(.bottom, 4)
-
-                                    // Divider between header and content
-                                    HStack(spacing: 8) {
-                                        Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
-                                        Image(systemName: "diamond.fill")
-                                            .font(.system(size: 5))
-                                            .foregroundStyle(AstralColors.muted.opacity(0.5))
-                                        Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
-                                    }
-                                    .padding(.bottom, 4)
-
-                                    ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
-                                        if isSceneBreak(paragraph) {
-                                            // Scene break — centered ornament
-                                            HStack {
-                                                Spacer()
-                                                Text("* * *")
-                                                    .font(fontFamily.font(size: fontSize))
-                                                    .tracking(6)
-                                                    .foregroundStyle(AstralColors.muted.opacity(0.6))
-                                                Spacer()
-                                            }
-                                            .padding(.vertical, 8)
-                                            .id(index)
-                                        } else {
-                                            Text(paragraph)
-                                                .font(fontFamily.font(size: fontSize))
-                                                .lineSpacing((lineHeight - 1.0) * fontSize)
-                                                .foregroundStyle(textColor)
-                                                .id(index)
-                                                .onAppear {
-                                                    guard hasRestoredScroll else { return }
-                                                    if paragraphs.count > 1 {
-                                                        let pct = Double(index) / Double(paragraphs.count - 1)
-                                                        scrollPercentThrottle.set(pct) { fanfic.scrollOffsetPercent = $0 }
-                                                    }
-                                                }
-                                                .simultaneousGesture(
-                                                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                                                        bookmarkParagraphIndex = index
-                                                        showBookmarkSheet = true
-                                                    }
-                                                )
-                                        }
-                                    }
-
-                                    // Chapter navigation footer
-                                    chapterNavigationFooter
+                        .scrollTargetLayout()
+                        .padding(.horizontal, horizontalMargin)
+                        .padding(.top, 80)
+                        .padding(.bottom, 90)
+                        .background(ReaderScrollMonitor(controller: scrollController, enabled: !isTransitioning && !showReaderSettings && !showChapterList,
+                            onPosition: { fraction in
+                                guard hasRestoredScroll else { return }
+                                scrollPercentThrottle.set(fraction) {
+                                    fanfic.scrollOffsetPercent = $0
+                                    capturedPixelOffset = scrollController.offset
+                                    capturedParagraph = visibleParagraph ?? 0
+                                    capturedLayoutSignature = layoutSignature
                                 }
-                                .padding(.horizontal, horizontalMargin)
-                                .padding(.vertical, 10)
-                                .animation(AstralAnimation.quick, value: fontSize)
-                                .animation(AstralAnimation.quick, value: lineHeight)
-                                .animation(AstralAnimation.quick, value: horizontalMargin)
-                                .padding(.bottom, 100)
-                            }
-                            .onAppear {
-                                guard !hasRestoredScroll else { return }
-                                if let target = scrollTargetIndex {
-                                    proxy.scrollTo(target, anchor: .top)
-                                    hasRestoredScroll = true
-                                } else {
-                                    hasRestoredScroll = true
-                                }
-                            }
-                            .onChange(of: scrollTargetIndex) { _, newTarget in
-                                guard !hasRestoredScroll, let target = newTarget else { return }
-                                proxy.scrollTo(target, anchor: .top)
-                                hasRestoredScroll = true
-                            }
-                            .id(currentChapter.id)
-                            .transition(.opacity.animation(ReaderMotion.chapterCrossfade))
-                        }
-                        .containerRelativeFrame([.horizontal, .vertical])
-                        .id("current")
-
-                        // Next chapter placeholder
-                        if let next = nextChapter {
-                            chapterPlaceholder(chapter: next, direction: "Next Chapter", icon: "chevron.right")
-                                .containerRelativeFrame([.horizontal, .vertical])
-                                .id("next")
-                        }
+                            }, onPull: { pullProgress = $0 }, onRelease: { next in
+                                if let chapter = next ? nextChapter : previousChapter { navigateTo(chapter) }
+                            }))
                     }
-                    .scrollTargetLayout()
-                }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $horizontalPage)
-                .onChange(of: horizontalPage) { _, newPage in
-                    guard let newPage, newPage != "current" else { return }
-                    if newPage == "prev", let prev = previousChapter {
-                        horizontalPage = "current"
-                        navigateTo(prev)
-                    } else if newPage == "next", let next = nextChapter {
-                        horizontalPage = "current"
-                        navigateTo(next)
+                    .scrollBounceBehavior(.always, axes: .vertical)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0; restorePixelsIfCompatible() }
+                    .scrollPosition(id: $visibleParagraph, anchor: .top)
+                    .task(id: currentChapter.id) {
+                        await Task.yield()
+                        if let target = scrollTargetIndex { proxy.scrollTo(target, anchor: .top) }
+                        await Task.yield()
+                        didRestoreAnchor = true
+                        restorePixelsIfCompatible()
+                        hasRestoredScroll = true
+                    }
+                    .id(currentChapter.id)
+                    .onChange(of: scrollTargetIndex) { _, target in
+                        if let target { proxy.scrollTo(target, anchor: .top) }
                     }
                 }
             }
-
-            // Reading progress bar — always visible
             VStack {
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(AstralColors.gold.opacity(0.6))
-                        .frame(
-                            width: geo.size.width * (fanfic.scrollOffsetPercent ?? 0),
-                            height: 2.5
-                        )
-                        .animation(AstralAnimation.micro, value: fanfic.scrollOffsetPercent)
-                }
-                .frame(height: 2.5)
+                if showReaderBar || alwaysShowControls || voiceOverEnabled { fanficTopBar }
                 Spacer()
+                if pullProgress != 0 { ReaderPullHint(progress: pullProgress).padding(.bottom, 80) }
+                if showReaderBar || alwaysShowControls || voiceOverEnabled { fanficBottomBar }
             }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-
-            // Top bar — slides in from above with reader bar
-            VStack(spacing: 0) {
-                fanficTopBar
-                Spacer()
-            }
-            .offset(y: showReaderBar ? 0 : -110)
-            .opacity(showReaderBar ? 1 : 0)
-            .animation(ReaderMotion.chrome, value: showReaderBar)
-            .allowsHitTesting(showReaderBar)
-
-            // Bottom HUD — slides in from below, swaps between settings and nav bar
-            VStack(spacing: 0) {
-                Spacer()
-                ZStack(alignment: .bottom) {
-                    if showReaderSettings {
-                        fanficSettingsPanel
-                            .transition(.asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
-                                removal: .move(edge: .trailing).combined(with: .opacity)
-                            ))
-                    } else {
-                        fanficBottomBar
-                            .transition(.asymmetric(
-                                insertion: .opacity,
-                                removal: .opacity
-                            ))
-                    }
-                }
-                .animation(.spring(response: 0.38, dampingFraction: 0.85), value: showReaderSettings)
-            }
-            .offset(y: showReaderBar ? 0 : 130)
-            .opacity(showReaderBar ? 1 : 0)
-            .animation(ReaderMotion.chrome, value: showReaderBar)
-            .allowsHitTesting(showReaderBar)
-
+            if isTransitioning { ProgressView("Opening chapter…").padding().background(.regularMaterial, in: Capsule()) }
         }
-        .ignoresSafeArea()
+        .overlay(alignment: .bottom) { BookmarkUndoBanner().padding(.bottom, 70) }
         .navigationBarHidden(true)
-        .statusBarHidden(!showReaderBar)
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
-                .onEnded { _ in
-                    withAnimation(ReaderMotion.chrome) {
-                        showReaderBar.toggle()
-                        if !showReaderBar { showReaderSettings = false }
+        .toolbar(.hidden, for: .tabBar)
+        .task { await loadChapter() }
+        .onAppear { startSession() }
+        .onDisappear { persistReadingState(endSession: true, syncRemote: false) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { startSession() }
+            else { persistReadingState(endSession: phase == .background, syncRemote: false) }
+        }
+        .sheet(isPresented: $showReaderSettings) {
+            NavigationStack {
+                ScrollView { fanficSettingsPanel }
+                    .navigationTitle("Reading settings").navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { showReaderSettings = false } }
+                        ToolbarItem(placement: .cancellationAction) { Button("Reset") {
+                            fontSize = 16; lineHeight = 1.6; paragraphSpacing = 12; horizontalMargin = 20; fontFamily = .system; background = .dark
+                        } }
                     }
-                    Haptics.play(.chromeToggle)
-                }
-        )
-        .task(id: currentChapter.id) {
-            scrollPercentThrottle.reset()
-            await loadChapter()
-        }
-        .onAppear {
-            // Track reading session
-            let session = LocalReadingSession(contentType: "fanfic", storyId: fanfic.id)
-            modelContext.insert(session)
-            // Persist reading progress
-            fanfic.lastReadChapterNumber = currentChapter.chapterNumber
-            fanfic.lastReadAt = .now
-            if fanfic.totalChapters > 0 {
-                fanfic.progressPercent = (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
-                if fanfic.progressPercent >= 1.0 && fanfic.completedAt == nil {
-                    fanfic.completedAt = .now
-                }
             }
-            try? modelContext.save()
-            readingSession = session
-            // Sync progress to backend
-            Task {
-                let body = FanficProgressRequest(
-                    lastChapterNumber: Int(currentChapter.chapterNumber),
-                    scrollOffsetPercent: fanfic.scrollOffsetPercent
-                )
-                let _: ProgressResponse? = try? await APIClient.shared.request(
-                    .updateFanficProgress(storyId: fanfic.id, body: body)
-                )
-            }
-        }
-        .onDisappear {
-            // Save final scroll position to backend
-            if let readingSession {
-                readingSession.endedAt = .now
-                Task {
-                    let body = FanficProgressRequest(
-                        lastChapterNumber: Int(fanfic.lastReadChapterNumber ?? 0),
-                        scrollOffsetPercent: fanfic.scrollOffsetPercent
-                    )
-                    let _: ProgressResponse? = try? await APIClient.shared.request(
-                        .updateFanficProgress(storyId: fanfic.id, body: body)
-                    )
-                }
-                try? modelContext.save()
-            }
+            .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showBookmarkSheet) {
             FanficBookmarkSheet(
                 paragraphText: bookmarkParagraphIndex.flatMap { paragraphs.indices.contains($0) ? paragraphs[$0] : nil } ?? "",
-                chapterTitle: currentChapter.title,
-                chapterNumber: currentChapter.chapterNumber,
-                wordOffset: bookmarkParagraphIndex.flatMap { wordOffsetForParagraph($0) } ?? 0,
+                chapterTitle: currentChapter.title, chapterNumber: currentChapter.chapterNumber,
+                wordOffset: bookmarkParagraphIndex.map { wordOffsetForParagraph($0) } ?? 0,
                 onSave: { selectedText, heading, wordOffset in
-                    let bookmark = LocalBookmark(
-                        contentType: "fanfic",
-                        storyId: fanfic.id,
-                        chapterNumber: currentChapter.chapterNumber,
-                        wordOffset: wordOffset,
-                        selectedText: selectedText,
-                        heading: heading
-                    )
+                    let bookmark = LocalBookmark(contentType: "fanfic", storyId: fanfic.id,
+                        chapterNumber: currentChapter.chapterNumber, scrollPercent: fanfic.scrollOffsetPercent,
+                        wordOffset: wordOffset, selectedText: selectedText, heading: heading)
                     modelContext.insert(bookmark)
-                    try? modelContext.save()
-                    Haptics.play(.bookmark)
-                }
-            )
-            .presentationDetents([.medium])
+                    BookmarkAnchorStore.save(bookmark: bookmark.id, chapter: currentChapter.id)
+                    do { try modelContext.save(); Haptics.play(.bookmark) }
+                    catch { transitionError = "Bookmark could not be saved: \(error.localizedDescription)" }
+                })
+                .presentationDetents([.medium])
         }
         .sheet(isPresented: $showChapterList) {
-            FanficChapterListSheet(
-                chapters: allChapters,
-                currentChapterId: currentChapter.id,
-                onSelect: { chapter in
-                    showChapterList = false
-                    navigateTo(chapter)
-                }
-            )
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            FanficChapterListSheet(chapters: allChapters, currentChapterId: currentChapter.id, onSelect: { chapter in
+                showChapterList = false; previousJump = currentChapter; navigateTo(chapter)
+            }).presentationDetents([.medium, .large])
         }
+        .alert("Chapter could not be opened", isPresented: Binding(get: { transitionError != nil }, set: { if !$0 { transitionError = nil } })) {
+            if let failedChapter { Button("Retry") { navigateTo(failedChapter) } }
+            Button("Keep reading", role: .cancel) { transitionError = nil }
+            Button("Back") { dismiss() }
+        } message: { Text(transitionError ?? "") }
+    }
+
+    private func toggleControls() {
+        guard !alwaysShowControls else { return }
+        withAnimation(ReaderMotion.chrome) { showReaderBar.toggle() }
+    }
+    private func startSession() {
+        guard readingSession == nil || readingSession?.endedAt != nil else { return }
+        let session = LocalReadingSession(contentType: "fanfic", storyId: fanfic.id)
+        modelContext.insert(session); readingSession = session
     }
 
     private var backgroundColor: Color {
@@ -361,71 +224,30 @@ struct FanficReaderView: View {
 
     private var fanficTopBar: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(AstralColors.white)
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
-            .accessibilityIdentifier(AccessibilityID.readerBackButton)
-
+            Button { dismiss() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                .accessibilityLabel("Back").accessibilityIdentifier(AccessibilityID.readerBackButton)
             VStack(alignment: .leading, spacing: 2) {
-                Text(fanfic.title)
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
-                    .lineLimit(1)
-                HStack(spacing: 4) {
-                    Text("Ch. \(chapterDisplayNum)")
-                        .font(AstralTypography.bodyMedium)
-                        .foregroundStyle(AstralColors.white)
-                        .contentTransition(.numericText())
-                    if let title = currentChapter.title, !title.isEmpty {
-                        Text("— \(title)")
-                            .font(AstralTypography.body)
-                            .foregroundStyle(AstralColors.muted)
-                            .lineLimit(1)
-                    }
+                Text(fanfic.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(currentChapter.title ?? "Chapter \(chapterDisplayNum)").font(.headline).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Menu("Scroll") {
+                    Button("Up one screen") { scrollController.move(forward: false) }
+                    Button("Down one screen") { scrollController.move(forward: true) }
                 }
-                .animation(AstralAnimation.quick, value: currentChapter.chapterNumber)
-            }
-
-            Spacer(minLength: 8)
-
-            Button { showChapterList = true } label: {
-                chapterCountLabel
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.92))
-
-            Button {
-                withAnimation(AstralAnimation.bouncy) {
-                    fanfic.isFavorite.toggle()
-                    try? modelContext.save()
-                }
-                Haptics.play(.bookmark)
-            } label: {
-                Image(systemName: fanfic.isFavorite ? "heart.fill" : "heart")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(fanfic.isFavorite ? AstralColors.error : AstralColors.white)
-                    .symbolEffect(.bounce, value: fanfic.isFavorite)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
-
-            Button {
-                withAnimation(AstralAnimation.snappy) { showReaderSettings.toggle() }
-            } label: {
-                Image(systemName: showReaderSettings ? "xmark" : "slider.horizontal.3")
-                    .contentTransition(.symbolEffect(.replace))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(AstralColors.white)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
+                Button(fanfic.isFavorite ? "Remove favourite" : "Add favourite", systemImage: "heart") { fanfic.isFavorite.toggle(); try? modelContext.save() }
+                Button("Bookmark current passage", systemImage: "bookmark") { bookmarkParagraphIndex = visibleParagraph ?? 0; showBookmarkSheet = true }
+                if let previousJump { Button("Back to previous chapter") { navigateTo(previousJump); self.previousJump = nil } }
+                if let previousChapter { Button("Previous chapter") { navigateTo(previousChapter) } }
+                if let nextChapter { Button("Next chapter") { navigateTo(nextChapter) } }
+                Button("Start chapter over") { visibleParagraph = 0; scrollTargetIndex = 0; fanfic.scrollOffsetPercent = 0; capturedPixelOffset = nil; capturedParagraph = 0 }
+                Button(fanfic.completedAt == nil ? "Mark finished" : "Mark unfinished") { fanfic.completedAt = fanfic.completedAt == nil ? .now : nil; try? modelContext.save() }
+            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+            .accessibilityLabel("More reader actions")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 56)
-        .padding(.bottom, 12)
-        .background(.ultraThinMaterial)
+        .foregroundStyle(AstralColors.white).padding(.horizontal, 8).padding(.vertical, 6)
+        .background(.regularMaterial)
     }
 
     private var chapterCountLabel: some View {
@@ -453,45 +275,15 @@ struct FanficReaderView: View {
 
     private var fanficBottomBar: some View {
         HStack {
-            Button {
-                if let prev = previousChapter { navigateTo(prev); Haptics.play(.chapterNav) }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                    Text("Prev")
-                }
-                .font(AstralTypography.captionMedium)
-                .foregroundStyle(previousChapter == nil ? AstralColors.muted : AstralColors.gold)
-            }
-            .disabled(previousChapter == nil)
-            .buttonStyle(PressButtonStyle(scale: 0.9))
-
+            Button("Chapters", systemImage: "list.bullet") { showChapterList = true }
+                .frame(minHeight: 44)
             Spacer()
-
-            Text(progressReadout)
-                .font(AstralTypography.captionMedium)
-                .foregroundStyle(AstralColors.muted)
-                .monospacedDigit()
-
+            Text(progressReadout).font(.caption).monospacedDigit().foregroundStyle(.secondary)
             Spacer()
-
-            Button {
-                if let next = nextChapter { navigateTo(next); Haptics.play(.chapterNav) }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("Next")
-                    Image(systemName: "chevron.right")
-                }
-                .font(AstralTypography.captionMedium)
-                .foregroundStyle(nextChapter == nil ? AstralColors.muted : AstralColors.gold)
-            }
-            .disabled(nextChapter == nil)
-            .buttonStyle(PressButtonStyle(scale: 0.9))
+            Button("Aa", systemImage: "textformat.size") { showReaderSettings = true }
+                .labelStyle(.iconOnly).accessibilityLabel("Reading settings").frame(width: 44, height: 44)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 34)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 16).padding(.vertical, 6).background(.regularMaterial)
     }
 
     private var progressReadout: String {
@@ -575,7 +367,7 @@ struct FanficReaderView: View {
                         } label: {
                             Circle()
                                 .fill(bgPreviewColor(bg))
-                                .frame(width: 32, height: 32)
+                                .frame(width: 44, height: 44)
                                 .overlay(
                                     Circle()
                                         .stroke(AstralColors.gold, lineWidth: 2.5)
@@ -585,6 +377,8 @@ struct FanficReaderView: View {
                                 )
                         }
                         .buttonStyle(PressButtonStyle(scale: 0.88))
+                        .accessibilityLabel(bg.rawValue + " background")
+                        .accessibilityValue(background == bg ? "Selected" : "")
                     }
                     Spacer()
                 }
@@ -592,7 +386,7 @@ struct FanficReaderView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
-        .padding(.bottom, 34)
+        .padding(.bottom, 16)
         .background(.ultraThinMaterial)
     }
 
@@ -648,149 +442,70 @@ struct FanficReaderView: View {
             .reduce(0) { $0 + $1.split(separator: " ").count }
     }
 
-    /// Kicks off background fetches of the immediately-previous and
-    /// immediately-next chapter content. Success primes the HTTP cache;
-    /// failures are silent (prefetch is best-effort).
-    private func prefetchAdjacentChapters() async {
-        let fanficId: UUID = fanfic.id
-        let chapterIds: [UUID] = [previousChapter, nextChapter].compactMap { $0?.id }
-        await withTaskGroup(of: Void.self) { group in
-            for chapterId in chapterIds {
-                group.addTask {
-                    let _: FanficChapterResponse? = try? await APIClient.shared.request(
-                        .fanficChapter(fanficId: fanficId, chapterId: chapterId)
-                    )
-                }
-            }
-        }
+    private func persistReadingState(endSession: Bool, syncRemote: Bool) {
+        if endSession { readingSession?.endedAt = .now; try? modelContext.save() }
+        guard !chapterContent.isEmpty, !isLoading else { return }
+        fanfic.lastReadChapterNumber = currentChapter.chapterNumber
+        fanfic.lastReadAt = .now
+        let order = allChapters.firstIndex { $0.id == currentChapter.id } ?? 0
+        fanfic.progressPercent = min(1, (Double(order) + (fanfic.scrollOffsetPercent ?? 0)) / Double(max(1, allChapters.count)))
+        ReadingPositionStore.save(.init(chapterID: currentChapter.id, chapterNumber: currentChapter.chapterNumber,
+            fraction: fanfic.scrollOffsetPercent ?? 0, paragraph: capturedParagraph, offset: capturedPixelOffset, layoutSignature: capturedLayoutSignature ?? layoutSignature), story: fanfic.id)
+        if endSession { readingSession?.endedAt = .now }
+        try? modelContext.save()
     }
 
+    private func content(for chapter: LocalFanficChapter) async throws -> String {
+        if let previewContent { return previewContent }
+        if let path = chapter.localTextPath,
+           let text = try? String(contentsOf: URL.documentsDirectory.appendingPathComponent(path), encoding: .utf8), !text.isEmpty { return text }
+        guard !["ao3", "ffnet", "local"].contains(fanfic.sourceKey), AppConfig.companionEnabled else {
+            throw CocoaError(.fileReadNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "This chapter is not saved on this device. Return to the story to import it."])
+        }
+        let result: FanficChapterResponse = try await APIClient.shared.request(.fanficChapter(fanficId: fanfic.id, chapterId: chapter.id))
+        guard let text = result.content, !text.isEmpty else { throw APIError.notFound }
+        return text
+    }
     private func loadChapter() async {
-        AstralLogger.info("loadChapter: ch \(currentChapter.chapterNumber) (id=\(currentChapter.id)) for '\(fanfic.title)'", context: "FanficReader")
-        offlineError = false
-
-        if let previewContent {
-            chapterContent = previewContent
-            calculateScrollTarget()
-            isLoading = false
+        defer { isLoading = false }
+        do {
+            chapterContent = try await content(for: currentChapter)
+            restorePosition()
+            offlineError = false
+        } catch { offlineError = true }
+    }
+    private func restorePixelsIfCompatible() {
+        guard didRestoreAnchor, viewportWidth > 0 else { return }
+        if pendingLayoutSignature == layoutSignature, let offset = pendingPixelOffset { scrollController.restore(offset: offset) }
+        pendingPixelOffset = nil; pendingLayoutSignature = nil
+    }
+    private var layoutSignature: String { "\(fontFamily.rawValue)/\(fontSize)/\(lineHeight)/\(paragraphSpacing)/\(horizontalMargin)/\(viewportWidth)" }
+    private func restorePosition() {
+        didRestoreAnchor = false
+        if let bookmark = initialBookmark, !appliedInitialBookmark, bookmark.chapterNumber == currentChapter.chapterNumber {
+            let offset = bookmark.wordOffset ?? 0
+            var words = 0
+            let index = paragraphs.enumerated().first { _, paragraph in
+                defer { words += paragraph.split(whereSeparator: \.isWhitespace).count }
+                return words + paragraph.split(whereSeparator: \.isWhitespace).count > offset
+            }?.offset ?? 0
+            visibleParagraph = index; scrollTargetIndex = index
+            fanfic.scrollOffsetPercent = bookmark.scrollPercent ?? 0
+            capturedPixelOffset = nil; capturedParagraph = index; capturedLayoutSignature = nil
+            appliedInitialBookmark = true
             return
         }
-
-        // 1. Try local file first (offline reading)
-        if let localPath = currentChapter.localTextPath {
-            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent(localPath)
-            if let content = try? String(contentsOf: url, encoding: .utf8), !content.isEmpty {
-                chapterContent = content
-                AstralLogger.info("loadChapter: loaded \(content.count) chars from local file", context: "FanficReader")
-                calculateScrollTarget()
-                isLoading = false
-                return
-            } else {
-                // File missing or corrupt — reset download state
-                currentChapter.downloadStatus = .none
-                currentChapter.localTextPath = nil
-                currentChapter.isDownloaded = false
-                try? modelContext.save()
-                AstralLogger.warning("loadChapter: local file missing/corrupt, falling through to network", context: "FanficReader")
-            }
-        }
-
-        // 2. Try network
-        do {
-            let response: FanficChapterResponse = try await APIClient.shared.request(
-                .fanficChapter(fanficId: fanfic.id, chapterId: currentChapter.id)
-            )
-            guard !Task.isCancelled else { return }
-            chapterContent = response.content ?? ""
-            AstralLogger.info("loadChapter: got \(chapterContent.count) chars from network", context: "FanficReader")
-        } catch {
-            guard !Task.isCancelled else { return }
-            // 3. Both local and network failed
-            chapterContent = ""
-            offlineError = true
-            AstralLogger.error("loadChapter failed: \(error)", context: "FanficReader")
-        }
-
-        calculateScrollTarget()
-        isLoading = false
-        Task(priority: .background) { await prefetchAdjacentChapters() }
-    }
-
-    private var chapterNavigationFooter: some View {
-        VStack(spacing: 16) {
-            // End-of-chapter divider
-            HStack(spacing: 8) {
-                Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
-                Image(systemName: "diamond.fill")
-                    .font(.system(size: 5))
-                    .foregroundStyle(AstralColors.muted.opacity(0.5))
-                Rectangle().fill(AstralColors.muted.opacity(0.3)).frame(height: 0.5)
-            }
-            .padding(.top, 24)
-
-            HStack(spacing: 12) {
-                // Previous chapter
-                if let prev = previousChapter {
-                    Button {
-                        Haptics.play(.chapterNav)
-                        navigateTo(prev)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 12, weight: .semibold))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Previous")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(AstralColors.muted)
-                                Text(chapterLabel(prev))
-                                    .font(AstralTypography.captionMedium)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .foregroundStyle(AstralColors.body)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(AstralColors.elevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(PressButtonStyle(scale: 0.95))
-                } else {
-                    Spacer().frame(maxWidth: .infinity)
-                }
-
-                // Next chapter
-                if let next = nextChapter {
-                    Button {
-                        Haptics.play(.chapterNav)
-                        navigateTo(next)
-                    } label: {
-                        HStack(spacing: 6) {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("Next")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(AstralColors.muted)
-                                Text(chapterLabel(next))
-                                    .font(AstralTypography.captionMedium)
-                                    .lineLimit(1)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundStyle(AstralColors.body)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .background(AstralColors.elevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(PressButtonStyle(scale: 0.95))
-                } else {
-                    Spacer().frame(maxWidth: .infinity)
-                }
-            }
-        }
+        let saved = ReadingPositionStore.position(story: fanfic.id, chapter: currentChapter.id)
+        capturedPixelOffset = saved?.offset
+        capturedParagraph = saved?.paragraph ?? 0
+        capturedLayoutSignature = saved?.layoutSignature
+        pendingPixelOffset = saved?.offset
+        pendingLayoutSignature = saved?.layoutSignature
+        let legacy = currentChapter.chapterNumber == fanfic.lastReadChapterNumber ? (fanfic.scrollOffsetPercent ?? 0) : 0
+        fanfic.scrollOffsetPercent = saved?.fraction ?? legacy
+        let anchor = saved?.paragraph ?? Int(legacy * Double(max(0, paragraphs.count - 1)))
+        visibleParagraph = min(max(0, anchor), max(0, paragraphs.count - 1))
+        scrollTargetIndex = visibleParagraph
     }
 
     private func chapterPlaceholder(chapter: LocalFanficChapter, direction: String, icon: String) -> some View {
@@ -841,25 +556,26 @@ struct FanficReaderView: View {
     }
 
     private func navigateTo(_ chapter: LocalFanficChapter) {
-        // Save current position
-        try? modelContext.save()
-        // Reset reader state synchronously before triggering reload
-        chapterContent = ""
-        isLoading = true
-        hasRestoredScroll = false
-        scrollTargetIndex = nil
-        bookmarkParagraphIndex = nil
-        horizontalPage = "current"
-        // Update reading progress
-        fanfic.lastReadChapterNumber = chapter.chapterNumber
-        fanfic.scrollOffsetPercent = nil
-        fanfic.lastReadAt = .now
-        if fanfic.totalChapters > 0 {
-            fanfic.progressPercent = (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
+        guard chapter.id != currentChapter.id, !isTransitioning else { return }
+        persistReadingState(endSession: false, syncRemote: false)
+        isTransitioning = true; transitionError = nil; failedChapter = nil
+        Task { @MainActor in
+            defer { isTransitioning = false; pullProgress = 0 }
+            do {
+                let text = try await content(for: chapter)
+                try Task.checkCancellation()
+                hasRestoredScroll = false
+                currentChapter = chapter; chapterContent = text
+                bookmarkParagraphIndex = nil; scrollTargetIndex = nil
+                restorePosition()
+                readingSession?.chaptersRead += 1
+                Haptics.play(.chapterNav)
+                persistReadingState(endSession: false, syncRemote: false)
+            } catch {
+                failedChapter = chapter; transitionError = error.localizedDescription
+                showReaderBar = true
+            }
         }
-        try? modelContext.save()
-        // Changing currentChapter triggers .task(id:) to re-fire
-        currentChapter = chapter
     }
 }
 

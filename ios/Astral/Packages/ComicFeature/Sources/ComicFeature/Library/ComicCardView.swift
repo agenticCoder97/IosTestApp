@@ -14,7 +14,7 @@ struct ComicCardView: View {
 
     private var progressPercent: Double {
         guard comic.totalChapters > 0 else { return 0 }
-        return Double(comic.lastReadChapterNumber) / Double(comic.totalChapters)
+        return min(1, max(0, comic.progressPercent))
     }
 
     private var sourceIcon: String {
@@ -22,7 +22,8 @@ struct ComicCardView: View {
         case "nhentai": "n.square.fill"
         case "toongod": "t.square.fill"
         case "hentai20": "h.square.fill"
-        case "mangadex": "m.square.fill"
+        case "local": "folder.fill"
+        case "mangadex", "mangadex-device": "m.square.fill"
         default: "questionmark.square.fill"
         }
     }
@@ -34,21 +35,10 @@ struct ComicCardView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(AstralColors.elevated)
 
-                if let path = comic.thumbnailPath, let url = thumbnailURL(path) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                                .clipped()
-                        default:
-                            Image(systemName: "book.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(AstralColors.muted)
-                        }
-                    }
+                if let path = comic.thumbnailPath {
+                    CachedAsyncImage(remotePath: path, baseURL: AppConfig.staticBaseURL)
+                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                        .clipped()
                 } else {
                     Image(systemName: "book.fill")
                         .font(.system(size: 32))
@@ -173,10 +163,14 @@ struct ComicCardView: View {
                     }
                     .frame(width: 22, height: 22)
 
-                    Text("\(comic.lastReadChapterNumber)/\(comic.totalChapters)")
+                    Text(comic.lastReadAt == nil
+                         ? "\(comic.totalChapters) chapters"
+                         : "Ch. \((ReadingPositionStore.position(story: comic.id)?.chapterNumber ?? Double(comic.lastReadChapterNumber)).formatted())")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(AstralColors.body)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityValue("\(comic.totalChapters) chapters available; \(progressPercent.formatted(.percent.precision(.fractionLength(0)))) reading position")
             }
         }
         .astralCard()

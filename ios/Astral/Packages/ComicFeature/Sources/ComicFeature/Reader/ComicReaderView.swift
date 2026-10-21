@@ -26,6 +26,23 @@ enum ComicChapterPullTrigger {
     }
 }
 
+struct ComicReaderPageSource {
+    let networkPageCount: Int
+    let localPageURLs: [URL]?
+
+    var usesLocalPages: Bool {
+        guard let localPageURLs else { return false }
+        return !localPageURLs.isEmpty
+    }
+
+    var pageCount: Int {
+        if let localPageURLs, !localPageURLs.isEmpty {
+            return localPageURLs.count
+        }
+        return networkPageCount
+    }
+}
+
 // MARK: - Main View
 
 struct ComicReaderView: View {
@@ -34,12 +51,15 @@ struct ComicReaderView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var currentChapterIndex: Int
     @State private var pages: [PageResponse] = []
     @State private var currentPage: Int = 0
+    @State private var resumePageForLayout = 0
+    @State private var previousPageJump: Int?
     @State private var isLoading = true
-    @State private var showHUD = false
+    @State private var showHUD = true
     @State private var showSettings = false
     @AppStorage("comicReaderMode") private var readingMode: ReadingMode = .webtoon
     @AppStorage("comicReaderBrightness") private var brightnessOverlay: Double = 0.0
@@ -50,7 +70,7 @@ struct ComicReaderView: View {
     @State private var scrolledPageID: Int? = 0  // drives paged scroll position
     @State private var showRotateHint = false
     @AppStorage("hideRotateHint") private var hideRotateHint = false
-    @AppStorage("forceLandscape") private var forceLandscape = true
+    @AppStorage("forceLandscape") private var forceLandscape = false
     @State private var readingSession: LocalReadingSession?
     @State private var localPageURLs: [URL]?
     @State private var prevChapterPull: CGFloat = 0
@@ -68,22 +88,31 @@ struct ComicReaderView: View {
     @State private var autoScrollActive = false
     @AppStorage("autoScrollSpeed") private var autoScrollSpeed: Double = 1.5
     @State private var offlineError = false
+    @State private var appliedSkip = 0
+    @State private var saveChapterTask: Task<Void, Never>?
+    @State private var isSavingChapter = false
+    @State private var saveError: String?
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
 
+    private let initialBookmark: LocalBookmark?
+    @State private var appliedInitialBookmark = false
     private let previewPages: [PageResponse]?
 
     init(
         comic: LocalComic,
         chapters: [LocalComicChapter],
         startingAt chapter: LocalComicChapter,
-        previewPages: [PageResponse]? = nil
+        previewPages: [PageResponse]? = nil,
+        bookmark: LocalBookmark? = nil
     ) {
+        self.initialBookmark = bookmark
         self.comic = comic
-        self.chapters = chapters
+        let orderedChapters = ChapterOrdering.comics(chapters)
+        self.chapters = orderedChapters
         self.previewPages = previewPages
-        let idx = chapters.firstIndex(where: { $0.id == chapter.id }) ?? 0
+        let idx = orderedChapters.firstIndex(where: { $0.id == chapter.id }) ?? 0
         _currentChapterIndex = State(initialValue: idx)
         let comicId = comic.id
         _bookmarks = Query(
@@ -96,192 +125,106 @@ struct ComicReaderView: View {
     private var currentChapter: LocalComicChapter? { chapters[safe: currentChapterIndex] }
     private var isFirstChapter: Bool { currentChapterIndex <= 0 }
     private var isLastChapter:  Bool { currentChapterIndex >= chapters.count - 1 }
+    private var pageSource: ComicReaderPageSource {
+        ComicReaderPageSource(networkPageCount: pages.count, localPageURLs: localPageURLs)
+    }
 
     private var chapterProgress: Double {
-        guard pages.count > 1 else { return pages.isEmpty ? 0 : 1 }
-        return Double(currentPage) / Double(pages.count - 1)
+        let count = pageSource.pageCount
+        guard count > 1 else { return count == 0 ? 0 : 1 }
+        return Double(currentPage) / Double(count - 1)
     }
+
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @AppStorage("readerAlwaysShowControls") private var alwaysShowControls = false
+    @State private var isZoomed = false
+    @State private var isTransitioning = false
+    @State private var transitionError: String?
+    @State private var failedIndex: Int?
+    @State private var previousJumpIndex: Int?
+    @State private var scrollController = ReaderScrollController()
+    @State private var pullProgress = 0.0
+    @State private var visiblePageID: Int?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
-            // Page content
             if isLoading {
-                ProgressView()
-                    .tint(AstralColors.gold)
-                    .scaleEffect(1.2)
-            } else if pages.isEmpty && (localPageURLs?.isEmpty ?? true) {
-                EmptyStateView(
-                    icon: "photo.on.rectangle.angled",
-                    title: "No Pages",
-                    message: "This chapter hasn't been scraped yet."
-                )
-                .foregroundStyle(AstralColors.white)
+                ProgressView("Opening chapter…").tint(AstralColors.gold)
+            } else if pageSource.pageCount == 0 {
+                ContentUnavailableView {
+                    Label("Chapter unavailable", systemImage: "book.closed")
+                } description: {
+                    Text("Save this chapter from a supported source or connected companion.")
+                } actions: {
+                    Button("Try again") { Task { await loadPages() } }
+                    Button("Back") { dismiss() }
+                }
             } else {
-                pageContent
-                    .id(currentChapterIndex)
-                    .transition(.opacity.animation(ReaderMotion.chapterCrossfade))
+                pageContent.id(currentChapterIndex)
             }
-
-            if offlineError && pages.isEmpty && localPageURLs == nil {
-                VStack(spacing: 16) {
-                    Image(systemName: "cloud.slash")
-                        .font(.system(size: 44))
-                        .foregroundStyle(AstralColors.muted)
-                    Text("Pages not available offline")
-                        .font(AstralTypography.body)
-                        .foregroundStyle(AstralColors.white)
-                    Text("Download this chapter or connect to read")
-                        .font(AstralTypography.caption)
-                        .foregroundStyle(AstralColors.muted)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-
-            // Reading progress bar — always visible
+            if brightnessOverlay > 0 { Color.black.opacity(brightnessOverlay).ignoresSafeArea().allowsHitTesting(false) }
             VStack {
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(AstralColors.gold.opacity(0.6))
-                        .frame(
-                            width: geo.size.width * chapterProgress,
-                            height: 2.5
-                        )
-                        .animation(AstralAnimation.micro, value: currentPage)
-                }
-                .frame(height: 2.5)
+                if showHUD || alwaysShowControls || voiceOverEnabled { topBar }
                 Spacer()
+                if pullProgress != 0 { ReaderPullHint(progress: pullProgress).padding(.bottom, 100) }
+                if showHUD || alwaysShowControls || voiceOverEnabled { bottomBar }
             }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-
-            // Brightness overlay
-            if brightnessOverlay > 0 {
-                Color.black
-                    .opacity(brightnessOverlay)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-            }
-
-            // No overlay here — gestures are on the page content directly
-
-            // Top HUD — slides in from above
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
-            }
-            .offset(y: showHUD ? 0 : -110)
-            .opacity(showHUD ? 1 : 0)
-            .animation(ReaderMotion.chrome, value: showHUD)
-            .allowsHitTesting(showHUD)
-
-            // Bottom HUD — slides in from below, swaps between settings and nav bar
-            VStack(spacing: 0) {
-                Spacer()
-                ZStack(alignment: .bottom) {
-                    if showSettings {
-                        settingsPanel
-                            .transition(.asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
-                                removal: .move(edge: .trailing).combined(with: .opacity)
-                            ))
-                    } else {
-                        bottomBar
-                            .transition(.asymmetric(
-                                insertion: .opacity,
-                                removal: .opacity
-                            ))
-                    }
-                }
-                .animation(.spring(response: 0.38, dampingFraction: 0.85), value: showSettings)
-            }
-            .offset(y: showHUD ? 0 : 130)
-            .opacity(showHUD ? 1 : 0)
-            .animation(ReaderMotion.chrome, value: showHUD)
-            .allowsHitTesting(showHUD)
+            if isTransitioning { ProgressView("Opening chapter…").padding().background(.regularMaterial, in: Capsule()) }
         }
-        .ignoresSafeArea()
+        .overlay(alignment: .bottom) { BookmarkUndoBanner().padding(.bottom, 70) }
         .navigationBarHidden(true)
-        .statusBarHidden(!showHUD)
-        .task(id: currentChapterIndex) {
-            // Reset arming state so new chapter starts disarmed.
-            topEdgeVisibleSince = nil
-            topEdgeArmedAt = nil
-            bottomEdgeVisibleSince = nil
-            bottomEdgeArmedAt = nil
-            hasCompletedInitialLayout = false
-            prevChapterPull = 0
-            nextChapterPull = 0
-            prevChapterTriggered = false
-            nextChapterTriggered = false
-            pageThrottle.reset()
-            await loadPages()
-        }
+        .toolbar(.hidden, for: .tabBar)
+        .task { await loadPages() }
         .onAppear {
-            let session = LocalReadingSession(contentType: "comic", storyId: comic.id)
-            modelContext.insert(session)
-            try? modelContext.save()
-            readingSession = session
+            startSession()
             UIApplication.shared.isIdleTimerDisabled = true
-            if forceLandscape {
-                setLandscape(true)
-            } else if !hideRotateHint, UIDevice.current.orientation.isPortrait || !UIDevice.current.orientation.isValidInterfaceOrientation {
-                withAnimation { showRotateHint = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(3))
-                    withAnimation { showRotateHint = false }
-                }
-            }
+            if forceLandscape { setLandscape(true) }
         }
         .onDisappear {
             autoScrollActive = false
-            comic.lastReadPageNumber = currentPage + 1
-            if let readingSession {
-                readingSession.endedAt = .now
-            }
-            try? modelContext.save()
+            persistReadingState(endSession: true, syncRemote: false)
             UIApplication.shared.isIdleTimerDisabled = false
             if forceLandscape { setLandscape(false) }
         }
-        .onChange(of: readingMode) { _, newMode in
-            if newMode != .webtoon { autoScrollActive = false }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { startSession() }
+            else { autoScrollActive = false; persistReadingState(endSession: phase == .background, syncRemote: false) }
         }
-        .overlay(alignment: .top) {
-            if showRotateHint {
-                HStack(spacing: 8) {
-                    Image(systemName: "rotate.right")
-                    Text("Rotate for best reading experience")
-                }
-                .font(AstralTypography.caption)
-                .foregroundStyle(AstralColors.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .padding(.top, 60)
-                .onTapGesture {
-                    withAnimation { showRotateHint = false }
-                    hideRotateHint = true
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
+        .onChange(of: readingMode) { _, _ in autoScrollActive = false; isZoomed = false; visiblePageID = currentPage; scrolledPageID = currentPage }
+        .onChange(of: showHUD) { _, visible in if visible { autoScrollActive = false } }
+        .onChange(of: showSettings) { _, visible in if visible { autoScrollActive = false } }
+        .onChange(of: showChapterList) { _, visible in if visible { autoScrollActive = false } }
+        .sheet(isPresented: $showSettings, onDismiss: { autoScrollActive = false; Task { await loadPages() } }) {
+            NavigationStack {
+                ScrollView { settingsPanel }
+                    .navigationTitle("Display settings").navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } }
+                        ToolbarItem(placement: .cancellationAction) { Button("Reset") {
+                            readingMode = .webtoon; brightnessOverlay = 0; autoScrollActive = false; autoScrollSpeed = 1.5; forceLandscape = false
+                        } }
+                    }
+            }.presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showChapterList) {
-            ComicChapterListSheet(
-                chapters: chapters,
-                currentIndex: currentChapterIndex,
-                onSelect: { index in
-                    showChapterList = false
-                    withAnimation(AstralAnimation.quick) {
-                        currentChapterIndex = index
-                        currentPage = 0
-                    }
-                }
-            )
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            ComicChapterListSheet(chapters: chapters, currentIndex: currentChapterIndex, onSelect: { index in
+                showChapterList = false; previousJumpIndex = currentChapterIndex; requestChapter(index)
+            }).presentationDetents([.medium, .large])
         }
+        .alert(saveError == nil ? "Chapter could not be opened" : "Chapter could not be saved", isPresented: Binding(get: { transitionError != nil || saveError != nil }, set: { if !$0 { transitionError = nil; saveError = nil } })) {
+            if saveError != nil { Button("OK", role: .cancel) { saveError = nil } } else {
+            if let failedIndex { Button("Retry") { requestChapter(failedIndex) } }
+            Button("Keep reading", role: .cancel) { transitionError = nil }
+            Button("Back") { dismiss() }
+            }
+        } message: { Text(saveError ?? transitionError ?? "") }
+    }
+
+    private func startSession() {
+        guard readingSession == nil || readingSession?.endedAt != nil else { return }
+        let session = LocalReadingSession(contentType: "comic", storyId: comic.id)
+        modelContext.insert(session); readingSession = session
     }
 
     // MARK: - Page Content
@@ -300,195 +243,71 @@ struct ComicReaderView: View {
 
     private var webtoonReader: some View {
         ScrollViewReader { proxy in
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 0) {
-                // Previous chapter pull trigger at top of scroll content
-                if !isFirstChapter {
-                    PrevChapterTrigger(
-                        onVisibilityChange: { visible in
-                            guard hasCompletedInitialLayout else { return }
-                            if visible {
-                                topEdgeVisibleSince = .now
-                            } else {
-                                topEdgeVisibleSince = nil
-                                topEdgeArmedAt = nil
-                                prevChapterPull = 0
-                            }
-                        },
-                        onProgressChange: { progress in
-                            prevChapterPull = progress
-                            if ComicChapterPullTrigger.shouldFire(progress: progress, hasTriggered: prevChapterTriggered) {
-                                prevChapterTriggered = true
-                                Haptics.play(.triggerFire)
-                                Task { @MainActor in
-                                    try? await Task.sleep(for: .milliseconds(300))
-                                    goToPrevChapter()
-                                    prevChapterTriggered = false
-                                    prevChapterPull = 0
-                                }
-                            }
-                        },
-                        progress: prevChapterPull,
-                        isArmed: topEdgeArmedAt != nil
-                    )
-                }
-
-                if let localURLs = localPageURLs, !localURLs.isEmpty {
-                    // Device-saved pages — load from local files
-                    ForEach(Array(localURLs.enumerated()), id: \.offset) { index, url in
-                        ZoomablePageView {
-                            LocalPageView(fileURL: url)
-                        }
-                        .id(index)
-                        .onAppear {
-                            hasCompletedInitialLayout = true
-                            pageThrottle.set(index) { currentPage = $0 }
-                        }
-                    }
-                } else {
-                    // Network pages
-                    ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                        ZoomablePageView {
-                            ComicPageView(page: page)
-                        }
-                        .id(index)
-                        .onAppear {
-                            hasCompletedInitialLayout = true
-                            pageThrottle.set(index) { currentPage = $0 }
-                        }
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(0..<pageSource.pageCount, id: \.self) { index in
+                        pageView(index)
+                            .id(index)
                     }
                 }
-
-                // Next chapter pull trigger at bottom of scroll content
-                if !isLastChapter {
-                    NextChapterTrigger(
-                        onVisibilityChange: { visible in
-                            guard hasCompletedInitialLayout else { return }
-                            if visible {
-                                bottomEdgeVisibleSince = .now
-                            } else {
-                                bottomEdgeVisibleSince = nil
-                                bottomEdgeArmedAt = nil
-                                nextChapterPull = 0
-                            }
-                        },
-                        onProgressChange: { progress in
-                            nextChapterPull = progress
-                            if ComicChapterPullTrigger.shouldFire(progress: progress, hasTriggered: nextChapterTriggered) {
-                                nextChapterTriggered = true
-                                Haptics.play(.triggerFire)
-                                Task { @MainActor in
-                                    try? await Task.sleep(for: .milliseconds(300))
-                                    goToNextChapter()
-                                    nextChapterTriggered = false
-                                    nextChapterPull = 0
-                                }
-                            }
-                        },
-                        progress: nextChapterPull,
-                        isArmed: bottomEdgeArmedAt != nil
-                    )
-                }
+                .scrollTargetLayout()
+                .padding(.top, 70).padding(.bottom, 90)
+                .background(ReaderScrollMonitor(controller: scrollController, reportsProgrammaticChanges: autoScrollActive, enabled: !autoScrollActive && !isZoomed && !isTransitioning && !showSettings && !showChapterList,
+                    onPosition: { fraction in if fraction >= 0.999 { autoScrollActive = false } },
+                    onPull: { pullProgress = $0 },
+                    onRelease: { next in if next { goToNextChapter() } else { goToPrevChapter() } }))
+                .modifier(AutoScrollModifier(isActive: autoScrollActive && !showSettings && !showChapterList && scenePhase == .active, speed: autoScrollSpeed))
             }
-        }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
-                .onEnded { _ in toggleHUD() }
-        )
-        .modifier(AutoScrollModifier(isActive: autoScrollActive, speed: autoScrollSpeed))
-        .onChange(of: pendingScrollToPage) { _, newTarget in
-            guard let target = newTarget else { return }
-            withAnimation(ReaderMotion.pageTurn) {
-                proxy.scrollTo(target, anchor: .top)
+            .scrollBounceBehavior(.always, axes: .vertical)
+            .scrollDisabled(isZoomed)
+            .scrollPosition(id: $visiblePageID, anchor: .top)
+            .onChange(of: visiblePageID) { _, id in
+                if let id, id >= 0 { currentPage = id }
             }
-            pendingScrollToPage = nil
-        }
-        .task(id: topEdgeVisibleSince) {
-            guard let since = topEdgeVisibleSince else { return }
-            try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
-            guard topEdgeVisibleSince == since, topEdgeArmedAt == nil else { return }
-            withAnimation(ReaderMotion.triggerRing) { topEdgeArmedAt = .now }
-            Haptics.play(.triggerArmed)
-        }
-        .task(id: bottomEdgeVisibleSince) {
-            guard let since = bottomEdgeVisibleSince else { return }
-            try? await Task.sleep(for: .milliseconds(UInt64(chapterArmDelay * 1000)))
-            guard bottomEdgeVisibleSince == since, bottomEdgeArmedAt == nil else { return }
-            withAnimation(ReaderMotion.triggerRing) { bottomEdgeArmedAt = .now }
-            Haptics.play(.triggerArmed)
-        }
+            .onChange(of: pendingScrollToPage) { _, target in
+                if let target { proxy.scrollTo(target, anchor: .top); currentPage = target; pendingScrollToPage = nil }
+            }
         }
     }
 
-    /// Sentinel IDs for chapter-transition pages in the paged reader.
-    /// Offset far from real page indices so they never collide.
-    private let prevChapterSentinel = -1
-    private let nextChapterSentinel = -2
+    @ViewBuilder private func pageView(_ index: Int) -> some View {
+        ZoomablePageView(onSingleTap: toggleHUD, onZoom: { isZoomed = $0 }) {
+            if let local = localPageURLs, local.indices.contains(index) { LocalPageView(fileURL: local[index]) }
+            else if pages.indices.contains(index) { ComicPageView(page: pages[index], referrer: UserDefaults.standard.string(forKey: "reading.chapterSource." + (currentChapter?.id.uuidString ?? "")) ?? UserDefaults.standard.string(forKey: "reading.source." + comic.id.uuidString)) }
+        }
+    }
 
     private func pagedReader(reversed: Bool) -> some View {
-        let orderedPages = reversed ? pages.reversed() as [PageResponse] : pages
-        return ScrollView(.horizontal, showsIndicators: false) {
+        // IDs are source page indices. RTL changes spatial direction only.
+        ScrollViewReader { proxy in
+        ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
-                // Previous chapter sentinel
-                if !isFirstChapter {
-                    Button { goToPrevChapter() } label: {
-                        chapterTransitionPage(direction: "Previous Chapter", icon: "chevron.left")
-                    }
-                    .buttonStyle(.plain)
-                    .containerRelativeFrame(.horizontal)
-                    .id(prevChapterSentinel)
-                }
-
-                ForEach(Array(orderedPages.enumerated()), id: \.element.id) { index, page in
-                    ZoomablePageView {
-                        ComicPageView(page: page)
-                    }
-                    .containerRelativeFrame(.horizontal)
-                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                        content
-                            .opacity(phase.isIdentity ? 1.0 : 0.78)
-                            .scaleEffect(phase.isIdentity ? 1.0 : 0.94)
-                    }
-                    .id(index)
-                }
-
-                // Next chapter sentinel
-                if !isLastChapter {
-                    Button { goToNextChapter() } label: {
-                        chapterTransitionPage(direction: "Next Chapter", icon: "chevron.right")
-                    }
-                    .buttonStyle(.plain)
-                    .containerRelativeFrame(.horizontal)
-                    .id(nextChapterSentinel)
+                ForEach(0..<pageSource.pageCount, id: \.self) { index in
+                    pageView(index).padding(.vertical, 70).containerRelativeFrame(.horizontal).id(index)
                 }
             }
             .scrollTargetLayout()
+            .background(ReaderScrollMonitor(axis: .horizontal, reversed: reversed,
+                enabled: !isZoomed && !isTransitioning && !showSettings && !showChapterList,
+                onPosition: { _ in }, onPull: { pullProgress = $0 },
+                onRelease: { next in if next { goToNextChapter() } else { goToPrevChapter() } }))
         }
+        .scrollBounceBehavior(.always, axes: .horizontal)
+        .environment(\.layoutDirection, reversed ? .rightToLeft : .leftToRight)
+        .scrollDisabled(isZoomed)
         .scrollTargetBehavior(.paging)
-        .scrollPosition(id: Binding(
-            get: { scrolledPageID },
-            set: { newID in
-                guard let id = newID else { return }
-                // Ignore sentinel IDs for currentPage tracking
-                if id >= 0 && id != currentPage {
-                    scrolledPageID = id
-                    currentPage = id
-                }
-            }
-        ))
-        .onChange(of: currentPage) { _, new in
-            guard scrolledPageID != new else { return }
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                scrolledPageID = new
-            }
+        .scrollPosition(id: $scrolledPageID, anchor: .center)
+        .onChange(of: scrolledPageID) { _, id in if let id, id >= 0 { currentPage = id } }
+        .onChange(of: currentPage) { _, page in if scrolledPageID != page { scrolledPageID = page } }
+        .task(id: readingMode) {
+            await Task.yield()
+            proxy.scrollTo(resumePageForLayout, anchor: .center)
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: ReaderMotion.chromeRevealDelay)
-                .onEnded { _ in toggleHUD() }
-        )
+        }
     }
 
     private func toggleHUD() {
+        guard !alwaysShowControls else { return }
         withAnimation(ReaderMotion.chrome) {
             showHUD.toggle()
             if !showHUD { showSettings = false }
@@ -510,190 +329,61 @@ struct ComicReaderView: View {
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(AstralColors.white)
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
-
+            Button { dismiss() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                .accessibilityLabel("Back").accessibilityIdentifier(AccessibilityID.readerBackButton)
             VStack(alignment: .leading, spacing: 2) {
-                Text(comic.title)
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
-                    .lineLimit(1)
-                if let chapter = currentChapter {
-                    HStack(spacing: 4) {
-                        Text("Ch. \(chapter.chapterNumber, specifier: chapter.chapterNumber.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f")")
-                            .font(AstralTypography.bodyMedium)
-                            .foregroundStyle(AstralColors.white)
-                            .contentTransition(.numericText())
-                        if let title = chapter.title {
-                            Text("— \(title)")
-                                .font(AstralTypography.body)
-                                .foregroundStyle(AstralColors.muted)
-                                .lineLimit(1)
-                        }
+                Text(comic.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(currentChapter?.title ?? "Chapter \((currentChapter?.chapterNumber ?? 0).formatted())").font(.headline).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                if readingMode == .webtoon {
+                    Menu("Scroll") {
+                        Button("Up one screen") { scrollController.move(forward: false) }
+                        Button("Down one screen") { scrollController.move(forward: true) }
                     }
-                    .animation(AstralAnimation.quick, value: currentChapterIndex)
                 }
-            }
-
-            Spacer(minLength: 8)
-
-            Button { showChapterList = true } label: {
-                chapterCountLabel
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.92))
-
-            Button {
-                withAnimation(AstralAnimation.bouncy) {
-                    comic.isFavorite.toggle()
-                    try? modelContext.save()
+                Button(comic.isFavorite ? "Remove favourite" : "Add favourite", systemImage: "heart") { comic.isFavorite.toggle(); try? modelContext.save() }
+                Button("Bookmark current page", systemImage: "bookmark") { bookmarkCurrentChapter() }
+                if comic.sourceKey != "local" {
+                    Button(isSavingChapter ? "Saving chapter…" : (currentChapter?.isDownloaded == true ? "Saved on this device" : "Save chapter for offline reading"), systemImage: "arrow.down.circle") {
+                        saveCurrentChapter()
+                    }.disabled(isLoading || isTransitioning || isSavingChapter || currentChapter?.isDownloaded == true || currentChapter?.downloadStatus == .queued || currentChapter?.downloadStatus == .downloading)
                 }
-                Haptics.play(.bookmark)
-            } label: {
-                Image(systemName: comic.isFavorite ? "heart.fill" : "heart")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(comic.isFavorite ? AstralColors.error : AstralColors.white)
-                    .symbolEffect(.bounce, value: comic.isFavorite)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
-
-            Button {
-                bookmarkCurrentChapter()
-            } label: {
-                Image(systemName: isCurrentChapterBookmarked ? "bookmark.fill" : "bookmark")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(isCurrentChapterBookmarked ? AstralColors.gold : AstralColors.white)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
-
-            Button {
-                withAnimation(AstralAnimation.snappy) { showSettings.toggle() }
-            } label: {
-                Image(systemName: showSettings ? "xmark" : "slider.horizontal.3")
-                    .contentTransition(.symbolEffect(.replace))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(AstralColors.white)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(PressButtonStyle(scale: 0.88))
+                if let previousJumpIndex { Button("Back to previous chapter") { requestChapter(previousJumpIndex); self.previousJumpIndex = nil } }
+                if !isFirstChapter { Button("Previous chapter") { goToPrevChapter() } }
+                if !isLastChapter { Button("Next chapter") { goToNextChapter() } }
+                if let page = previousPageJump {
+                    Button("Return to previous page") { currentPage = page; scrolledPageID = page; pendingScrollToPage = page; previousPageJump = nil }
+                }
+                Button("Start chapter over") { currentPage = 0; scrolledPageID = 0; pendingScrollToPage = 0 }
+                if readingMode == .webtoon {
+                    Button(autoScrollActive ? "Pause auto-scroll" : "Start auto-scroll", systemImage: "arrow.down") {
+                        autoScrollActive.toggle(); if autoScrollActive { showHUD = false }
+                    }
+                }
+                Button(comic.completedAt == nil ? "Mark finished" : "Mark unfinished") { comic.completedAt = comic.completedAt == nil ? .now : nil; try? modelContext.save() }
+            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+            .accessibilityLabel("More reader actions")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 56)
-        .padding(.bottom, 12)
-        .background(.ultraThinMaterial)
+        .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 6).background(.regularMaterial)
     }
-
-    private var chapterCountLabel: some View {
-        HStack(spacing: 3) {
-            Text("\(currentChapterIndex + 1)")
-                .foregroundStyle(AstralColors.white)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-            Text("/")
-                .foregroundStyle(AstralColors.muted)
-            Text("\(chapters.count)")
-                .foregroundStyle(AstralColors.muted)
-                .monospacedDigit()
-        }
-        .font(.system(size: 13, weight: .semibold, design: .rounded))
-        .animation(AstralAnimation.quick, value: currentChapterIndex)
-    }
-
-    // MARK: - Bottom Bar
-
     private var bottomBar: some View {
-        VStack(spacing: 10) {
-            if readingMode != .webtoon && pages.count > 1 {
-                HStack(spacing: 10) {
-                    Text("1")
-                        .font(AstralTypography.caption)
-                        .foregroundStyle(AstralColors.muted)
-                        .frame(minWidth: 24, alignment: .trailing)
-
-                    Slider(
-                        value: Binding(
-                            get: { Double(currentPage) },
-                            set: { newValue in
-                                let newPage = Int(newValue.rounded())
-                                if newPage != currentPage {
-                                    currentPage = newPage
-                                    Haptics.play(.pageTurn)
-                                }
-                            }
-                        ),
-                        in: 0...Double(pages.count - 1),
-                        step: 1
-                    )
-                    .tint(AstralColors.gold)
-
-                    Text("\(pages.count)")
-                        .font(AstralTypography.caption)
-                        .foregroundStyle(AstralColors.muted)
-                        .frame(minWidth: 24, alignment: .leading)
+        HStack {
+            Button("Chapters", systemImage: "list.bullet") { showChapterList = true }.frame(minHeight: 44)
+            Spacer()
+            Menu {
+                ForEach(0..<pageSource.pageCount, id: \.self) { index in
+                    Button("Page \(index + appliedSkip + 1)") { previousPageJump = currentPage; currentPage = index; scrolledPageID = index; pendingScrollToPage = index }
                 }
-                .padding(.horizontal, 4)
-            }
-
-            HStack {
-                Button { goToPrevChapter() } label: {
-                    Label("Prev", systemImage: "chevron.left")
-                        .font(AstralTypography.captionMedium)
-                        .foregroundStyle(isFirstChapter ? AstralColors.muted : AstralColors.gold)
-                }
-                .disabled(isFirstChapter)
-                .buttonStyle(PressButtonStyle(scale: 0.9))
-
-                Spacer()
-
-                Menu {
-                    ForEach(0..<pages.count, id: \.self) { idx in
-                        Button("Page \(idx + 1)") {
-                            if readingMode == .webtoon {
-                                pendingScrollToPage = idx
-                            } else {
-                                withAnimation(ReaderMotion.pageTurn) { currentPage = idx }
-                            }
-                            Haptics.play(.pageTurn)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("\(currentPage + 1) / \(pages.count)")
-                            .font(AstralTypography.captionMedium)
-                            .foregroundStyle(AstralColors.white)
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(AstralColors.muted)
-                    }
-                    .animation(AstralAnimation.quick, value: currentPage)
-                }
-                .menuStyle(.button)
-                .buttonStyle(PressButtonStyle(scale: 0.94))
-                .disabled(pages.isEmpty)
-
-                Spacer()
-
-                Button { goToNextChapter() } label: {
-                    Label("Next", systemImage: "chevron.right")
-                        .labelStyle(.titleAndIcon)
-                        .font(AstralTypography.captionMedium)
-                        .foregroundStyle(isLastChapter ? AstralColors.muted : AstralColors.gold)
-                }
-                .disabled(isLastChapter)
-                .buttonStyle(PressButtonStyle(scale: 0.9))
-            }
+            } label: {
+                Text("Page \(currentPage + appliedSkip + 1) of \(pageSource.pageCount + appliedSkip)").font(.caption).monospacedDigit().frame(minHeight: 44)
+            }.accessibilityLabel("Choose page").accessibilityValue("Page \(currentPage + appliedSkip + 1) of \(pageSource.pageCount + appliedSkip)")
+            Spacer()
+            Button("Display", systemImage: "slider.horizontal.3") { persistReadingState(endSession: false, syncRemote: false); showSettings = true }
+                .labelStyle(.iconOnly).accessibilityLabel("Display settings").frame(width: 44, height: 44)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 34)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 16).padding(.vertical, 6).background(.regularMaterial)
     }
 
     // MARK: - Settings Panel
@@ -710,8 +400,8 @@ struct ComicReaderView: View {
                     ForEach(ReadingMode.allCases, id: \.self) { mode in
                         Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                resumePageForLayout = currentPage
                                 readingMode = mode
-                                currentPage = 0
                             }
                         } label: {
                             VStack(spacing: 6) {
@@ -776,31 +466,11 @@ struct ComicReaderView: View {
                 }
             }
 
-            // Auto-scroll (webtoon only)
             if readingMode == .webtoon {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Image(systemName: "arrow.down.circle")
-                            .foregroundStyle(AstralColors.muted)
-                        Text("Auto-Scroll")
-                            .font(AstralTypography.body)
-                            .foregroundStyle(AstralColors.white)
-                        Spacer()
-                        Toggle("", isOn: $autoScrollActive)
-                            .tint(AstralColors.gold)
-                            .labelsHidden()
-                    }
-
-                    if autoScrollActive {
-                        HStack(spacing: 12) {
-                            Image(systemName: "tortoise")
-                                .foregroundStyle(AstralColors.muted)
-                            Slider(value: $autoScrollSpeed, in: 0.5...5.0, step: 0.5)
-                                .tint(AstralColors.gold)
-                            Image(systemName: "hare")
-                                .foregroundStyle(AstralColors.muted)
-                        }
-                    }
+                    Text("Auto-scroll speed").font(.headline)
+                    Slider(value: $autoScrollSpeed, in: 0.5...5, step: 0.5).accessibilityLabel("Auto-scroll speed")
+                    Text("Start or pause auto-scroll from More in the reader. It pauses when you open a sheet or leave Astral.").font(.footnote).foregroundStyle(.secondary)
                 }
             }
 
@@ -822,53 +492,16 @@ struct ComicReaderView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
-        .padding(.bottom, 34)
+        .padding(.bottom, 16)
         .background(.ultraThinMaterial)
     }
 
     // MARK: - Page Navigation
 
-    private func prevPage() {
-        if currentPage > 0 { currentPage -= 1 } else { goToPrevChapter() }
-    }
-
-    private func nextPage() {
-        if currentPage < pages.count - 1 { currentPage += 1 } else { goToNextChapter() }
-    }
-
-    private func goToPrevChapter() {
-        guard !isFirstChapter else { return }
-        Haptics.play(.chapterNav)
-        withAnimation(AstralAnimation.quick) {
-            currentChapterIndex -= 1
-            currentPage = 0
-        }
-    }
-
-    private func goToNextChapter() {
-        guard !isLastChapter else { return }
-        Haptics.play(.chapterNav)
-        withAnimation(AstralAnimation.quick) {
-            currentChapterIndex += 1
-            currentPage = 0
-        }
-    }
-
-    private func chapterTransitionPage(direction: String, icon: String) -> some View {
-        VStack(spacing: 12) {
-            ProgressView().tint(AstralColors.gold)
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(direction)
-                    .font(AstralTypography.bodyMedium)
-            }
-            .foregroundStyle(AstralColors.muted)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-    }
-
+    private func prevPage() { if currentPage > 0 { currentPage -= 1 } }
+    private func nextPage() { if currentPage < pageSource.pageCount - 1 { currentPage += 1 } }
+    private func goToPrevChapter() { requestChapter(currentChapterIndex - 1) }
+    private func goToNextChapter() { requestChapter(currentChapterIndex + 1) }
     // MARK: - Bookmark
 
     private var isCurrentChapterBookmarked: Bool {
@@ -879,17 +512,18 @@ struct ComicReaderView: View {
     private func bookmarkCurrentChapter() {
         guard let chapter = currentChapter else { return }
         if let existing = bookmarks.first(where: { $0.chapterNumber == chapter.chapterNumber }) {
-            modelContext.delete(existing)
+            BookmarkUndoService.shared.delete(existing, context: modelContext)
             AstralLogger.info("Bookmark removed: ch \(chapter.chapterNumber)", context: "ComicReader")
         } else {
             let bookmark = LocalBookmark(
                 contentType: "comic",
                 storyId: comic.id,
                 chapterNumber: chapter.chapterNumber,
-                pageNumber: currentPage + 1,
+                pageNumber: currentPage + appliedSkip + 1,
                 heading: chapter.title ?? "Chapter \(Int(chapter.chapterNumber))"
             )
             modelContext.insert(bookmark)
+            BookmarkAnchorStore.save(bookmark: bookmark.id, chapter: chapter.id)
             AstralLogger.info("Bookmark added: ch \(chapter.chapterNumber) page \(currentPage + 1)", context: "ComicReader")
         }
         try? modelContext.save()
@@ -901,175 +535,126 @@ struct ComicReaderView: View {
 
     // MARK: - Loading
 
-    private func applyPageSkip(_ allPages: [PageResponse]) -> [PageResponse] {
-        guard comic.skipFirstNPages > 0 else { return allPages }
-        return Array(allPages.dropFirst(comic.skipFirstNPages))
-    }
-
-    /// Kicks off a best-effort network fetch of the next chapter's page list
-    /// and warms URLSession's cache with the first two page images. Silent on
-    /// failure — AsyncImage / URLSession handle the "never actually fetched" case.
-    /// UUIDs passed in so the non-Sendable @Model (`comic`, `chapters[i]`) never
-    /// crosses an actor boundary.
-    private static func prefetchNextChapter(comicId: UUID, chapterId: UUID) async {
-        do {
-            let response: [PageResponse] = try await APIClient.shared.request(
-                .chapterPages(comicId: comicId, chapterId: chapterId)
-            )
-            let urls = response.prefix(2).compactMap { URL(string: AppConfig.staticBaseURL + $0.filePath) }
-            for url in urls {
-                _ = try? await URLSession.shared.data(from: url)
-            }
-        } catch {
-            // Prefetch is best-effort — no surface.
-        }
-    }
-
-    private func loadPages() async {
-        isLoading = true
-        pages = []
-
-        // Restore page position if resuming same chapter, otherwise start at 0
-        let resumeChapterNumber = Int(currentChapter?.chapterNumber ?? 0)
-        let savedPage = (comic.lastReadChapterNumber == resumeChapterNumber && comic.lastReadPageNumber > 0)
-            ? comic.lastReadPageNumber - 1  // convert 1-based to 0-based
-            : 0
-        currentPage = savedPage
-        scrolledPageID = savedPage
-
-        guard let chapter = currentChapter else {
-            AstralLogger.warning("loadPages: no currentChapter at index \(currentChapterIndex)", context: "ComicReader")
-            isLoading = false
-            return
-        }
-
-        AstralLogger.info("loadPages: chapter \(chapter.chapterNumber) (id=\(chapter.id)) for comic '\(comic.title)'", context: "ComicReader")
-
-        // Persist reading progress
-        comic.lastReadChapterNumber = Int(chapter.chapterNumber)
+    private func persistReadingState(endSession: Bool, syncRemote: Bool) {
+        if endSession { readingSession?.endedAt = .now; try? modelContext.save() }
+        guard let chapter = currentChapter, !isLoading, pageSource.pageCount > 0 else { return }
+        comic.lastReadChapterNumber = Int(chapter.chapterNumber) // legacy display fallback only
+        comic.lastReadPageNumber = currentPage + appliedSkip + 1
         comic.lastReadAt = .now
-        if comic.totalChapters > 0 {
-            comic.progressPercent = Double(comic.lastReadChapterNumber) / Double(comic.totalChapters)
-            if comic.progressPercent >= 1.0 && comic.completedAt == nil {
-                comic.completedAt = .now
-            }
-        }
-        readingSession?.chaptersRead += 1
+        comic.progressPercent = min(1, (Double(currentChapterIndex) + Double(currentPage) / Double(max(1, pageSource.pageCount))) / Double(max(1, chapters.count)))
+        ReadingPositionStore.save(.init(chapterID: chapter.id, chapterNumber: chapter.chapterNumber,
+            page: currentPage + appliedSkip), story: comic.id)
+        if endSession { readingSession?.endedAt = .now }
         try? modelContext.save()
+    }
 
-        // Sync progress to backend (fire-and-forget)
-        Task {
-            let body = ComicProgressRequest(
-                lastChapterNumber: Int(chapter.chapterNumber),
-                lastPageNumber: currentPage + 1
-            )
-            let _: ProgressResponse? = try? await APIClient.shared.request(
-                .updateComicProgress(storyId: comic.id, body: body)
-            )
+    private struct ChapterPages {
+        let network: [PageResponse]
+        let local: [URL]?
+        var count: Int { local?.count ?? network.count }
+    }
+    private func fetchPages(_ chapter: LocalComicChapter) async throws -> ChapterPages {
+        if let previewPages { return .init(network: previewPages, local: nil) }
+        if let urls = ChapterDownloadService.shared.localPageURLs(for: chapter),
+           !urls.isEmpty, chapter.totalPages == 0 || chapter.totalPages == urls.count {
+            return .init(network: [], local: urls)
         }
-
-        if let previewPages {
-            pages = previewPages
-            localPageURLs = nil
-            isLoading = false
-            return
+        if comic.sourceKey == "mangadex-device" { return .init(network: try await MangaDexDeviceService.pages(chapter.id), local: nil) }
+        if DeviceComicService.sources.contains(comic.sourceKey) { return .init(network: try await DeviceComicService.pages(comic: comic, chapter: chapter), local: nil) }
+        guard comic.sourceKey != "local", AppConfig.companionEnabled else { throw APIError.companionUnavailable }
+        let response: [PageResponse] = try await APIClient.shared.request(.chapterPages(comicId: comic.id, chapterId: chapter.id))
+        guard !response.isEmpty else { throw APIError.notFound }
+        return .init(network: response, local: nil)
+    }
+    private func apply(_ source: ChapterPages, chapter: LocalComicChapter) {
+        appliedSkip = min(max(0, comic.skipFirstNPages), max(0, source.count - 1))
+        pages = Array(source.network.dropFirst(appliedSkip))
+        localPageURLs = source.local.map { Array($0.dropFirst(appliedSkip)) }
+        let saved = ReadingPositionStore.position(story: comic.id, chapter: chapter.id)
+        let legacy = comic.lastReadChapterNumber == Int(chapter.chapterNumber) ? max(0, comic.lastReadPageNumber - 1) : 0
+        currentPage = min(max(0, (saved?.page ?? legacy) - appliedSkip), max(0, source.count - appliedSkip - 1))
+        if let bookmark = initialBookmark, !appliedInitialBookmark, bookmark.chapterNumber == chapter.chapterNumber {
+            currentPage = min(max(0, (bookmark.pageNumber ?? 1) - appliedSkip - 1), max(0, source.count - appliedSkip - 1))
+            appliedInitialBookmark = true
         }
-
-        // Try local files first (device-saved chapter)
-        AstralLogger.info("loadPages: chapter \(chapter.id) state — isDownloaded=\(chapter.isDownloaded), downloadStatus=\(chapter.downloadStatus.rawValue), totalPages=\(chapter.totalPages), localPagesPath=\(chapter.localPagesPath ?? "nil")", context: "ComicReader")
-        if let urls = ChapterDownloadService.shared.localPageURLs(for: chapter) {
-            if urls.count == chapter.totalPages || chapter.totalPages == 0 {
-                localPageURLs = urls
-                pages = []
-                AstralLogger.info("loadPages: using \(urls.count) local pages (first=\(urls.first?.lastPathComponent ?? "nil"))", context: "ComicReader")
-                isLoading = false
-                return
-            } else {
-                // Page count mismatch — partial/corrupt download
-                chapter.downloadStatus = .failed
-                chapter.downloadError = "Expected \(chapter.totalPages) pages, found \(urls.count)"
-                AstralLogger.warning("loadPages: local page count mismatch (urls=\(urls.count), totalPages=\(chapter.totalPages), first=\(urls.first?.lastPathComponent ?? "nil")), falling through to network", context: "ComicReader")
-            }
-        } else {
-            AstralLogger.warning("loadPages: localPageURLs returned nil for chapter \(chapter.id)", context: "ComicReader")
-        }
-
-        localPageURLs = nil
-        offlineError = false
-        do {
-            let response: [PageResponse] = try await APIClient.shared.request(
-                .chapterPages(comicId: comic.id, chapterId: chapter.id)
-            )
-            pages = applyPageSkip(response)
-            AstralLogger.info("loadPages: got \(pages.count) pages", context: "ComicReader")
-        } catch {
-            AstralLogger.error("loadPages failed: \(error)", context: "ComicReader")
-            offlineError = true
-        }
+        resumePageForLayout = currentPage
+        scrolledPageID = currentPage; visiblePageID = currentPage
+        isZoomed = false; offlineError = false
+    }
+    private func loadPages() async {
+        guard let chapter = currentChapter else { isLoading = false; return }
+        do { let source = try await fetchPages(chapter); apply(source, chapter: chapter) }
+        catch { offlineError = true }
         isLoading = false
-        let nextIdx = currentChapterIndex + 1
-        if nextIdx < chapters.count {
-            let nextChapterId = chapters[nextIdx].id
-            let comicId = comic.id
-            Task(priority: .background) {
-                await Self.prefetchNextChapter(comicId: comicId, chapterId: nextChapterId)
-            }
+    }
+    private func saveCurrentChapter() {
+        guard let chapter = currentChapter, !isSavingChapter, !chapter.isDownloaded else { return }
+        isSavingChapter = true
+        saveChapterTask = Task { @MainActor in
+            saveError = await ChapterDownloadService.shared.downloadAllChapters(
+                comic: comic, chapters: [chapter], modelContext: modelContext,
+                onCancel: { saveChapterTask?.cancel() }, onProgress: { _, _ in }
+            )
+            isSavingChapter = false
         }
     }
+    private func requestChapter(_ index: Int) {
+        guard chapters.indices.contains(index), index != currentChapterIndex, !isTransitioning else { return }
+        persistReadingState(endSession: false, syncRemote: false)
+        isTransitioning = true; transitionError = nil; failedIndex = nil; autoScrollActive = false
+        Task { @MainActor in
+            defer { isTransitioning = false; pullProgress = 0 }
+            do {
+                let chapter = chapters[index]
+                let source = try await fetchPages(chapter)
+                try Task.checkCancellation()
+                currentChapterIndex = index
+                apply(source, chapter: chapter)
+                readingSession?.chaptersRead += 1
+                persistReadingState(endSession: false, syncRemote: false)
+                Haptics.play(.chapterNav)
+            } catch { failedIndex = index; transitionError = error.localizedDescription; showHUD = true }
+        }
+    }
+
 }
 
 // MARK: - Page View
 
 struct ComicPageView: View {
     let page: PageResponse
+    var referrer: String? = nil
     @State private var retryID = UUID()
+    @State private var image: UIImage?
+    @State private var failed = false
 
     var body: some View {
-        AsyncImage(url: pageURL) { phase in
-            switch phase {
-            case .empty:
-                Rectangle()
-                    .fill(AstralColors.elevated)
-                    .aspectRatio(aspectRatio, contentMode: .fit)
-                    .overlay { ProgressView().tint(AstralColors.gold) }
-
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFit()
-                    .transition(.opacity)
-
-            case .failure:
-                Rectangle()
-                    .fill(AstralColors.elevated)
-                    .aspectRatio(aspectRatio, contentMode: .fit)
+        Group {
+            if let image { Image(uiImage: image).resizable().scaledToFit() }
+            else {
+                Rectangle().fill(AstralColors.elevated).aspectRatio(aspectRatio, contentMode: .fit)
                     .overlay {
-                        VStack(spacing: 8) {
-                            Image(systemName: "arrow.clockwise.circle")
-                                .font(.title2)
-                            Text("Tap to retry")
-                                .font(AstralTypography.caption)
-                        }
-                        .foregroundStyle(AstralColors.muted)
+                        if failed {
+                            Button("Retry page", systemImage: "arrow.clockwise.circle") { retryID = UUID() }
+                                .foregroundStyle(AstralColors.muted).frame(minHeight: 44)
+                        } else { ProgressView().tint(AstralColors.gold) }
                     }
-                    .onTapGesture { retryID = UUID() }
-
-            @unknown default:
-                EmptyView()
             }
         }
-        .id(retryID)
         .frame(maxWidth: .infinity)
-    }
-
-    private var pageURL: URL? {
-        URL(string: AppConfig.staticBaseURL + page.filePath)
-    }
-
-    private var aspectRatio: CGFloat {
-        if let w = page.widthPx, let h = page.heightPx, h > 0 {
-            return CGFloat(w) / CGFloat(h)
+        .task(id: page.filePath + retryID.uuidString) {
+            image = nil; failed = false
+            do {
+                guard let url = URL(string: page.filePath.hasPrefix("https://") ? page.filePath : AppConfig.staticBaseURL + page.filePath) else { throw APIError.invalidURL }
+                let (data, response) = try await SourceImageTransport.session.data(for: SourceImageTransport.request(url, referrer: referrer))
+                try Task.checkCancellation()
+                guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode), let decoded = UIImage(data: data) else { throw APIError.invalidResponse }
+                image = decoded
+            } catch is CancellationError { } catch { if !Task.isCancelled { failed = true } }
         }
+    }
+    private var aspectRatio: CGFloat {
+        if let w = page.widthPx, let h = page.heightPx, h > 0 { return CGFloat(w) / CGFloat(h) }
         return 2.0 / 3.0
     }
 }
@@ -1139,6 +724,8 @@ private struct AutoScrollFinder: UIViewRepresentable {
         Coordinator(speed: speed)
     }
 
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) { coordinator.stopScrolling() }
+
     @MainActor
     class Coordinator {
         var speed: Double
@@ -1166,9 +753,10 @@ private struct AutoScrollFinder: UIViewRepresentable {
         @objc private func tick() {
             guard let sv = scrollView else { return }
             let maxY = sv.contentSize.height - sv.bounds.height + sv.contentInset.bottom
-            guard maxY > 0 else { return }
+            guard maxY > 0 else { stopScrolling(); return }
             let newY = min(sv.contentOffset.y + speed, maxY)
             sv.contentOffset.y = newY
+            if newY >= maxY { stopScrolling() }
         }
 
         private func findScrollView(in view: UIView) -> UIScrollView? {
@@ -1193,62 +781,38 @@ private struct AutoScrollFinder: UIViewRepresentable {
 /// Wraps a comic page view with pinch-to-zoom and double-tap-to-zoom.
 private struct ZoomablePageView<Content: View>: View {
     let content: Content
-
-    @State private var scale: CGFloat = 1.0
-    @State private var lastScale: CGFloat = 1.0
+    let onSingleTap: () -> Void
+    let onZoom: (Bool) -> Void
+    @State private var scale: CGFloat = 1
+    @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
+    @State private var size: CGSize = .zero
+    init(onSingleTap: @escaping () -> Void, onZoom: @escaping (Bool) -> Void, @ViewBuilder content: () -> Content) {
+        self.onSingleTap = onSingleTap; self.onZoom = onZoom; self.content = content()
     }
-
+    private func clamped(_ value: CGSize) -> CGSize {
+        let x = size.width * (scale - 1) / 2, y = size.height * (scale - 1) / 2
+        return CGSize(width: min(x, max(-x, value.width)), height: min(y, max(-y, value.height)))
+    }
     var body: some View {
         content
-            .scaleEffect(scale)
-            .offset(offset)
-            .simultaneousGesture(
-                MagnifyGesture()
-                    .onChanged { value in
-                        scale = lastScale * value.magnification
-                    }
-                    .onEnded { value in
-                        lastScale = max(1.0, min(scale, 5.0))
-                        scale = lastScale
-                        if lastScale <= 1.0 {
-                            withAnimation(AstralAnimation.smooth) {
-                                offset = .zero
-                                lastOffset = .zero
-                            }
-                        }
-                    }
-            )
-            .gesture(scale > 1.0 ?
-                DragGesture()
-                    .onChanged { value in
-                        offset = CGSize(
-                            width: lastOffset.width + value.translation.width,
-                            height: lastOffset.height + value.translation.height
-                        )
-                    }
-                    .onEnded { _ in
-                        lastOffset = offset
-                    }
-                : nil
-            )
-            .onTapGesture(count: 2) {
-                withAnimation(AstralAnimation.smooth) {
-                    if scale > 1.0 {
-                        scale = 1.0
-                        lastScale = 1.0
-                        offset = .zero
-                        lastOffset = .zero
-                    } else {
-                        scale = 2.5
-                        lastScale = 2.5
-                    }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .scaleEffect(scale).offset(offset)
+            .simultaneousGesture(MagnifyGesture().onChanged { value in
+                scale = min(5, max(1, lastScale * value.magnification)); onZoom(scale > 1)
+            }.onEnded { _ in lastScale = scale; offset = clamped(offset); lastOffset = offset })
+            .highPriorityGesture(scale > 1 ? DragGesture().onChanged { value in
+                offset = clamped(CGSize(width: lastOffset.width + value.translation.width, height: lastOffset.height + value.translation.height))
+            }.onEnded { _ in lastOffset = offset } : nil)
+            .gesture(TapGesture(count: 2).exclusively(before: TapGesture()).onEnded { result in
+                switch result {
+                case .first:
+                    scale = scale > 1 ? 1 : 2.5; lastScale = scale; offset = .zero; lastOffset = .zero; onZoom(scale > 1)
+                case .second: onSingleTap()
                 }
-            }
+            })
+            .onDisappear { onZoom(false) }
     }
 }
 
@@ -1258,125 +822,6 @@ private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
-}
-
-// MARK: - Chapter Triggers
-
-private let chapterArmDelay: TimeInterval = 0.5
-/// How far past the natural scroll edge the user must pull for the trigger
-/// to fire (pct reaches 1.0 at this overscroll distance). At the natural
-/// edge, overscroll = 0 so pct = 0 — ring UI stays hidden until the user
-/// actively pulls. No reserved empty "black box" space inside scroll content.
-private let chapterPullThreshold: CGFloat = 120
-
-/// 1pt sentinel placed at the top of webtoon scroll content. Tracks
-/// pull-down overscroll past the natural top; ring UI is rendered as
-/// an overlay that only appears during active overscroll.
-private struct PrevChapterTrigger: View {
-    let onVisibilityChange: (Bool) -> Void
-    let onProgressChange: (CGFloat) -> Void
-    let progress: CGFloat
-    let isArmed: Bool
-
-    var body: some View {
-        GeometryReader { geo in
-            let frame = geo.frame(in: .global)
-            // Sentinel at content Y=0; with `.ignoresSafeArea()` its natural
-            // global Y is 0. When the user overscrolls down (pulls content
-            // past the top), content Y=0 shifts down by the overscroll
-            // amount, so frame.maxY == overscroll.
-            let overscroll = max(0, frame.maxY)
-            let pct = min(overscroll / chapterPullThreshold, 1.0)
-            let isPulling = overscroll > 0
-            Color.clear
-                .onChange(of: isPulling) { _, new in onVisibilityChange(new) }
-                .onChange(of: pct) { _, new in
-                    // Forward pct unconditionally so the ring fills as the
-                    // user pulls. The parent gates the actual FIRE on
-                    // `topEdgeArmedAt != nil` (0.5s held-pull requirement).
-                    onProgressChange(new)
-                }
-                .onChange(of: isArmed) { _, armed in
-                    // If the user pulled past threshold faster than the
-                    // arm timer, pct is already ≥ 1.0 and `onChange(of: pct)`
-                    // won't refire. Re-forward current pct so the parent
-                    // can re-evaluate its armed-and-maxed guard.
-                    if armed { onProgressChange(pct) }
-                }
-        }
-        .frame(height: 1)
-        .overlay {
-            chapterTriggerRing(
-                progress: progress,
-                icon: progress >= 1.0 ? "checkmark" : "chevron.up",
-                label: progress >= 1.0 ? "Loading prev..." : "Previous chapter"
-            )
-            .offset(y: 40)
-        }
-    }
-}
-
-/// 1pt sentinel placed at the bottom of webtoon scroll content.
-private struct NextChapterTrigger: View {
-    let onVisibilityChange: (Bool) -> Void
-    let onProgressChange: (CGFloat) -> Void
-    let progress: CGFloat
-    let isArmed: Bool
-
-    var body: some View {
-        GeometryReader { geo in
-            let frame = geo.frame(in: .global)
-            let screenH = UIScreen.main.bounds.height
-            // Sentinel at scroll content's end. At natural bottom its global
-            // minY equals screenH. Overscroll up (pulling content past the
-            // bottom) shifts minY upward by the overscroll amount.
-            let overscroll = max(0, screenH - frame.minY)
-            let pct = min(overscroll / chapterPullThreshold, 1.0)
-            let isPulling = overscroll > 0
-            Color.clear
-                .onChange(of: isPulling) { _, new in onVisibilityChange(new) }
-                .onChange(of: pct) { _, new in onProgressChange(new) }
-                .onChange(of: isArmed) { _, armed in
-                    if armed { onProgressChange(pct) }
-                }
-        }
-        .frame(height: 1)
-        .overlay {
-            chapterTriggerRing(
-                progress: progress,
-                icon: progress >= 1.0 ? "checkmark" : "chevron.down",
-                label: progress >= 1.0 ? "Loading next..." : "Next chapter"
-            )
-            .offset(y: -40)
-        }
-    }
-}
-
-/// Shared ring + label — progress ring fills via the `trim` parameter.
-@ViewBuilder
-private func chapterTriggerRing(progress: CGFloat, icon: String, label: String) -> some View {
-    VStack(spacing: 8) {
-        ZStack {
-            Circle()
-                .stroke(AstralColors.muted.opacity(0.3), lineWidth: 3)
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(.easeOut(duration: 0.1), value: progress)
-
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(progress >= 1.0 ? AstralColors.gold : AstralColors.muted)
-        }
-        .frame(width: 28, height: 28)
-
-        Text(label)
-            .font(AstralTypography.caption)
-            .foregroundStyle(AstralColors.muted)
-    }
-    .opacity(progress > 0.02 ? 1 : 0)
-    .animation(ReaderMotion.triggerRing, value: progress > 0.02)
 }
 
 // MARK: - Chapter List Sheet

@@ -10,7 +10,7 @@ public enum AstralColors {
 
     // MARK: - Borders & Muted
     public static let border = Color(hex: 0x2A2A30)
-    public static let muted = Color(hex: 0x6B6B7A)
+    public static let muted = Color(hex: 0x9696A3)
 
     // MARK: - Text
     public static let body = Color(hex: 0xC8C8D4)

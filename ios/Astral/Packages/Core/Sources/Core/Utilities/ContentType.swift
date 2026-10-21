@@ -49,6 +49,7 @@ public enum FanficRating: String, CaseIterable, Codable, Sendable {
     case teen = "T"
     case mature = "M"
     case explicit = "E"
+    case notRated = "NR"
 }
 
 public enum CompletionStatus: String, CaseIterable, Codable, Sendable {

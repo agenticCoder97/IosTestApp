@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import SwiftData
 import Core
 import Networking
@@ -31,116 +32,133 @@ final class ChapterDownloadService {
         guard !activeDownloads.contains(chapter.id) else { return }
         activeDownloads.insert(chapter.id)
         defer { activeDownloads.remove(chapter.id) }
+        let storageToken = try ComicStoragePolicy.acquire(story: comicId, context: modelContext)
+        defer { ComicStoragePolicy.release(storageToken) }
 
+        let previousPath = chapter.localPagesPath
+        let previousState = chapter.downloadStatus
+        let previousDate = chapter.downloadedAt
+        let previousBytes = chapter.downloadSizeBytes
+        let previousSaved = chapter.isDownloaded
+        let generation = UUID().uuidString
+        let relativeDir = "comics/\(comicId)/\(chapter.id)/\(generation)"
+        let finalDir = documentsDir.appendingPathComponent(relativeDir)
         chapter.downloadStatus = .downloading
         chapter.downloadError = nil
-
         do {
-            // Estimate: ~500KB per page
-            let estimatedBytes = Int64(chapter.totalPages) * 500_000
-            try checkDiskSpace(estimatedBytes: estimatedBytes)
-
-            let pages: [PageResponse] = try await APIClient.shared.request(
-                .chapterPages(comicId: comicId, chapterId: chapter.id)
-            )
-
-            // Write to temp directory
-            let tempDir = tempDownloadDir.appendingPathComponent(chapter.id.uuidString)
-            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
-
+            try checkDiskSpace(estimatedBytes: Int64(chapter.totalPages) * 500_000)
+            let pages: [PageResponse]
+            if chapter.comic?.sourceKey == "mangadex-device" { pages = try await MangaDexDeviceService.pages(chapter.id) }
+            else if let comic = chapter.comic, DeviceComicService.sources.contains(comic.sourceKey) { pages = try await DeviceComicService.pages(comic: comic, chapter: chapter) }
+            else { pages = try await APIClient.shared.request(.chapterPages(comicId: comicId, chapterId: chapter.id)) }
+            guard !pages.isEmpty, Set(pages.map(\.pageNumber)).count == pages.count,
+                  chapter.totalPages == 0 || chapter.totalPages == pages.count else {
+                throw DownloadError.fileValidationFailed("The source returned an incomplete page list.")
+            }
+            try fileManager.createDirectory(at: finalDir, withIntermediateDirectories: true)
             var totalBytes: Int64 = 0
-
-            try await withThrowingTaskGroup(of: Int64.self) { group in
-                for page in pages {
-                    group.addTask {
-                        guard let url = URL(string: AppConfig.staticBaseURL + page.filePath) else {
-                            throw DownloadError.fileValidationFailed("Invalid URL for page \(page.pageNumber)")
+            // Bound both in-flight responses and decoded image validation to four pages.
+            for start in stride(from: 0, to: pages.count, by: 4) {
+                try Task.checkCancellation()
+                let batch = Array(pages[start..<min(start + 4, pages.count)])
+                totalBytes += try await withThrowingTaskGroup(of: (Int, Data).self) { group in
+                    for page in batch {
+                        guard let url = URL(string: page.filePath.hasPrefix("https://") ? page.filePath : AppConfig.staticBaseURL + page.filePath) else { throw APIError.invalidURL }
+                        let request = DeviceComicService.imageRequest(url, comic: comicId, chapter: chapter.id)
+                        group.addTask {
+                            let (data, response) = try await SourceImageTransport.session.data(for: request)
+                            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw APIError.invalidResponse }
+                            try self.validateImageData(data, pageNumber: page.pageNumber)
+                            try Task.checkCancellation()
+                            return (page.pageNumber, data)
                         }
-                        let (data, _) = try await URLSession.shared.data(from: url)
-
-                        // Validate image data
-                        try self.validateImageData(data, pageNumber: page.pageNumber)
-
-                        let fileName = String(format: "page_%04d.jpg", page.pageNumber)
-                        let fileURL = tempDir.appendingPathComponent(fileName)
-                        try data.write(to: fileURL)
-                        return Int64(data.count)
                     }
+                    var bytes: Int64 = 0
+                    for try await (number, data) in group {
+                        try savePage(data, to: finalDir.appendingPathComponent(String(format: "page_%04d.img", number)), token: storageToken, context: modelContext)
+                        bytes += Int64(data.count)
+                    }
+                    return bytes
                 }
-                for try await bytes in group {
-                    totalBytes += bytes
-                }
+                let used = try modelContext.fetch(FetchDescriptor<LocalComicChapter>()).reduce(Int64(0)) { $0 + ($1.downloadSizeBytes ?? 0) }
+                guard used - (previousBytes ?? 0) + totalBytes <= AppConfig.comicDownloadLimitBytes else { throw DownloadError.insufficientDiskSpace }
             }
-
-            // Atomic move: temp → final
-            let relativeDir = "comics/\(comicId)/\(chapter.id)"
-            let finalDir = documentsDir.appendingPathComponent(relativeDir)
-
-            // Remove existing if re-downloading
-            if fileManager.fileExists(atPath: finalDir.path) {
-                try fileManager.removeItem(at: finalDir)
+            try Task.checkCancellation()
+            guard !chapter.isDeleted, chapter.modelContext != nil else { throw CancellationError() }
+            chapter.totalPages = pages.count
+            chapter.localPagesPath = relativeDir; chapter.downloadStatus = .complete
+            chapter.downloadedAt = .now; chapter.downloadSizeBytes = totalBytes; chapter.isDownloaded = true
+            try modelContext.save()
+            if let previousPath, previousPath != relativeDir {
+                // A generation may live inside an older chapter directory. Never remove its ancestor.
+                let old = documentsDir.appendingPathComponent(previousPath).standardizedFileURL
+                if !finalDir.path.hasPrefix(old.path + "/") { try? fileManager.removeItem(at: old) }
             }
-            try fileManager.createDirectory(at: finalDir.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fileManager.moveItem(at: tempDir, to: finalDir)
-
-            // Update model
-            chapter.localPagesPath = relativeDir
-            chapter.downloadStatus = .complete
-            chapter.downloadedAt = .now
-            chapter.downloadSizeBytes = totalBytes
-            chapter.isDownloaded = true
-
-            do {
-                try modelContext.save()
-            } catch {
-                // Save failed — remove moved files to stay consistent
-                try? fileManager.removeItem(at: finalDir)
-                chapter.localPagesPath = nil
-                chapter.downloadStatus = .failed
-                chapter.downloadError = "Database save failed"
-                chapter.isDownloaded = false
-                throw error
-            }
-
         } catch {
-            // Cleanup temp on failure
-            let tempDir = tempDownloadDir.appendingPathComponent(chapter.id.uuidString)
-            try? fileManager.removeItem(at: tempDir)
-
-            chapter.downloadStatus = .failed
-            chapter.downloadError = error.localizedDescription
-            chapter.isDownloaded = false
+            try? fileManager.removeItem(at: finalDir)
+            guard !chapter.isDeleted, chapter.modelContext != nil else { throw error }
+            chapter.localPagesPath = previousPath
+            chapter.downloadStatus = previousSaved ? previousState : .failed
+            chapter.downloadedAt = previousDate; chapter.downloadSizeBytes = previousBytes; chapter.isDownloaded = previousSaved
+            chapter.downloadError = error is CancellationError ? "Download cancelled. Saved copy retained." : error.localizedDescription
             try? modelContext.save()
             throw error
         }
     }
 
+    private func savePage(_ data: Data, to destination: URL, token: UUID, context: ModelContext) throws {
+        try Task.checkCancellation()
+        try ComicStoragePolicy.reserve(bytes: Int64(data.count), token: token, context: context)
+        try data.write(to: destination, options: .atomic)
+    }
+
     /// Download ALL chapters for a comic sequentially.
+    @discardableResult
     func downloadAllChapters(
         comic: LocalComic,
         chapters: [LocalComicChapter],
         modelContext: ModelContext,
+        onCancel: @escaping () -> Void = {},
         onProgress: @escaping (Int, Int) -> Void
-    ) async {
-        let pending = chapters.filter { $0.downloadStatus != .complete && $0.scrapeStatus == "scraped" }
-        guard !pending.isEmpty else { return }
+    ) async -> String? {
+        let pending = chapters.filter { ![DownloadState.complete, .queued, .downloading].contains($0.downloadStatus) && $0.scrapeStatus == "scraped" }
+        guard !pending.isEmpty else { return nil }
 
+        let job = LocalScrapeJob(id: UUID(), contentType: "comic", storyId: comic.id, status: "running", totalChapters: pending.count, sourceKey: comic.sourceKey, jobType: "local-download", currentStep: comic.title, startedAt: .now)
+        modelContext.insert(job)
+        let reservation: UUID
+        do { reservation = try ComicStoragePolicy.acquire(story: comic.id, context: modelContext) }
+        catch { job.status = "failed"; job.errorMessage = error.localizedDescription; job.completedAt = .now; try? modelContext.save(); return error.localizedDescription }
+        defer { ComicStoragePolicy.release(reservation) }
+        LocalOperationRegistry.shared.register(job.id, cancel: onCancel)
+        defer { LocalOperationRegistry.shared.finish(job.id) }
         for chapter in pending {
             chapter.downloadStatus = .queued
         }
         try? modelContext.save()
 
         for (idx, chapter) in pending.enumerated() {
+            if Task.isCancelled { break }
             do {
                 try await downloadChapter(comicId: comic.id, chapter: chapter, modelContext: modelContext)
             } catch {
+                job.chaptersFailed += 1; job.errorMessage = error.localizedDescription
                 AstralLogger.error("Download failed ch \(chapter.chapterNumber): \(error)", context: "Download")
+                if error is ComicStoragePolicy.StorageError { break }
+                if let failure = error as? DownloadError, case .insufficientDiskSpace = failure { break }
             }
+            job.chaptersScraped = idx + 1 - job.chaptersFailed
             onProgress(idx + 1, pending.count)
         }
 
-        comic.isDownloaded = chapters.allSatisfy { $0.downloadStatus == .complete }
+        for chapter in pending where chapter.downloadStatus == .queued { chapter.downloadStatus = .none }
+        job.status = Task.isCancelled ? "cancelled" : (job.chaptersFailed > 0 ? "failed" : "completed")
+        job.completedAt = .now
+        let comicID = comic.id
+        let allChapters = (try? modelContext.fetch(FetchDescriptor<LocalComicChapter>(predicate: #Predicate { $0.comicId == comicID }))) ?? []
+        comic.isDownloaded = !allChapters.isEmpty && allChapters.allSatisfy { $0.downloadStatus == .complete }
         try? modelContext.save()
+        return job.status == "failed" ? (job.errorMessage ?? "Some chapters could not be saved. Saved copies were retained.") : nil
     }
 
     // MARK: - Local Files
@@ -160,7 +178,7 @@ final class ChapterDownloadService {
             return nil
         }
         let sorted = files
-            .filter { $0.pathExtension == "jpg" || $0.pathExtension == "png" }
+            .filter { ["jpg", "jpeg", "png", "webp", "gif", "heic", "img"].contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         if sorted.isEmpty {
             let rawNames = files.map { $0.lastPathComponent }
@@ -206,18 +224,11 @@ final class ChapterDownloadService {
 
     /// Validate downloaded image data has correct magic bytes.
     private nonisolated func validateImageData(_ data: Data, pageNumber: Int) throws {
-        guard data.count > 1024 else {
-            throw DownloadError.fileValidationFailed("Page \(pageNumber): file too small (\(data.count) bytes)")
-        }
-        let jpegMagic: [UInt8] = [0xFF, 0xD8, 0xFF]
-        let pngMagic: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
-
-        let header = Array(data.prefix(4))
-        let isJPEG = header.starts(with: jpegMagic)
-        let isPNG = header.starts(with: pngMagic)
-
-        guard isJPEG || isPNG else {
-            throw DownloadError.fileValidationFailed("Page \(pageNumber): not a valid JPEG/PNG")
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              (properties[kCGImagePropertyPixelWidth] as? Int ?? 0) > 0,
+              (properties[kCGImagePropertyPixelHeight] as? Int ?? 0) > 0 else {
+            throw DownloadError.fileValidationFailed("Page \(pageNumber): invalid image data")
         }
     }
 
@@ -230,91 +241,5 @@ final class ChapterDownloadService {
         }
     }
 
-    // MARK: - Background Downloads
 
-    /// Enqueue all pending chapters for background download (survives app kill).
-    func downloadAllChaptersBackground(
-        comic: LocalComic,
-        chapters: [LocalComicChapter],
-        modelContext: ModelContext
-    ) async {
-        let pending = chapters.filter { $0.downloadStatus != .complete && $0.scrapeStatus == "scraped" }
-        guard !pending.isEmpty else { return }
-
-        BackgroundDownloadSession.shared.onChapterComplete = { [weak self] comicId, chapterId in
-            guard let self else { return }
-            self.finalizeBackgroundChapter(comicId: comicId, chapterId: chapterId, chapters: chapters, comic: comic, modelContext: modelContext)
-        }
-        BackgroundDownloadSession.shared.onChapterFailed = { _, chapterId, error in
-            if let ch = chapters.first(where: { $0.id == chapterId }) {
-                ch.downloadStatus = .failed
-                ch.downloadError = error
-                try? modelContext.save()
-            }
-        }
-
-        for chapter in pending {
-            do {
-                try checkDiskSpace(estimatedBytes: Int64(chapter.totalPages) * 500_000)
-
-                let pages: [PageResponse] = try await APIClient.shared.request(
-                    .chapterPages(comicId: comic.id, chapterId: chapter.id)
-                )
-
-                let stagingDir = tempDownloadDir.appendingPathComponent(chapter.id.uuidString)
-                let pageURLs = pages.compactMap { page -> (pageNumber: Int, url: URL)? in
-                    guard let url = URL(string: AppConfig.staticBaseURL + page.filePath) else { return nil }
-                    return (page.pageNumber, url)
-                }
-
-                chapter.downloadStatus = .downloading
-                try? modelContext.save()
-
-                await BackgroundDownloadSession.shared.enqueueChapter(
-                    comicId: comic.id,
-                    chapterId: chapter.id,
-                    pageURLs: pageURLs,
-                    stagingDir: stagingDir
-                )
-            } catch {
-                chapter.downloadStatus = .failed
-                chapter.downloadError = error.localizedDescription
-                try? modelContext.save()
-            }
-        }
-    }
-
-    /// Called when BackgroundDownloadSession finishes all pages for a chapter.
-    private func finalizeBackgroundChapter(
-        comicId: UUID,
-        chapterId: UUID,
-        chapters: [LocalComicChapter],
-        comic: LocalComic,
-        modelContext: ModelContext
-    ) {
-        guard let chapter = chapters.first(where: { $0.id == chapterId }) else { return }
-
-        let stagingDir = tempDownloadDir.appendingPathComponent(chapterId.uuidString)
-        let relativeDir = "comics/\(comicId)/\(chapterId)"
-        let finalDir = documentsDir.appendingPathComponent(relativeDir)
-
-        do {
-            if fileManager.fileExists(atPath: finalDir.path) {
-                try fileManager.removeItem(at: finalDir)
-            }
-            try fileManager.createDirectory(at: finalDir.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fileManager.moveItem(at: stagingDir, to: finalDir)
-
-            chapter.localPagesPath = relativeDir
-            chapter.downloadStatus = .complete
-            chapter.downloadedAt = .now
-            chapter.isDownloaded = true
-            comic.isDownloaded = chapters.allSatisfy { $0.downloadStatus == .complete }
-            try modelContext.save()
-        } catch {
-            chapter.downloadStatus = .failed
-            chapter.downloadError = "Failed to finalize: \(error.localizedDescription)"
-            try? modelContext.save()
-        }
-    }
 }

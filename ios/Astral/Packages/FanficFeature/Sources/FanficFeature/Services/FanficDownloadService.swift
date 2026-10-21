@@ -29,6 +29,11 @@ public final class FanficDownloadService {
         activeDownloads.insert(chapter.id)
         defer { activeDownloads.remove(chapter.id) }
 
+        let oldPath = chapter.localTextPath
+        let oldSaved = chapter.isDownloaded
+        let oldState = chapter.downloadStatus
+        let oldDate = chapter.downloadedAt
+        var newURL: URL?
         chapter.downloadStatus = .queued
 
         // Check disk space
@@ -52,9 +57,10 @@ public final class FanficDownloadService {
                 throw DownloadError.fileValidationFailed("Server returned empty content")
             }
 
-            let relPath = chapterRelativePath(fanficId: fanfic.id, chapterNumber: chapter.chapterNumber)
+            let relPath = "fanfics/\(fanfic.id)/\(UUID().uuidString)/chapter.txt"
             let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let finalURL = documentsURL.appendingPathComponent(relPath)
+            newURL = finalURL
 
             // Write to temp file first, then atomic move
             try FileManager.default.createDirectory(
@@ -85,9 +91,13 @@ public final class FanficDownloadService {
             chapter.downloadStatus = .complete
             chapter.downloadedAt = .now
             chapter.downloadError = nil
-            try? modelContext.save()
+            try Task.checkCancellation()
+            try modelContext.save()
+            if let oldPath { try? FileManager.default.removeItem(at: documentsURL.appendingPathComponent(oldPath)) }
         } catch {
-            chapter.downloadStatus = .failed
+            if let newURL { try? FileManager.default.removeItem(at: newURL.deletingLastPathComponent()) }
+            chapter.localTextPath = oldPath; chapter.isDownloaded = oldSaved; chapter.downloadedAt = oldDate
+            chapter.downloadStatus = oldSaved ? oldState : .failed
             chapter.downloadError = error.localizedDescription
             AstralLogger.error("Download ch \(chapter.chapterNumber) failed: \(error)", context: "FanficDownload")
             try? modelContext.save()
@@ -99,16 +109,26 @@ public final class FanficDownloadService {
         fanfic: LocalFanfic,
         chapters: [LocalFanficChapter],
         modelContext: ModelContext,
+        onCancel: @escaping () -> Void = {},
         onProgress: @escaping (Int, Int) -> Void
     ) async {
         let pending = chapters.filter { $0.downloadStatus != .complete && $0.scrapeStatus == "scraped" }
         guard !pending.isEmpty else { return }
 
+        let job = LocalScrapeJob(id: UUID(), contentType: "fanfic", storyId: fanfic.id, status: "running", totalChapters: pending.count, sourceKey: fanfic.sourceKey, jobType: "local-download", currentStep: fanfic.title, startedAt: .now)
+        modelContext.insert(job)
+        LocalOperationRegistry.shared.register(job.id, cancel: onCancel)
+        defer { LocalOperationRegistry.shared.finish(job.id) }
         for (idx, chapter) in pending.enumerated() {
+            if Task.isCancelled { break }
             await downloadChapter(fanfic: fanfic, chapter: chapter, modelContext: modelContext)
+            if chapter.downloadStatus != .complete { job.chaptersFailed += 1; job.errorMessage = chapter.downloadError }
+            job.chaptersScraped = idx + 1 - job.chaptersFailed
             onProgress(idx + 1, pending.count)
         }
 
+        job.status = Task.isCancelled ? "cancelled" : (job.chaptersFailed > 0 ? "failed" : "completed")
+        job.completedAt = .now
         fanfic.isDownloaded = chapters.allSatisfy { $0.downloadStatus == .complete }
         try? modelContext.save()
     }

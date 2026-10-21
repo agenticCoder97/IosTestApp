@@ -10,11 +10,15 @@ struct ComicDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.comicNavigation) private var comicNavigation
     @Environment(\.dismiss) private var dismiss
-    @Query private var chapters: [LocalComicChapter]
+    @Query private var storedChapters: [LocalComicChapter]
+    private var chapters: [LocalComicChapter] { ChapterOrdering.comics(storedChapters) }
     @Query private var bookmarks: [LocalBookmark]
+    @State private var selectedBookmark: LocalBookmark?
     @State private var selectedChapter: LocalComicChapter?
     @State private var scrollOffset: CGFloat = 0
+    @State private var downloadTask: Task<Void, Never>?
     @State private var isDownloading = false
+    @State private var downloadError: String?
     @State private var downloadProgress: (Int, Int) = (0, 0)
     @State private var activeTab: DetailTab = .chapters
     @State private var showDeleteAlert = false
@@ -30,7 +34,7 @@ struct ComicDetailView: View {
     init(comic: LocalComic) {
         self.comic = comic
         let id = comic.id
-        _chapters = Query(
+        _storedChapters = Query(
             filter: #Predicate<LocalComicChapter> { $0.comicId == id },
             sort: \LocalComicChapter.chapterNumber
         )
@@ -78,44 +82,50 @@ struct ComicDetailView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let heroHeight = geo.size.width / heroAspect
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // MARK: Hero + floating title
-                    ZStack(alignment: .bottomLeading) {
-                        heroThumbnail
-                            .frame(maxWidth: .infinity)
-                            .aspectRatio(heroAspect, contentMode: .fit)
-                            .clipped()
-
-                        // Full-width gradient at bottom of thumbnail
-                        LinearGradient(
-                            colors: [.clear, AstralColors.background],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: heroHeight * 0.55)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-
-                        // Floating title — fades on scroll
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(comic.title)
-                                .font(AstralTypography.title)
-                                .foregroundStyle(AstralColors.white)
-                                .lineLimit(3)
-                                .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 2)
-
-                            HStack(spacing: 6) {
-                                StatusBadge(comic.sourceKey.uppercased())
-                                StatusBadge(comic.status)
-                            }
+                    HStack(alignment: .top, spacing: 16) {
+                        StoryThumbnail(path: comic.thumbnailPath, title: comic.title, width: 72, height: 96, baseURL: AppConfig.staticBaseURL)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(comic.title).font(.title2.weight(.semibold)).foregroundStyle(AstralColors.white)
+                            Text(comic.sourceKey == "mangadex-device" ? "MangaDex" : comic.sourceKey.uppercased()).font(.subheadline).foregroundStyle(.secondary)
+                            Text("\(chapters.filter { $0.localPagesPath != nil }.count) of \(chapters.count) chapters saved").font(.caption).foregroundStyle(.secondary)
+                            if comic.sourceKey == "local" && !comic.isFullyDownloaded { Text("Import the original folder in Add to restore removed pages.").font(.caption) }
                         }
-                        .padding(16)
-                        .opacity(titleOpacity(heroHeight: heroHeight))
+                    }.padding(16)
+
+                    // MARK: Continue Reading / Archive actions
+                    if !chapters.isEmpty {
+                        if let nextChapter = nextUnreadChapter {
+                            Button {
+                                AstralLogger.info("Continue button tapped: ch \(nextChapter.chapterNumber)", context: "ComicDetail")
+                                selectedChapter = nextChapter
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: comic.lastReadAt == nil ? "book.fill" : "arrow.right.circle.fill")
+                                    Text(comic.lastReadAt == nil
+                                         ? "Start Reading"
+                                         : "Continue — Ch. \(nextChapter.chapterNumber.formatted())")
+                                        .font(AstralTypography.bodyMedium)
+                                }
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(AstralColors.gold)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 4)
+                        }
                     }
 
+
                     // MARK: Metadata section
+                    DisclosureGroup("Story details") {
                     VStack(alignment: .leading, spacing: 16) {
+                        if let description = comic.comicDescription { Text(description).font(.body).textSelection(.enabled) }
 
                         // Authors row
                         if !decodedAuthors.isEmpty {
@@ -154,8 +164,8 @@ struct ComicDetailView: View {
                                     .textCase(.uppercase)
                                     .tracking(0.8)
 
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
+                                Group {
+                                    FlowLayout(spacing: 8) {
                                         ForEach(decodedTags, id: \.self) { tag in
                                             if let name = tag["name"] {
                                                 Button {
@@ -185,62 +195,7 @@ struct ComicDetailView: View {
                         }
                     }
                     .padding(16)
-
-                    // MARK: Continue Reading / Archive actions
-                    if comic.isArchived {
-                        Button {
-                            unarchiveComic()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "arrow.uturn.left.circle.fill")
-                                Text("Unarchive — Restore Full Quality")
-                                    .font(AstralTypography.bodyMedium)
-                            }
-                            .foregroundStyle(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(AstralColors.gold)
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
-                    } else if comic.isArchiving || comic.isUnarchiving {
-                        HStack(spacing: 8) {
-                            ProgressView().tint(AstralColors.gold).scaleEffect(0.8)
-                            Text(comic.isArchiving ? "Archiving..." : "Restoring...")
-                                .font(AstralTypography.bodyMedium)
-                                .foregroundStyle(AstralColors.muted)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .padding(.horizontal, 16)
-                    } else if !chapters.isEmpty {
-                        if let nextChapter = nextUnreadChapter {
-                            Button {
-                                AstralLogger.info("Continue button tapped: ch \(nextChapter.chapterNumber)", context: "ComicDetail")
-                                selectedChapter = nextChapter
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: comic.lastReadChapterNumber == 0 ? "book.fill" : "arrow.right.circle.fill")
-                                    Text(comic.lastReadChapterNumber == 0
-                                         ? "Start Reading"
-                                         : "Continue — Ch. \(Int(nextChapter.chapterNumber))")
-                                        .font(AstralTypography.bodyMedium)
-                                }
-                                .foregroundStyle(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(AstralColors.gold)
-                                .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                            .padding(.bottom, 4)
-                        }
-                    }
+                    }.padding(.horizontal, 16).padding(.vertical, 12)
 
                     // MARK: Tab bar (Chapters / Bookmarks / Download)
                     HStack(spacing: 0) {
@@ -257,6 +212,7 @@ struct ComicDetailView: View {
                             .buttonStyle(.plain)
                         }
 
+                        // Download is never a deletion toggle.
                         // Download icon button
                         Button {
                             handleDownloadTap()
@@ -274,25 +230,14 @@ struct ComicDetailView: View {
                                                          ? AstralColors.success : AstralColors.muted)
                                 }
                             }
-                            .frame(width: 44, height: 36)
+                            .frame(width: 44, height: 44)
                         }
                         .buttonStyle(.plain)
+                        .disabled(comic.sourceKey == "local" || comic.isFullyDownloaded || isDownloading)
+                        .accessibilityLabel(comic.isFullyDownloaded ? "Saved on this device" : "Download chapters")
+                        .alert("Download", isPresented: Binding(get: { downloadError != nil }, set: { if !$0 { downloadError = nil } })) { Button("OK") { downloadError = nil } } message: { Text(downloadError ?? "") }
 
-                        // Archive icon button
-                        if !comic.isArchiving && !comic.isUnarchiving {
-                            Button {
-                                if comic.isArchived {
-                                    unarchiveComic()
-                                } else {
-                                    archiveComic()
-                                }
-                            } label: {
-                                Image(systemName: comic.isArchived ? "archivebox.fill" : "archivebox")
-                                    .foregroundStyle(comic.isArchived ? AstralColors.gold : AstralColors.muted)
-                                    .frame(width: 44, height: 36)
-                            }
-                            .buttonStyle(.plain)
-                        }
+
                     }
                     .background(AstralColors.elevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -319,9 +264,9 @@ struct ComicDetailView: View {
                                     } label: {
                                         ComicChapterRow(
                                             chapter: chapter,
-                                            isLastRead: chapter.chapterNumber == Double(comic.lastReadChapterNumber),
-                                            isRead: chapter.chapterNumber < Double(comic.lastReadChapterNumber),
-                                            isBookmarked: bookmarks.contains { $0.chapterNumber == chapter.chapterNumber }
+                                            isLastRead: ReadingPositionStore.position(story: comic.id).map { $0.chapterID == chapter.id } ?? (comic.lastReadAt != nil && chapter.chapterNumber == Double(comic.lastReadChapterNumber)),
+                                            isRead: false,
+                                            isBookmarked: bookmarks.contains { BookmarkAnchorStore.chapter(for: $0.id).map { $0 == chapter.id } ?? ($0.chapterNumber == chapter.chapterNumber) }
                                         )
                                     }
                                     .accessibilityIdentifier(AccessibilityID.chapterRow(Int(chapter.chapterNumber)))
@@ -359,7 +304,8 @@ struct ComicDetailView: View {
                                 ForEach(bookmarks) { bookmark in
                                     Button {
                                         // Jump to bookmarked chapter/page
-                                        if let chapter = chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
+                                        if let chapter = chapters.first(where: { $0.id == BookmarkAnchorStore.chapter(for: bookmark.id) }) ?? chapters.first(where: { $0.chapterNumber == bookmark.chapterNumber }) {
+                                            selectedBookmark = bookmark
                                             selectedChapter = chapter
                                         }
                                     } label: {
@@ -426,6 +372,14 @@ struct ComicDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if let sourceURL = UserDefaults.standard.string(forKey: "reading.source." + comic.id.uuidString).flatMap(URL.init(string:)) {
+                        Button("Update from source", systemImage: "arrow.clockwise") {
+                            comicNavigation?.sourceKey = ComicSource(rawValue: comic.sourceKey == "mangadex-device" ? "mangadex" : comic.sourceKey)
+                            comicNavigation?.sourceURL = sourceURL
+                            dismiss()
+                            comicNavigation?.activeSection = .browse
+                        }
+                    }
                     Button(role: .destructive) {
                         showDeleteAlert = true
                     } label: {
@@ -458,34 +412,30 @@ struct ComicDetailView: View {
                 }
             }
         )
-        .fullScreenCover(item: $selectedChapter) { chapter in
-            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
+        .fullScreenCover(item: $selectedChapter, onDismiss: { selectedBookmark = nil }) { chapter in
+            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter, bookmark: selectedBookmark)
         }
         .onAppear {
             comic.seenTotalChapters = comic.totalChapters
-            comic.lastReadAt = .now
             try? modelContext.save()
         }
         .task { await syncChapters() }
     }
 
     private func syncChapters() async {
+        guard AppConfig.companionEnabled, comic.sourceKey != "local", comic.sourceKey != "mangadex-device", !DeviceComicService.sources.contains(comic.sourceKey) else { return }
         do {
             let response: ComicResponse = try await APIClient.shared.request(
                 .comicDetail(id: comic.id)
             )
             guard let dtoChapters = response.chapters else { return }
             let comicID = comic.id
-            let chapterIDs = Set(dtoChapters.map(\.id))
             let descriptor = FetchDescriptor<LocalComicChapter>(
                 predicate: #Predicate<LocalComicChapter> { $0.comicId == comicID }
             )
             let existing = (try? modelContext.fetch(descriptor)) ?? []
             let existingByID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
 
-            for old in existing where !chapterIDs.contains(old.id) {
-                modelContext.delete(old)
-            }
             for dto in dtoChapters {
                 if let ch = existingByID[dto.id] {
                     ch.chapterNumber = dto.chapterNumber
@@ -512,17 +462,8 @@ struct ComicDetailView: View {
 
     @ViewBuilder
     private var heroThumbnail: some View {
-        if let path = comic.thumbnailPath, let url = thumbnailURL(path) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    thumbnailPlaceholder
-                }
-            }
+        if let path = comic.thumbnailPath {
+            CachedAsyncImage(remotePath: path, baseURL: AppConfig.staticBaseURL)
         } else {
             thumbnailPlaceholder
         }
@@ -550,9 +491,7 @@ struct ComicDetailView: View {
                 .textCase(.uppercase)
                 .tracking(0.8)
 
-            HStack(spacing: 6) {
-                content()
-            }
+            FlowLayout(spacing: 8) { content() }
         }
     }
 
@@ -573,6 +512,7 @@ struct ComicDetailView: View {
     // MARK: - Private helpers
 
     private var nextUnreadChapter: LocalComicChapter? {
+        if let saved = ReadingPositionStore.position(story: comic.id), let chapter = chapters.first(where: { $0.id == saved.chapterID }) { return chapter }
         if comic.lastReadChapterNumber == 0 { return chapters.first }
         // Resume the current chapter at saved page position (reader restores via lastReadPageNumber)
         if let current = chapters.first(where: { Int($0.chapterNumber) == comic.lastReadChapterNumber }) {
@@ -587,18 +527,18 @@ struct ComicDetailView: View {
     }
 
     private func handleDownloadTap() {
+        guard comic.sourceKey != "local" else { return }
         let savedCount = chapters.filter { $0.localPagesPath != nil }.count
         let allSaved = savedCount == chapters.count && !chapters.isEmpty
         if allSaved {
-            ChapterDownloadService.shared.deleteAllChapters(
-                comic: comic, chapters: chapters, modelContext: modelContext
-            )
+            return
         } else {
             isDownloading = true
-            Task {
-                await ChapterDownloadService.shared.downloadAllChapters(
+            downloadTask = Task {
+                downloadError = await ChapterDownloadService.shared.downloadAllChapters(
                     comic: comic, chapters: chapters,
-                    modelContext: modelContext
+                    modelContext: modelContext,
+                    onCancel: { downloadTask?.cancel() }
                 ) { done, total in
                     downloadProgress = (done, total)
                 }
@@ -614,6 +554,7 @@ struct ComicDetailView: View {
             chapterNumber: chapter.chapterNumber
         )
         modelContext.insert(bookmark)
+        BookmarkAnchorStore.save(bookmark: bookmark.id, chapter: chapter.id)
         try? modelContext.save()
     }
 
@@ -634,8 +575,7 @@ struct ComicDetailView: View {
     }
 
     private func deleteBookmark(_ bookmark: LocalBookmark) {
-        modelContext.delete(bookmark)
-        try? modelContext.save()
+        BookmarkUndoService.shared.delete(bookmark, context: modelContext)
     }
 }
 

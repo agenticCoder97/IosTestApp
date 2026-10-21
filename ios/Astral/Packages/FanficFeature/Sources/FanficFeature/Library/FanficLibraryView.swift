@@ -9,7 +9,6 @@ struct FanficLibraryView: View {
     var filterFavourites: Bool
     var filterState: FanficFilterState
 
-    @State private var viewModel = FanficLibraryViewModel()
     @Environment(\.modelContext) private var modelContext
     @Environment(\.fanficNavigation) private var fanficNavigation
 
@@ -24,7 +23,7 @@ struct FanficLibraryView: View {
 
     private var inProgressFanfics: [LocalFanfic] {
         allFanfics
-            .filter { $0.progressPercent > 0 && $0.progressPercent < 1.0 }
+            .filter { $0.lastReadAt != nil && $0.completedAt == nil }
             .sorted { ($0.lastReadAt ?? $0.addedAt) > ($1.lastReadAt ?? $1.addedAt) }
             .prefix(5)
             .map { $0 }
@@ -43,7 +42,10 @@ struct FanficLibraryView: View {
                 ($0.characters ?? "").localizedCaseInsensitiveContains(searchText) ||
                 ($0.pairing ?? "").localizedCaseInsensitiveContains(searchText) ||
                 ($0.summary ?? "").localizedCaseInsensitiveContains(searchText) ||
-                ($0.rating ?? "").localizedCaseInsensitiveContains(searchText)
+                ($0.rating ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.authorsText ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.freeformTags ?? "").localizedCaseInsensitiveContains(searchText) ||
+                ($0.warnings ?? "").localizedCaseInsensitiveContains(searchText)
             }
         }
         if let fandom = filterState.fandom.isEmpty ? nil : filterState.fandom {
@@ -57,9 +59,11 @@ struct FanficLibraryView: View {
         }
         if !filterState.selectedRatings.isEmpty {
             result = result.filter { fanfic in
-                guard let rating = fanfic.rating else { return false }
-                return filterState.selectedRatings.contains(rating)
+                return filterState.selectedRatings.contains(SourceRating.canonical(fanfic.rating))
             }
+        }
+        if !filterState.selectedWarnings.isEmpty {
+            result = result.filter { story in filterState.selectedWarnings.allSatisfy { (story.warnings ?? "").localizedCaseInsensitiveContains($0) } }
         }
         if !filterState.characters.isEmpty {
             result = result.filter {
@@ -110,17 +114,10 @@ struct FanficLibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Backend error banner
-                if let error = viewModel.errorMessage {
-                    BackendStatusBanner(error) {
-                        Task { await viewModel.fetchFanfics(modelContext: modelContext) }
-                    }
-                }
-
                 if let latestSync = filteredFanfics.compactMap(\.lastSyncedAt).max() {
                     HStack {
                         Spacer()
-                        Text("Updated \(latestSync, format: .relative(presentation: .named))")
+                        Text("Imported \(latestSync, format: .relative(presentation: .named))")
                             .font(AstralTypography.caption)
                             .foregroundStyle(AstralColors.muted)
                     }
@@ -135,16 +132,27 @@ struct FanficLibraryView: View {
 
                 if filteredFanfics.isEmpty {
                     EmptyStateView(
-                        icon: filterFavourites ? "heart" : (viewModel.errorMessage != nil ? "wifi.slash" : "scroll"),
-                        title: filterFavourites ? "No Favourites Yet" : (viewModel.errorMessage != nil ? "Offline" : "No Fan Fiction Yet"),
+                        icon: filterFavourites ? "heart" : "scroll",
+                        title: (!searchText.isEmpty || filterState.isActive) ? "No matches" : (filterFavourites ? "No Favourites Yet" : "No Fan Fiction Yet"),
                         message: filterFavourites
                             ? "Tap the heart on any story to add it here."
-                            : (viewModel.errorMessage != nil
-                                ? "Backend unreachable. Previously synced stories will appear here."
-                                : "Browse AO3 or FFNet and scrape your first story.")
+                            : "Browse AO3 and import a work to read it offline."
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.top, 80)
+                    if !searchText.isEmpty || filterState.isActive {
+                        Button("Clear search and filters") { searchText = ""; filterState.reset() }.frame(maxWidth: .infinity).padding()
+                    }
+                    if !filterFavourites && searchText.isEmpty && !filterState.isActive {
+                        Button("Browse AO3") {
+                            fanficNavigation?.ao3WorkURL = nil
+                            fanficNavigation?.activeSection = .browse
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AstralColors.gold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 16)
+                    }
                 } else {
                     LazyVStack(spacing: 12) {
                         ForEach(Array(filteredFanfics.enumerated()), id: \.element.id) { index, fanfic in
@@ -155,7 +163,6 @@ struct FanficLibraryView: View {
                             }
                             .accessibilityIdentifier(AccessibilityID.storyCard(fanfic.id))
                             .buttonStyle(PressButtonStyle())
-                            .staggeredAppear(index: index)
                             .contextMenu {
                                 Button(role: .destructive) {
                                     pendingDeletion = fanfic
@@ -172,8 +179,6 @@ struct FanficLibraryView: View {
             }
         }
         .background(AstralColors.background)
-        .task { await viewModel.fetchFanfics(modelContext: modelContext) }
-        .refreshable { await viewModel.fetchFanfics(modelContext: modelContext, force: true) }
         .deletePermanentlyAlert(
             isPresented: Binding(
                 get: { pendingDeletion != nil },
@@ -250,12 +255,12 @@ private struct FanficContinueCardLink: View {
 
     private var nextChapter: LocalFanficChapter? {
         let lastRead = fanfic.lastReadChapterNumber ?? 0
-        return chapters.first { $0.chapterNumber > lastRead } ?? chapters.first
+        return chapters.first { $0.id == ReadingPositionStore.position(story: fanfic.id)?.chapterID } ?? chapters.first { $0.chapterNumber == lastRead } ?? chapters.first
     }
 
     var body: some View {
         NavigationLink {
-            FanficDetailView(fanfic: fanfic)
+            if let chapter = nextChapter { FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: chapter) }
         } label: {
             FanficContinueCard(fanfic: fanfic)
         }
@@ -330,7 +335,7 @@ struct FanficRowView: View {
 
     private var progressPercent: Double {
         guard fanfic.totalChapters > 0 else { return 0 }
-        return (fanfic.lastReadChapterNumber ?? 0) / Double(fanfic.totalChapters)
+        return min(1, max(0, fanfic.progressPercent))
     }
 
     private func thumbnailURL(_ path: String) -> URL? {
@@ -341,6 +346,7 @@ struct FanficRowView: View {
     private var sourceIcon: String {
         switch fanfic.sourceKey {
         case "ao3": "a.square.fill"
+        case "local": "doc.text.fill"
         case "ffnet": "f.square.fill"
         default: "questionmark.square.fill"
         }
@@ -367,22 +373,7 @@ struct FanficRowView: View {
             HStack(alignment: .top, spacing: 12) {
                 // Thumbnail with new-chapter badge
                 ZStack(alignment: .topTrailing) {
-                    if let path = fanfic.thumbnailPath, let url = thumbnailURL(path) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            default:
-                                fanficPlaceholder
-                            }
-                        }
-                        .frame(width: 50, height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    } else {
-                        fanficPlaceholder
-                    }
+                    StoryThumbnail(path: fanfic.thumbnailPath, title: fanfic.title, icon: "scroll", width: 50, height: 70, baseURL: AppConfig.staticBaseURL)
 
                     if fanfic.newChapterCount > 0 {
                         Text("+\(fanfic.newChapterCount)")
@@ -426,6 +417,8 @@ struct FanficRowView: View {
                                 .animation(AstralAnimation.bouncy, value: fanfic.isFavorite)
                         }
                         .buttonStyle(.plain)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel(fanfic.isFavorite ? "Remove favourite" : "Add favourite")
                     }
 
                     // Author
@@ -436,47 +429,10 @@ struct FanficRowView: View {
                             .lineLimit(1)
                     }
 
-                    // Summary
-                    if let summary = fanfic.summary, !summary.isEmpty {
-                        Text(summary)
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.body)
-                            .lineLimit(2)
-                    }
+                    Text("\(fanfic.totalChapters) chapters · \(fanfic.sourceKey.uppercased()) · \(SourceRating.canonical(fanfic.rating))")
+                        .font(.caption).foregroundStyle(AstralColors.muted)
+                    if let words = fanfic.wordCount { Text("\(words.formatted()) words").font(.caption).foregroundStyle(AstralColors.muted) }
 
-                    // Tags row — fandom, rating, status, word count
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            if let fandom = fanfic.fandom, !fandom.isEmpty {
-                                StatusBadge(fandom)
-                            }
-                            if let rating = fanfic.rating, !rating.isEmpty {
-                                StatusBadge(rating)
-                            }
-                            StatusBadge(fanfic.completionStatus)
-                            if let wc = fanfic.wordCount, wc > 0 {
-                                StatusBadge("\(wc / 1000)K words", color: AstralColors.muted)
-                            }
-                        }
-                    }
-
-                    // Metadata row — chapters, dates, stats
-                    HStack(spacing: 10) {
-                        Label("\(fanfic.totalChapters) ch", systemImage: "book.pages")
-
-                        if let kudos = fanfic.kudos {
-                            Label(formatRowStat(kudos), systemImage: "heart")
-                        }
-                        if let comments = fanfic.commentsCount {
-                            Label(formatRowStat(comments), systemImage: "bubble.left")
-                        }
-
-                        if let published = fanfic.publishedAt {
-                            Label(published.formatted(.dateTime.month(.abbreviated).year()), systemImage: "calendar")
-                        }
-                    }
-                    .font(AstralTypography.caption)
-                    .foregroundStyle(AstralColors.muted)
                 }
             }
 
@@ -493,7 +449,7 @@ struct FanficRowView: View {
                     }
                     .frame(width: 18, height: 18)
 
-                    Text("\(Int(fanfic.lastReadChapterNumber ?? 0))/\(fanfic.totalChapters) chapters")
+                    Text("Chapter \((fanfic.lastReadChapterNumber ?? 0).formatted()) · \(Int(fanfic.progressPercent * 100))% position")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(AstralColors.body)
                 }

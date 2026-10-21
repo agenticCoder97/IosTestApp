@@ -17,7 +17,8 @@ let package = Package(
     targets: [
         .target(
             name: "FanficFeature",
-            dependencies: ["Core", "Networking", "DesignSystem", "StatsUI"]
+            dependencies: ["Core", "Networking", "DesignSystem", "StatsUI"],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "FanficFeatureTests",

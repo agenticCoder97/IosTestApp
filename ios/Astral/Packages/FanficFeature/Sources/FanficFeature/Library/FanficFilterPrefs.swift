@@ -1,7 +1,7 @@
 import Foundation
 
 /// Codable snapshot of FanficFilterState for @AppStorage persistence.
-struct FanficFilterPrefs: Codable {
+struct FanficFilterPrefs: Codable, Equatable {
     var fandom: String = ""
     var completionStatus: String? = nil
     var wordCountMin: Int? = nil

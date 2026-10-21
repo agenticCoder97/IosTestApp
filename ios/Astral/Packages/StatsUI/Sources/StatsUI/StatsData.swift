@@ -34,18 +34,15 @@ public struct StatsAggregates {
 
     public var totalPagesViewed: Int {
         comics.reduce(0) { total, comic in
-            let read = comicChapters.filter {
-                $0.comicId == comic.id && $0.chapterNumber <= Double(comic.lastReadChapterNumber)
-            }
-            return total + read.reduce(0) { $0 + $1.totalPages }
+            let totalPages = comicChapters.filter { $0.comicId == comic.id }.reduce(0) { $0 + $1.totalPages }
+            return total + Int(Double(totalPages) * min(1, max(0, comic.progressPercent)))
         }
     }
 
     public var novelEquivalent: Double { Double(totalWordsRead) / 80_000.0 }
 
     public var totalChaptersRead: Int {
-        comics.reduce(0) { $0 + $1.lastReadChapterNumber } +
-            fanfics.reduce(0) { $0 + Int($1.lastReadChapterNumber ?? 0) }
+        sessions.reduce(0) { $0 + max(0, $1.chaptersRead) }
     }
 
     // MARK: — streaks
@@ -168,7 +165,8 @@ public struct StatsAggregates {
 
     private static func parseJSONStrings(_ raw: String?) -> [String] {
         guard let raw, let data = raw.data(using: .utf8) else { return [] }
-        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        if let strings = try? JSONDecoder().decode([String].self, from: data) { return strings }
+        return ((try? JSONDecoder().decode([[String: String]].self, from: data)) ?? []).compactMap { $0["name"] }
     }
 
     private static func splitCommaList(_ raw: String?) -> [String] {

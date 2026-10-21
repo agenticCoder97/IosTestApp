@@ -1,151 +1,83 @@
 import SwiftUI
+import SwiftData
 import Core
 import DesignSystem
 
 public struct ComicTabView: View {
     @State private var navigation = ComicNavigation()
+    @Query private var comics: [LocalComic]
     @State private var showFilter = false
-    @AppStorage("comic.filter.v1") private var filterPrefsJSON: String = ""
-    var onSwitchTab: () -> Void
-
-    public init(onSwitchTab: @escaping () -> Void = {}) {
-        self.onSwitchTab = onSwitchTab
-    }
-
+    @AppStorage("comic.filter.v1") private var filterPrefsJSON = ""
+    private let onSwitchTab: () -> Void
+    public init(onSwitchTab: @escaping () -> Void = {}) { self.onSwitchTab = onSwitchTab }
     public var body: some View {
-        ZStack {
-            AstralColors.background
-                .ignoresSafeArea()
-
+        TabView(selection: $navigation.activeSection) {
             NavigationStack {
                 VStack(spacing: 0) {
-                    // Search bar — slides in when active
-                    AstralSearchBar(
-                        text: $navigation.searchText,
-                        isActive: $navigation.isSearchActive,
-                        placeholder: "Title, tag, author, description..."
-                    )
-
-                    // Main content
-                    Group {
-                        switch navigation.activeSection {
-                        case .library:
-                            ComicLibraryView(searchText: $navigation.searchText, filterFavourites: false)
-                        case .favourites:
-                            ComicLibraryView(searchText: .constant(""), filterFavourites: true)
-                        case .browse:
-                            ComicBrowserView()
-                        case .scrapes:
-                            ComicScrapesView()
-                        case .stats:
-                            StatsView()
-                        }
-                    }
+                    AstralSearchBar(text: $navigation.searchText, isActive: $navigation.isSearchActive,
+                                    placeholder: "Title, author, tag…")
+                    ComicLibraryView(searchText: $navigation.searchText, filterFavourites: navigation.showFavourites)
                 }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
-                            Button {
-                                // Already on Comics tab
-                            } label: {
-                                Label("Comics", systemImage: "book.fill")
-                            }
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    onSwitchTab()
-                                }
-                            } label: {
-                                Label("Fan Fiction", systemImage: "scroll.fill")
-                            }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "book.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                Text("Comics")
-                                    .font(AstralTypography.title)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(AstralColors.muted)
-                            }
-                        }
-                        .tint(AstralColors.gold)
+                            Button("Switch to Fan Fiction", action: onSwitchTab)
+                        } label: { HStack(spacing: 6) { Image(systemName: "book.fill"); Text("Comics") }.font(.headline) }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 14) {
-                            // Search toggle
-                            Button {
-                                withAnimation(AstralAnimation.quick) {
-                                    navigation.isSearchActive.toggle()
-                                    if !navigation.isSearchActive {
-                                        navigation.searchText = ""
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: navigation.isSearchActive ? "magnifyingglass.circle.fill" : "magnifyingglass")
-                                    .foregroundStyle(navigation.isSearchActive ? AstralColors.gold : AstralColors.body)
+                        HStack(spacing: 0) {
+                            Button { navigation.showFavourites.toggle() } label: {
+                                Image(systemName: navigation.showFavourites ? "heart.fill" : "heart")
                             }
-
-                            // Filter
-                            Button {
-                                showFilter = true
-                            } label: {
-                                Image(systemName: navigation.filterState.isActive
-                                    ? "line.3.horizontal.decrease.circle.fill"
-                                    : "line.3.horizontal.decrease.circle")
-                                    .foregroundStyle(navigation.filterState.isActive ? AstralColors.gold : AstralColors.body)
+                            .accessibilityLabel("Favourites")
+                            .accessibilityValue(navigation.showFavourites ? "Showing favourites" : "Showing all")
+                            .frame(minWidth: 44, minHeight: 44)
+                            Button { navigation.isSearchActive.toggle() } label: { Image(systemName: "magnifyingglass") }
+                                .accessibilityLabel("Search library").frame(minWidth: 44, minHeight: 44)
+                            Button { showFilter = true } label: {
+                                Image(systemName: navigation.filterState.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                             }
-                            .buttonStyle(PressButtonStyle(scale: 0.88))
-
-                            // Sidebar
-                            Button {
-                                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                                    navigation.isSidebarOpen.toggle()
-                                }
-                            } label: {
-                                Image(systemName: "line.3.horizontal")
-                                    .foregroundStyle(AstralColors.body)
-                            }
-                            .accessibilityIdentifier(AccessibilityID.sidebarToggle)
+                            .accessibilityLabel("Filter library").frame(minWidth: 44, minHeight: 44)
                         }
                     }
                 }
             }
-            .environment(\.comicNavigation, navigation)
-            .onAppear {
-                if let data = filterPrefsJSON.data(using: .utf8),
-                   let prefs = try? JSONDecoder().decode(ComicFilterPrefs.self, from: data) {
-                    navigation.filterState.load(from: prefs)
+            .tabItem { Label("Library", systemImage: "books.vertical") }.tag(ComicSection.library)
+            NavigationStack { ComicBrowserView() }
+                .tabItem { Label("Add", systemImage: "plus.circle") }.tag(ComicSection.browse)
+            NavigationStack {
+                LocalActivityView(contentType: "comic", retry: { job in navigation.sourceKey = ComicSource(rawValue: job.sourceKey ?? ""); navigation.sourceURL = job.sourceUrl.flatMap(URL.init(string:)); navigation.activeSection = .browse }) { job in
+                    if let story = comics.first(where: { $0.id == job.storyId }) {
+                        ComicDetailView(comic: story)
+                    } else { ContentUnavailableView("Story is no longer in your library", systemImage: "books.vertical") }
                 }
             }
-            .onChange(of: navigation.filterState.snapshotForPersistence.sortBy) { _, _ in saveFilterPrefs() }
-            .onChange(of: navigation.filterState.snapshotForPersistence.showArchived) { _, _ in saveFilterPrefs() }
-            .onChange(of: navigation.filterState.snapshotForPersistence.completionStatus) { _, _ in saveFilterPrefs() }
-            .onChange(of: navigation.filterState.snapshotForPersistence.sourceKey) { _, _ in saveFilterPrefs() }
-            .onChange(of: navigation.filterState.snapshotForPersistence.tagsKeyword) { _, _ in saveFilterPrefs() }
-            .sheet(isPresented: $showFilter) {
-                ComicFilterView(filterState: navigation.filterState)
-                    .presentationDetents([.medium, .large])
-            }
-
-            ComicSidebarView(
-                isOpen: $navigation.isSidebarOpen,
-                activeSection: $navigation.activeSection
-            )
+                .tabItem { Label("Activity", systemImage: "arrow.down.circle") }.tag(ComicSection.scrapes)
+            NavigationStack { LibrarySettingsView { StatsView() } }
+                .tabItem { Label("Settings", systemImage: "gearshape") }.tag(ComicSection.settings)
         }
-    }
-
-    private func saveFilterPrefs() {
-        if let data = try? JSONEncoder().encode(navigation.filterState.snapshotForPersistence),
-           let str = String(data: data, encoding: .utf8) {
-            filterPrefsJSON = str
+        .tint(AstralColors.gold)
+        .environment(\.comicNavigation, navigation)
+        .onAppear {
+            if let data = filterPrefsJSON.data(using: .utf8),
+               let prefs = try? JSONDecoder().decode(ComicFilterPrefs.self, from: data) { navigation.filterState.load(from: prefs) }
+        }
+        .onChange(of: navigation.filterState.snapshotForPersistence) { _, value in
+            if let data = try? JSONEncoder().encode(value), let text = String(data: data, encoding: .utf8) { filterPrefsJSON = text }
+        }
+        .sheet(isPresented: $showFilter) {
+            ComicFilterView(filterState: navigation.filterState).presentationDetents([.medium, .large])
         }
     }
 }
 
 @Observable
 final class ComicNavigation {
+    var sourceURL: URL?
+    var sourceKey: ComicSource?
     var activeSection: ComicSection = .library
     var isSidebarOpen = false
+    var showFavourites = false
     var searchText = ""
     var isSearchActive = false
     var filterState = ComicFilterState()
@@ -171,9 +103,10 @@ extension EnvironmentValues {
 enum ComicSection: String, CaseIterable {
     case library = "Library"
     case favourites = "Favourites"
-    case browse = "Browse"
-    case scrapes = "Scrapes"
+    case browse = "Add"
+    case scrapes = "Activity"
     case stats = "Stats"
+    case settings = "Settings"
 
     var icon: String {
         switch self {
@@ -182,6 +115,7 @@ enum ComicSection: String, CaseIterable {
         case .browse: "globe"
         case .scrapes: "arrow.down.circle"
         case .stats: "chart.bar"
+        case .settings: "gearshape"
         }
     }
 }

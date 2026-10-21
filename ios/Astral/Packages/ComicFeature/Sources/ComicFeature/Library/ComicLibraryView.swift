@@ -59,7 +59,7 @@ struct ComicLibraryView: View {
             }
         }
         if let src = filter?.sourceKey {
-            ready = ready.filter { $0.sourceKey == src }
+            ready = ready.filter { $0.sourceKey == src || (src == "mangadex" && $0.sourceKey == "mangadex-device") }
         }
 
         let ascending = filter?.sortAscending ?? false
@@ -83,7 +83,7 @@ struct ComicLibraryView: View {
 
     private var inProgressComics: [LocalComic] {
         allComics
-            .filter { $0.progressPercent > 0 && $0.progressPercent < 1.0 && !$0.isArchived }
+            .filter { $0.lastReadAt != nil && $0.completedAt == nil && !$0.isArchived }
             .sorted { ($0.lastReadAt ?? $0.addedAt) > ($1.lastReadAt ?? $1.addedAt) }
             .prefix(5)
             .map { $0 }
@@ -116,17 +116,16 @@ struct ComicLibraryView: View {
                 }
 
                 if displayedComics.isEmpty {
-                    EmptyStateView(
-                        icon: filterFavourites ? "heart" : (viewModel.errorMessage != nil ? "wifi.slash" : "book.closed"),
-                        title: filterFavourites ? "No Favourites Yet" : (viewModel.errorMessage != nil ? "Offline" : "No Comics Yet"),
-                        message: filterFavourites
-                            ? "Tap the heart on any comic to add it here."
-                            : (viewModel.errorMessage != nil
-                                ? "Backend unreachable. Previously synced comics will appear here."
-                                : "Browse a source and scrape your first comic to get started.")
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 80)
+                    EmptyStateView(icon: "books.vertical",
+                        title: (!searchText.isEmpty || comicNavigation?.filterState.isActive == true) ? "No matches" : "No comics yet",
+                        message: "Import a comic in Add. Saved stories stay available without a companion.")
+                        .frame(maxWidth: .infinity).padding(.top, 80)
+                    if !searchText.isEmpty || comicNavigation?.filterState.isActive == true {
+                        Button("Clear search and filters") { searchText = ""; comicNavigation?.filterState.reset() }
+                            .frame(maxWidth: .infinity).padding()
+                    } else {
+                        Button("Add comic") { comicNavigation?.activeSection = .browse }.frame(maxWidth: .infinity).padding()
+                    }
                 } else {
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(Array(displayedComics.enumerated()), id: \.element.id) { index, comic in
@@ -137,21 +136,7 @@ struct ComicLibraryView: View {
                             }
                             .accessibilityIdentifier(AccessibilityID.storyCard(comic.id))
                             .buttonStyle(PressButtonStyle())
-                            .staggeredAppear(index: index)
                             .contextMenu {
-                                if comic.isArchived {
-                                    Button {
-                                        unarchiveComic(comic)
-                                    } label: {
-                                        Label("Unarchive", systemImage: "arrow.uturn.left.circle")
-                                    }
-                                } else if !comic.isArchiving && !comic.isUnarchiving {
-                                    Button {
-                                        archiveComic(comic)
-                                    } label: {
-                                        Label("Archive", systemImage: "archivebox")
-                                    }
-                                }
                                 Button(role: .destructive) {
                                     pendingDeletion = comic
                                 } label: {
@@ -167,8 +152,8 @@ struct ComicLibraryView: View {
             }
         }
         .background(AstralColors.background)
-        .task { await viewModel.fetchComics(modelContext: modelContext) }
-        .refreshable { await viewModel.fetchComics(modelContext: modelContext, force: true) }
+
+        .refreshable { if AppConfig.companionEnabled { await viewModel.fetchComics(modelContext: modelContext, force: true) } }
         .deletePermanentlyAlert(
             isPresented: Binding(
                 get: { pendingDeletion != nil },
@@ -259,13 +244,12 @@ private struct ContinueReadingCardLink: View {
     }
 
     private var nextChapter: LocalComicChapter? {
-        let lastRead = Double(comic.lastReadChapterNumber)
-        return chapters.first { $0.chapterNumber > lastRead } ?? chapters.first
+        return chapters.first { $0.id == ReadingPositionStore.position(story: comic.id)?.chapterID } ?? chapters.first { $0.chapterNumber == Double(comic.lastReadChapterNumber) } ?? chapters.first
     }
 
     var body: some View {
         NavigationLink {
-            ComicDetailView(comic: comic)
+            if let chapter = nextChapter { ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter) }
         } label: {
             ContinueReadingCard(comic: comic)
         }
