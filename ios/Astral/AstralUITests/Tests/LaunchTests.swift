@@ -3,6 +3,21 @@ import XCTest
 /// Launch choreography must finish by itself and leave the library usable.
 final class LaunchTests: XCTestCase {
     @MainActor
+    func testIllustratedIntroCoversTheLibrary() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--intro-time=1.3"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.otherElements["launch.intro"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tabBars.buttons.matching(identifier: "Library")
+            .allElementsBoundByIndex.contains { $0.isHittable })
+        let artwork = XCTAttachment(screenshot: app.screenshot())
+        artwork.name = "Illustrated intro"
+        artwork.lifetime = .keepAlways
+        add(artwork)
+    }
+
+    @MainActor
     func testIntroFinishesWithoutInteraction() {
         let app = XCUIApplication()
         app.launch()
