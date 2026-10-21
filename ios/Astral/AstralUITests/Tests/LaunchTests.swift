@@ -1,26 +1,27 @@
 import XCTest
 
-/// Tests for app launch behavior.
-/// With `--uitesting`, the landing screen is skipped and the app
-/// goes directly to the default tab (Comics).
-final class LaunchTests: BaseTestCase {
-
-    func testAppLaunchesDirectlyToComicLibrary() {
-        // With --uitesting, landing is skipped
-        let comicLibrary = ComicLibraryScreen(app: app)
-        comicLibrary.assertVisible()
+/// Launch choreography must finish by itself and leave the library usable.
+final class LaunchTests: XCTestCase {
+    @MainActor
+    func testIntroFinishesWithoutInteraction() {
+        let app = XCUIApplication()
+        app.launch()
+        defer { app.terminate() }
+        let intro = app.otherElements["launch.intro"]
+        XCTAssertTrue(intro.waitForNonExistence(timeout: 8))
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 3))
+        let library = app.tabBars.buttons.matching(identifier: "Library")
+            .allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(library, app.debugDescription)
     }
 
-    func testLandingScreenAppearsWithoutTestFlag() {
-        // Launch without --uitesting to verify landing still works
-        let freshApp = XCUIApplication()
-        freshApp.launchArguments = []
-        freshApp.launch()
-
-        let landing = LandingScreen(app: freshApp)
-        // The landing animation takes ~4.2 seconds before tap zones appear
-        XCTAssertTrue(landing.comicOrb.waitForExistence(timeout: 8),
-                      "Landing comic orb should appear after animation")
-        freshApp.terminate()
+    @MainActor
+    func testUITestingBypassesIntro() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--uitesting"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.otherElements["launch.intro"].exists)
     }
 }
