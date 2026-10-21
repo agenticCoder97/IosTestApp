@@ -1,26 +1,84 @@
 import XCTest
 
-/// Tests for app launch behavior.
-/// With `--uitesting`, the landing screen is skipped and the app
-/// goes directly to the default tab (Comics).
-final class LaunchTests: BaseTestCase {
-
-    func testAppLaunchesDirectlyToComicLibrary() {
-        // With --uitesting, landing is skipped
-        let comicLibrary = ComicLibraryScreen(app: app)
-        comicLibrary.assertVisible()
+/// Launch choreography must finish by itself and leave the library usable.
+final class LaunchTests: XCTestCase {
+    @MainActor
+    func testIllustratedIntroCoversTheLibrary() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--intro-time=1.3"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.otherElements["launch.intro"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tabBars.buttons.matching(identifier: "Library")
+            .allElementsBoundByIndex.contains { $0.isHittable })
+        let artwork = XCTAttachment(screenshot: app.screenshot())
+        artwork.name = "Illustrated intro"
+        artwork.lifetime = .keepAlways
+        add(artwork)
     }
 
-    func testLandingScreenAppearsWithoutTestFlag() {
-        // Launch without --uitesting to verify landing still works
-        let freshApp = XCUIApplication()
-        freshApp.launchArguments = []
-        freshApp.launch()
+    @MainActor
+    func testIntroFinishesWithoutInteraction() {
+        let app = XCUIApplication()
+        app.launch()
+        defer { app.terminate() }
+        let intro = app.otherElements["launch.intro"]
+        XCTAssertTrue(intro.waitForNonExistence(timeout: 8))
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 3))
+        let library = app.tabBars.buttons.matching(identifier: "Library")
+            .allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(library, app.debugDescription)
+    }
 
-        let landing = LandingScreen(app: freshApp)
-        // The landing animation takes ~4.2 seconds before tap zones appear
-        XCTAssertTrue(landing.comicOrb.waitForExistence(timeout: 8),
-                      "Landing comic orb should appear after animation")
-        freshApp.terminate()
+    @MainActor
+    func testUITestingBypassesIntro() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--uitesting"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.otherElements["launch.intro"].exists)
+    }
+}
+
+/// The embedded browser must end above the tab bar, including its floating style.
+final class AddScreenLayoutTests: XCTestCase {
+    @MainActor
+    func testComicAddLayoutAndFolderPicker() {
+        checkAddScreen(contentType: "comic", importID: "comic.browser.fileImport")
+    }
+
+    @MainActor
+    func testFanficAddLayoutAndTextPicker() {
+        checkAddScreen(contentType: "fanfic", importID: "fanfic.browser.fileImport")
+    }
+
+    @MainActor
+    private func checkAddScreen(contentType: String, importID: String) {
+        let app = XCUIApplication()
+        app.launchArguments = ["--uitesting", "-activeContentType", contentType]
+        app.launch()
+        defer { app.terminate() }
+        let addTab = app.tabBars.buttons.matching(identifier: "Add").allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(addTab)
+        addTab?.tap()
+        let localImport = app.buttons[importID]
+        XCTAssertTrue(localImport.waitForExistence(timeout: 5))
+        XCTAssertTrue(localImport.isHittable)
+        XCTAssertLessThanOrEqual(localImport.frame.width, 60, "File import should remain an icon-sized toolbar action")
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 10))
+        let bar = app.tabBars.allElementsBoundByIndex.first { $0.buttons["Add"].isHittable }
+        XCTAssertNotNil(bar)
+        if let bar { XCTAssertLessThanOrEqual(web.frame.maxY, bar.frame.minY + 1, "The tab bar must not cover the browser viewport") }
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Add-\(contentType)"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        localImport.tap()
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), "The compact import action must open Files")
+        cancel.tap()
+        XCTAssertTrue(localImport.waitForExistence(timeout: 5))
     }
 }

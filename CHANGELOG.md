@@ -4,6 +4,11 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## fix/add-screen-browser-layout — 2026-10-21
+
+- [ios] Add a 4.5-second illustrated launch animation: four reading worlds orbit and morph into Astral's star and wordmark. Pause across interruptions and show a static logo with Reduce Motion.
+- [ios] Keep Add-screen browser content above the tab bar; move source selection and compact folder/text import actions into the navigation bar. Correct active-tab stacking so Comics controls receive taps. Verified with 10 package tests, five UI tests, and a signed Release installed on iPhone.
+
 ## feature/ast-99-endpoint-normalization-error-rate — 2026-05-06
 
 - **[AST-99](https://linear.app/nnetraganti/issue/AST-99)** — Endpoint breakdown table: route template normalization + error rate column. Adds `normalize_path()` in `traffic.py` (30 ordered regex→template patterns covering all `/api/v1/` routes, query-string stripping via `urlsplit`). `requests_metrics.py` groups by normalized key and exposes `error_rate_pct` (4xx+5xx, consistent with the endpoint modal). `schema.py` adds `error_rate_pct: float = 0.0` to `SlowEndpoint`. `bg.py` endpoint cache keyed on normalized path so drill-down modal still resolves. Dashboard table expanded to 6 columns (endpoint / p50 / p95 / p99 / n / err%) with color-coded err%, `escapeHtml()` XSS guard on nginx-sourced paths, and `data-method`/`data-path` attributes on rows so `decorateSlowest()` reads structured attrs instead of parsing cell text.

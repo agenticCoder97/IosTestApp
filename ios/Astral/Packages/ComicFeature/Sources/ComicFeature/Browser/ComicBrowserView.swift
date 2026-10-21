@@ -17,42 +17,6 @@ struct ComicBrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button("Import image folder", systemImage: "folder") { showFileImport = true }.disabled(viewModel.isScraping)
-                Spacer()
-            }.padding(.horizontal, 16).padding(.vertical, 8)
-            Text("Page images in a folder; subfolders become chapters, sorted by name.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16)
-
-            // Source dropdown
-            HStack {
-                Menu {
-                    ForEach(ComicSource.allCases, id: \.self) { source in
-                        Button {
-                            viewModel.selectedSource = source
-                        } label: {
-                            Label(source.rawValue, systemImage: viewModel.selectedSource == source ? "checkmark" : "")
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "globe")
-                            .font(.system(size: 14))
-                        Text(viewModel.selectedSource.rawValue)
-                            .font(AstralTypography.bodyMedium)
-                        Image(systemName: "chevron.down")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(AstralColors.muted)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(AstralColors.elevated, in: Capsule())
-                }
-                .tint(AstralColors.gold)
-                .disabled(viewModel.isScraping)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
 
             Text(viewModel.selectedSource == .mangadex ? "MangaDex: paste a title link into the address field, then tap Import. English releases are labeled by group." : "Open a series/gallery, then Import. Chapters and downloads are handled on this device. Complete any source verification in this browser.")
                 .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16)
@@ -151,9 +115,14 @@ struct ComicBrowserView: View {
             // WebView
             ComicWebViewRepresentable(viewModel: viewModel)
                 .allowsHitTesting(!viewModel.isScraping)
-                .ignoresSafeArea(edges: .bottom)
         }
         .background(AstralColors.background)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { sourceMenu }
+            ToolbarItem(placement: .topBarTrailing) { fileImportButton }
+        }
+        .navigationTitle("Add comics")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear { openRequestedSource() }
         .onChange(of: comicNavigation?.sourceURL) { _, _ in openRequestedSource() }
         .fileImporter(isPresented: $showFileImport, allowedContentTypes: [.folder]) { result in
@@ -190,6 +159,36 @@ struct ComicBrowserView: View {
         }
         .animation(AstralAnimation.smooth, value: viewModel.scrapeToast?.message)
     }
+    private var sourceMenu: some View {
+        Menu {
+            ForEach(ComicSource.allCases, id: \.self) { source in
+                Button {
+                    viewModel.selectedSource = source
+                } label: {
+                    Label(source.rawValue, systemImage: viewModel.selectedSource == source ? "checkmark" : "")
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "globe")
+                Text(viewModel.selectedSource.rawValue)
+                Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+            }
+            .font(.subheadline.weight(.medium))
+        }
+        .accessibilityLabel("Choose source")
+        .accessibilityValue(viewModel.selectedSource.rawValue)
+        .disabled(viewModel.isScraping)
+    }
+
+    private var fileImportButton: some View {
+        Button("Import image folder", systemImage: "folder.badge.plus") { showFileImport = true }
+            .labelStyle(.iconOnly)
+            .accessibilityHint("Choose a folder of page images. Subfolders become chapters, sorted by name.")
+            .accessibilityIdentifier("comic.browser.fileImport")
+            .disabled(viewModel.isScraping)
+    }
+
     private func cancelImport() {
         importTask?.cancel()
         guard let browser = viewModel.webView else { return }
