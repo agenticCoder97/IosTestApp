@@ -179,6 +179,12 @@ struct FanficLibraryView: View {
             }
         }
         .background(AstralColors.background)
+        .task(id: allFanfics.map { $0.id.uuidString + ($0.fandom ?? "") + ($0.thumbnailPath ?? "") }.joined()) {
+            for story in allFanfics {
+                guard !Task.isCancelled else { return }
+                await FanficThumbnailService.repair(story, context: modelContext)
+            }
+        }
         .deletePermanentlyAlert(
             isPresented: Binding(
                 get: { pendingDeletion != nil },

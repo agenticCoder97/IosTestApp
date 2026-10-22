@@ -185,6 +185,7 @@ final class AO3ImportService {
         await AO3ImportStorage.shared.remove(replacedPaths)
         if sourceKey == "ffnet" { try? FileManager.default.removeItem(at: Self.ffnetCheckpoint(canonicalURL)) }
         AstralLogger.info("Imported story locally | chapters=\(work.chapters.count)", context: "AO3Import")
+        await FanficThumbnailService.repair(fanfic, context: modelContext, sourceCover: work.thumbnailURL)
         return fanfic
     }
 
@@ -198,7 +199,7 @@ final class AO3ImportService {
             while true {
                 try Task.checkCancellation()
                 let requested = url.path.split(separator: "/")
-                let ready = (try? await browser.callAsyncJavaScript("return location.pathname.split('/')[2] === storyID && Number(location.pathname.split('/')[3] || 1) === chapterNumber && !!document.querySelector('#storytext,#storycontent,.storycontent,#story_content');", arguments: ["storyID": String(requested[1]), "chapterNumber": Int(requested[2]) ?? 1], in: nil, contentWorld: .defaultClient)) as? Bool == true
+                let ready = (try? await browser.callAsyncJavaScript("return document.readyState !== 'loading' && location.pathname.split('/')[2] === storyID && Number(location.pathname.split('/')[3] || 1) === chapterNumber && !!document.querySelector('#storytext,#storycontent,.storycontent,#story_content');", arguments: ["storyID": String(requested[1]), "chapterNumber": Int(requested[2]) ?? 1], in: nil, contentWorld: .defaultClient)) as? Bool == true
                 if ready { break }
                 guard Date() < deadline else { browser.stopLoading(); throw AO3ImportError.message(for: "verification") }
                 try await Task.sleep(for: .milliseconds(200))
@@ -217,7 +218,8 @@ final class AO3ImportService {
         if browser.url?.path.split(separator: "/").dropFirst(2).first == "1" { first = try await extract(browser) }
         else { try await navigate(root.appendingPathComponent("s/\(parts[1])/1/")); first = try await extract(browser) }
         if first.error != nil { return first }
-        guard var work = first.work, let count = first.expectedChapters, (1...2000).contains(count), work.chapters.count == 1 else { throw AO3ImportError("FFNet's chapter list is incomplete.") }
+        guard var work = first.work, let firstCount = first.expectedChapters, (0...2000).contains(firstCount), work.chapters.count == 1, firstCount > 0 || first.nextChapter == 2 else { throw AO3ImportError("FFNet's chapter list is incomplete.") }
+        var count = firstCount
         let checkpointURL = Self.ffnetCheckpoint(canonical)
         if let data = try? Data(contentsOf: checkpointURL), data.count <= 55 * 1024 * 1024,
            let saved = try? JSONDecoder().decode(FFNetCheckpoint.self, from: data),
@@ -227,6 +229,7 @@ final class AO3ImportService {
            !saved.work.chapters.isEmpty, saved.work.chapters.count <= count,
            saved.work.chapters.enumerated().allSatisfy({ $0.element.number == $0.offset + 1 }) {
             work = saved.work
+            work.thumbnailURL = first.work?.thumbnailURL ?? work.thumbnailURL
         }
         func checkpoint() throws {
             try FileManager.default.createDirectory(at: checkpointURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -235,23 +238,32 @@ final class AO3ImportService {
         var bytes = work.chapters.reduce(0) { $0 + $1.content.utf8.count }
         let job = try context.fetch(FetchDescriptor<LocalScrapeJob>()).first { $0.status == "running" && $0.sourceUrl == canonical.absoluteString && $0.sourceKey == "ffnet" }
         job?.totalChapters = count; job?.chaptersScraped = work.chapters.count; try context.save()
+        var hasMore = count > work.chapters.count || (count == 0 && first.nextChapter != nil)
         do {
-        if work.chapters.count < count {
-            for number in (work.chapters.count + 1)...count {
+            while hasMore {
+                let number = work.chapters.count + 1
+                guard number <= 2000 else { throw AO3ImportError.message(for: "tooLarge") }
                 try await Task.sleep(for: .seconds(1))
-                let url = root.appendingPathComponent("s/\(parts[1])/\(number)/")
-                try await navigate(url)
+                try await navigate(root.appendingPathComponent("s/\(parts[1])/\(number)/"))
                 let result = try await extract(browser, title: work.title, count: count)
                 if let error = result.error { throw AO3ImportError.message(for: error) }
-                guard result.expectedChapters == count, let chapter = result.work?.chapters.first, chapter.number == number else { throw AO3ImportError("FFNet's chapters changed during import. Retry to save a consistent copy.") }
+                guard let reported = result.expectedChapters, let chapter = result.work?.chapters.first,
+                      chapter.number == number, reported == 0 || count == 0 || reported == count else {
+                    throw AO3ImportError("FFNet's chapters changed during import. Retry to save a consistent copy.")
+                }
+                if reported > 0 { count = reported }
                 bytes += chapter.content.utf8.count
                 guard bytes <= 50 * 1024 * 1024 else { throw AO3ImportError.message(for: "tooLarge") }
                 work.chapters.append(chapter)
+                hasMore = count > number || (count == 0 && result.nextChapter != nil)
+                if !hasMore && count == 0 { count = number }
                 if number % 5 == 0 { try checkpoint() }
-                job?.chaptersScraped = number; job?.currentStep = "Fetching chapter \(number) of \(count)"; try context.save()
+                job?.totalChapters = count; job?.chaptersScraped = number
+                job?.currentStep = count > 0 ? "Fetching chapter \(number) of \(count)" : "Fetching chapter \(number)"
+                try context.save()
             }
-        }
         } catch { try? checkpoint(); throw error }
+        guard count == work.chapters.count else { throw AO3ImportError.message(for: "incomplete") }
         try checkpoint()
         if let originalURL { browser.load(URLRequest(url: originalURL)) }
         return AO3ImportResponse(error: nil, work: work, expectedChapters: count)
@@ -274,6 +286,7 @@ private struct AO3ImportResponse: Decodable {
     let error: String?
     let work: AO3WorkImport?
     var expectedChapters: Int? = nil
+    var nextChapter: Int? = nil
 }
 
 private struct AO3WorkImport: Codable, Sendable {
@@ -294,6 +307,7 @@ private struct AO3WorkImport: Codable, Sendable {
     let kudos: Int?
     let commentsCount: Int?
     let bookmarksCount: Int?
+    var thumbnailURL: String? = nil
     var chapters: [AO3ChapterImport]
 }
 
@@ -360,6 +374,7 @@ private struct AO3ImportError: LocalizedError {
         case "network": Self("Couldn't connect to the source. Check your connection and try again.")
         case "unavailable": Self("The source is temporarily unavailable. Please try again later.")
         case "wrongPage": Self("Open the FFNet story itself in Add, then tap Import.")
+        case "chapterList": Self("FFNet did not expose a complete chapter list or a Next link. Open the story with its chapter navigation visible, then retry. Your saved copy has not changed.")
         case "invalidWork": Self("The story title or metadata could not be read. Open a desktop FFNet story page and retry.")
         default: Self("Open an accessible story in the browser, then tap Import.")
         }

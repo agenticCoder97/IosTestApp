@@ -56,6 +56,13 @@ public struct CachedAsyncImage: View {
             return
         }
 
+        if path.hasPrefix("documents:") {
+            let root = URL.documentsDirectory.standardizedFileURL
+            let file = root.appendingPathComponent(String(path.dropFirst(10))).standardizedFileURL
+            if file.path.hasPrefix(root.path + "/") { image = UIImage(contentsOfFile: file.path) }
+            isLoading = false
+            return
+        }
         let urlString = path.hasPrefix("http") || path.hasPrefix("file:") ? path : baseURL + path
         guard let url = URL(string: urlString),
               url.isFileURL || ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
