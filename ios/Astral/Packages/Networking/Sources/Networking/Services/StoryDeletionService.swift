@@ -37,6 +37,7 @@ public final class StoryDeletionService {
         do { if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) } }
         catch { errorMessage = "The story was removed from the library, but its files could not be removed: " + error.localizedDescription }
         if type == "comic" { try? FileManager.default.removeItem(at: URL.documentsDirectory.appendingPathComponent("comicSources/" + id.uuidString)) }
+        if type == "fanfic" { try? FileManager.default.removeItem(at: URL.documentsDirectory.appendingPathComponent("fanficCovers/" + id.uuidString + ".jpg")) }
         guard remote, AppConfig.companionEnabled else { return }
         do {
             try await APIClient.shared.requestVoid(type == "comic" ? .permanentDeleteComic(id: id) : .permanentDeleteFanfic(id: id))

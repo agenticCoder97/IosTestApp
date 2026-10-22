@@ -185,6 +185,7 @@ final class AO3ImportService {
         await AO3ImportStorage.shared.remove(replacedPaths)
         if sourceKey == "ffnet" { try? FileManager.default.removeItem(at: Self.ffnetCheckpoint(canonicalURL)) }
         AstralLogger.info("Imported story locally | chapters=\(work.chapters.count)", context: "AO3Import")
+        await FanficThumbnailService.repair(fanfic, context: modelContext, sourceCover: work.thumbnailURL)
         return fanfic
     }
 
@@ -294,6 +295,7 @@ private struct AO3WorkImport: Codable, Sendable {
     let kudos: Int?
     let commentsCount: Int?
     let bookmarksCount: Int?
+    var thumbnailURL: String? = nil
     var chapters: [AO3ChapterImport]
 }
 
