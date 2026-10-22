@@ -134,14 +134,17 @@ public struct ReaderPullHint: View {
     fileprivate weak var scrollView: UIScrollView? { didSet { applyRestore() } }
     fileprivate var isApplyingMovement = false
     private var pendingOffset: Double?
+    private var pendingStart = false
     public var offset: Double? { scrollView.map { Double($0.contentOffset.y) } }
-    public func restore(offset: Double) { pendingOffset = offset; applyRestore() }
+    public func restore(offset: Double) { pendingStart = false; pendingOffset = offset; applyRestore() }
+    public func restoreToStart() { pendingStart = true; pendingOffset = nil; applyRestore() }
     fileprivate func applyRestore() {
-        guard let view = scrollView, let offset = pendingOffset, view.contentSize.height > 0 else { return }
+        guard let view = scrollView, view.contentSize.height > 0, pendingStart || pendingOffset != nil else { return }
         let top = -view.adjustedContentInset.top
         let bottom = max(top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+        let offset = pendingStart ? Double(top) : pendingOffset!
         guard offset <= bottom else { return }
-        pendingOffset = nil
+        pendingOffset = nil; pendingStart = false
         isApplyingMovement = true
         view.setContentOffset(CGPoint(x: view.contentOffset.x, y: max(top, offset)), animated: false)
         isApplyingMovement = false
