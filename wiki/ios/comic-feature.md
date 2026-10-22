@@ -30,6 +30,7 @@
 | Name | File | Description |
 |------|------|-------------|
 | ChapterDownloadService | `Services/ChapterDownloadService.swift` | Downloads chapter page images to Documents directory for offline reading. Checks local pages before API in reader. |
+| ComicImagePipeline | `Reader/ComicImagePipeline.swift` | Deduplicates page loads, limits concurrency to two, and keeps a 64 MB / six-image LRU memory cache. Local and remote images use the same background preparation path. |
 
 ## Relationships
 
@@ -71,3 +72,11 @@ Tap zones divide the screen into thirds: left (prev page), center (toggle HUD), 
 Page actions on long press: save image, share.
 
 Reading progress written to SwiftData on every chapter open. Backend progress sync via PUT endpoint (partially wired).
+
+### Device image loading (21 October 2026)
+
+- The current page loads first; the reader then prefetches up to two pages ahead and one behind within the same chapter. Obsolete prefetch consumers are cancelled without cancelling a visible consumer of the same image.
+- File I/O, image downsampling and eager decoding run off the UI actor. Display images retain zoom headroom, with a maximum target width of 2,560 pixels and a 12-megapixel decoded-image cap for long strips. Saved originals are unchanged. Offscreen rows release their display images; leaving the reader clears its pipeline.
+- A completed offline save switches the open reader to local page URLs immediately, retaining page IDs, position and zoom state. Download completion is also observed when the save started elsewhere.
+- Prefetching adds no permanent page cache and does not occupy an offline comic slot. The adjustable two-comic default, storage byte budget and pull-to-next/previous handlers are unchanged.
+- Minimal verification: Release simulator build; temporary focused checks for deduplication, concurrency, eviction, cancellation/retry, bounded prefetch, tall-image preparation/orientation and unchanged originals; existing pull-state checks. Evidence: `/tmp/astral-comic-image-checks/`. No NSFW sources were exercised and no physical-device frame-rate measurement is claimed.

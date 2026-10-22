@@ -52,6 +52,7 @@ struct ComicReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.displayScale) private var displayScale
 
     @State private var currentChapterIndex: Int
     @State private var pages: [PageResponse] = []
@@ -92,6 +93,9 @@ struct ComicReaderView: View {
     @State private var saveChapterTask: Task<Void, Never>?
     @State private var isSavingChapter = false
     @State private var saveError: String?
+    @State private var imagePipeline = ComicImagePipeline()
+    @State private var imagePixelWidth = 1536
+    @State private var pageReferrer: String?
 
     // Namespaces for matched geometry
     @Namespace private var modeNS
@@ -175,7 +179,24 @@ struct ComicReaderView: View {
         .overlay(alignment: .bottom) { BookmarkUndoBanner().padding(.bottom, 70) }
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
+        .onGeometryChange(for: Int.self) { [displayScale] geometry in
+            // Bucket widths to avoid invalidating requests for tiny layout changes.
+            min(2560, max(1024, Int(ceil(geometry.size.width * displayScale * 1.5 / 256)) * 256))
+        } action: { imagePixelWidth = $0 }
         .task { await loadPages() }
+        .task(id: prefetchRequests) {
+            let requests = prefetchRequests
+            let pipeline = imagePipeline
+            guard let current = requests.first else { return }
+            _ = try? await pipeline.image(for: current)
+            guard !Task.isCancelled else { return }
+            await withTaskGroup(of: Void.self) { group in
+                for request in requests.dropFirst() {
+                    group.addTask { _ = try? await pipeline.image(for: request, prefetch: true) }
+                }
+            }
+        }
+        .onChange(of: currentChapter?.localPagesPath) { _, _ in useSavedPagesIfAvailable() }
         .onAppear {
             startSession()
             UIApplication.shared.isIdleTimerDisabled = true
@@ -184,6 +205,8 @@ struct ComicReaderView: View {
         .onDisappear {
             autoScrollActive = false
             persistReadingState(endSession: true, syncRemote: false)
+            let pipeline = imagePipeline
+            Task { await pipeline.clear() }
             UIApplication.shared.isIdleTimerDisabled = false
             if forceLandscape { setLandscape(false) }
         }
@@ -272,9 +295,31 @@ struct ComicReaderView: View {
 
     @ViewBuilder private func pageView(_ index: Int) -> some View {
         ZoomablePageView(onSingleTap: toggleHUD, onZoom: { isZoomed = $0 }) {
-            if let local = localPageURLs, local.indices.contains(index) { LocalPageView(fileURL: local[index]) }
-            else if pages.indices.contains(index) { ComicPageView(page: pages[index], referrer: UserDefaults.standard.string(forKey: "reading.chapterSource." + (currentChapter?.id.uuidString ?? "")) ?? UserDefaults.standard.string(forKey: "reading.source." + comic.id.uuidString)) }
+            if let request = imageRequest(at: index) {
+                ComicPageView(request: request, pipeline: imagePipeline, aspectRatio: pageAspectRatio(at: index))
+            }
         }
+    }
+
+    private func imageRequest(at index: Int) -> ComicImagePipeline.Request? {
+        if let localPageURLs, localPageURLs.indices.contains(index) {
+            return .init(url: localPageURLs[index], referrer: nil, pixelWidth: imagePixelWidth)
+        }
+        guard pages.indices.contains(index) else { return nil }
+        let path = pages[index].filePath
+        guard let url = URL(string: path.hasPrefix("https://") || path.hasPrefix("http://") ? path : AppConfig.staticBaseURL + path) else { return nil }
+        return .init(url: url, referrer: pageReferrer, pixelWidth: imagePixelWidth)
+    }
+
+    private var prefetchRequests: [ComicImagePipeline.Request] {
+        ComicImagePipeline.prefetchIndices(page: currentPage, count: pageSource.pageCount).compactMap { imageRequest(at: $0) }
+    }
+
+    private func pageAspectRatio(at index: Int) -> CGFloat {
+        if pages.indices.contains(index), let width = pages[index].widthPx, let height = pages[index].heightPx, height > 0 {
+            return CGFloat(width) / CGFloat(height)
+        }
+        return 2.0 / 3.0
     }
 
     private func pagedReader(reversed: Bool) -> some View {
@@ -567,6 +612,8 @@ struct ComicReaderView: View {
         return .init(network: response, local: nil)
     }
     private func apply(_ source: ChapterPages, chapter: LocalComicChapter) {
+        pageReferrer = UserDefaults.standard.string(forKey: "reading.chapterSource." + chapter.id.uuidString)
+            ?? UserDefaults.standard.string(forKey: "reading.source." + comic.id.uuidString)
         appliedSkip = min(max(0, comic.skipFirstNPages), max(0, source.count - 1))
         pages = Array(source.network.dropFirst(appliedSkip))
         localPageURLs = source.local.map { Array($0.dropFirst(appliedSkip)) }
@@ -587,6 +634,16 @@ struct ComicReaderView: View {
         catch { offlineError = true }
         isLoading = false
     }
+    private func useSavedPagesIfAvailable() {
+        guard let chapter = currentChapter, chapter.downloadStatus == .complete,
+              let urls = ChapterDownloadService.shared.localPageURLs(for: chapter),
+              !urls.isEmpty, chapter.totalPages == 0 || chapter.totalPages == urls.count else { return }
+        let saved = Array(urls.dropFirst(appliedSkip))
+        guard saved != localPageURLs else { return }
+        // Keep page IDs, scroll position and zoom state. Updating request URLs
+        // cancels remote work and starts local preparation without reopening.
+        localPageURLs = saved
+    }
     private func saveCurrentChapter() {
         guard let chapter = currentChapter, !isSavingChapter, !chapter.isDownloaded else { return }
         isSavingChapter = true
@@ -595,6 +652,7 @@ struct ComicReaderView: View {
                 comic: comic, chapters: [chapter], modelContext: modelContext,
                 onCancel: { saveChapterTask?.cancel() }, onProgress: { _, _ in }
             )
+            if saveError == nil, currentChapter?.id == chapter.id { useSavedPagesIfAvailable() }
             isSavingChapter = false
         }
     }
@@ -622,11 +680,16 @@ struct ComicReaderView: View {
 // MARK: - Page View
 
 struct ComicPageView: View {
-    let page: PageResponse
-    var referrer: String? = nil
+    let request: ComicImagePipeline.Request
+    let pipeline: ComicImagePipeline
+    let aspectRatio: CGFloat
     @State private var retryID = UUID()
     @State private var image: UIImage?
     @State private var failed = false
+    private struct LoadID: Hashable {
+        let request: ComicImagePipeline.Request
+        let retry: UUID
+    }
 
     var body: some View {
         Group {
@@ -642,47 +705,15 @@ struct ComicPageView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .task(id: page.filePath + retryID.uuidString) {
-            image = nil; failed = false
+        .task(id: LoadID(request: request, retry: retryID)) {
+            failed = false
             do {
-                guard let url = URL(string: page.filePath.hasPrefix("https://") ? page.filePath : AppConfig.staticBaseURL + page.filePath) else { throw APIError.invalidURL }
-                let (data, response) = try await SourceImageTransport.session.data(for: SourceImageTransport.request(url, referrer: referrer))
+                let prepared = try await pipeline.image(for: request)
                 try Task.checkCancellation()
-                guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode), let decoded = UIImage(data: data) else { throw APIError.invalidResponse }
-                image = decoded
+                image = UIImage(cgImage: prepared)
             } catch is CancellationError { } catch { if !Task.isCancelled { failed = true } }
         }
-    }
-    private var aspectRatio: CGFloat {
-        if let w = page.widthPx, let h = page.heightPx, h > 0 { return CGFloat(w) / CGFloat(h) }
-        return 2.0 / 3.0
-    }
-}
-
-/// Renders a page image from a local file URL (device-saved chapters).
-private struct LocalPageView: View {
-    let fileURL: URL
-
-    var body: some View {
-        if let uiImage = UIImage(contentsOfFile: fileURL.path) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity)
-        } else {
-            Rectangle()
-                .fill(AstralColors.elevated)
-                .aspectRatio(2.0 / 3.0, contentMode: .fit)
-                .overlay {
-                    VStack(spacing: 8) {
-                        Image(systemName: "photo.badge.exclamationmark")
-                            .font(.title2)
-                        Text("Failed to load")
-                            .font(AstralTypography.caption)
-                    }
-                    .foregroundStyle(AstralColors.muted)
-                }
-        }
+        .onDisappear { image = nil }
     }
 }
 
