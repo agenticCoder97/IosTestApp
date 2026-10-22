@@ -60,6 +60,15 @@ source protection can interrupt an import. Update and restoring removed text use
 this same importer. See the [phone sources verification record](../../docs/2026-10-21-phone-sources-and-storage.md)
 for the current live acceptance boundary.
 
+## Fanfic reliability follow-up
+
+The [reliability repair record](../../docs/2026-10-21-fanfic-reliability-repairs.md)
+covers prepared chapter text and isolated scroll progress, on-device thumbnail
+repair (including existing library entries), and FFNet chapter-count/Next-chain
+validation. Pull navigation, passage bookmarks, resume and the reading-activity
+heat map remain. Runtime acceptance limitations are recorded separately from
+fixture/build results.
+
 ## Relationships
 
 ```mermaid
