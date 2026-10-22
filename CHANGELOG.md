@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## codex/fanfic-reliability — 2026-10-21
+
+- [ios] Prepare fanfic chapters off the UI thread, isolate scroll progress updates, restore chapter headings and resume positions, repair local thumbnails, and import complete FFNet chapter lists on the phone.
+- [ios] Bound comic image prefetching and memory use, prepare display images in the background, and switch immediately to saved pages. Preserve pull-to-next chapter, reading activity, and the adjustable two-comic offline default.
+- Verified live simulator FFNet import, thumbnails, scrolling/resume and held pull; focused comic pipeline checks passed. Signed Release 1.0.0 (347) installed and launched on iPhone 16 Pro Max. No NSFW sources tested.
+
 ## fix/add-screen-browser-layout — 2026-10-21
 
 - [ios] Add a 4.5-second illustrated launch animation: four reading worlds orbit and morph into Astral's star and wordmark. Pause across interruptions and show a static logo with Reduce Motion.
