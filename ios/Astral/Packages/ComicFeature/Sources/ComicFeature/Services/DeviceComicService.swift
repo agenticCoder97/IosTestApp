@@ -48,7 +48,11 @@ enum DeviceComicService {
             try context.save(); mutating = true
             let comic = known ?? LocalComic(id: id, title: work.title, sourceKey: source)
             if comic.modelContext == nil { context.insert(comic) }
-            comic.title = work.title; comic.comicDescription = work.description; comic.thumbnailPath = work.cover
+            comic.title = work.title; comic.comicDescription = work.description
+            // A page without a cover keeps the one already saved. Imports before the
+            // importer fix stored ".../undefined", which never loads.
+            if let cover = work.cover { comic.thumbnailPath = cover }
+            else if comic.thumbnailPath?.hasSuffix("/undefined") == true { comic.thumbnailPath = nil }
             comic.authorsJSON = String(data: try JSONEncoder().encode(work.authors.map { ["name": $0] }), encoding: .utf8)
             comic.tagsJSON = String(data: try JSONEncoder().encode(work.tags), encoding: .utf8)
             comic.status = "complete"; comic.totalChapters = work.chapters.count; comic.lastSyncedAt = .now

@@ -159,7 +159,7 @@ struct ComicLibraryView: View {
         }
         .background(AstralColors.background)
         .fullScreenCover(item: $continueReading) { selection in
-            ContinueReaderHost(comic: selection.comic, chapter: selection.chapter)
+            ComicReaderView(comic: selection.comic, chapters: selection.chapters, startingAt: selection.chapter)
         }
         .refreshable { if AppConfig.companionEnabled { await viewModel.fetchComics(modelContext: modelContext, force: true) } }
         .deletePermanentlyAlert(
@@ -213,25 +213,13 @@ struct ComicLibraryView: View {
 
 // MARK: - Continue Reading Strip
 
+/// The chapters travel with the selection. A cover that ran its own query was
+/// rebuilt whenever the library updated, which closed the reader's menus and sheets.
 private struct ContinueReadingSelection: Identifiable {
     let comic: LocalComic
+    let chapters: [LocalComicChapter]
     let chapter: LocalComicChapter
     var id: UUID { chapter.id }
-}
-
-/// Owns the chapter query for a reader opened from Continue Reading.
-private struct ContinueReaderHost: View {
-    let comic: LocalComic
-    let chapter: LocalComicChapter
-    @Query private var chapters: [LocalComicChapter]
-
-    init(comic: LocalComic, chapter: LocalComicChapter) {
-        self.comic = comic; self.chapter = chapter
-        let comicId = comic.id
-        _chapters = Query(filter: #Predicate<LocalComicChapter> { $0.comicId == comicId }, sort: \LocalComicChapter.chapterNumber)
-    }
-
-    var body: some View { ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter) }
 }
 
 private struct ContinueReadingStrip: View {
@@ -281,7 +269,7 @@ private struct ContinueReadingCardLink: View {
     // Full-screen presentation, like comic detail: the reader owns the status bar
     // and is not built eagerly while the strip lays out.
     var body: some View {
-        Button { if let nextChapter { onOpen(.init(comic: comic, chapter: nextChapter)) } } label: {
+        Button { if let nextChapter { onOpen(.init(comic: comic, chapters: chapters, chapter: nextChapter)) } } label: {
             ContinueReadingCard(comic: comic)
         }
         .accessibilityHint("Opens the reader at your saved position")

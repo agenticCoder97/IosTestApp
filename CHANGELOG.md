@@ -4,6 +4,13 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/app-polish-pass-4 — 2026-10-23
+
+- [ios] Fan fiction keeps italics, bold, centring, list bullets and in-paragraph line breaks from AO3 and FanFiction.net (Update a story to pick them up). Untitled chapters no longer print "Chapter N" twice, and stray or double spaces are tidied.
+- [ios] Author and story links in the story header and the reader's ••• menu open the source page in Add. The fan fiction reader's menus work again when it's opened from Continue Reading (a PR #72 regression).
+- [ios] Comic importer reads the cover on Hentai20-style pages instead of saving ".../undefined"; an update that finds no cover keeps the saved one.
+- Verified in the iPhone 17 Pro simulator (AO3 update with italics, links into Add, Continue Reading menu). Details in docs/2026-10-23-fanfic-formatting-links-covers.md.
+
 ## feature/app-polish-pass-3 — 2026-10-23
 
 - [ios] Webtoon zoom now scales the whole strip (scroll and pan while zoomed); paged modes turn pages from the outer thirds in reading direction; the launch intro can be skipped and no longer swallows the first tap.

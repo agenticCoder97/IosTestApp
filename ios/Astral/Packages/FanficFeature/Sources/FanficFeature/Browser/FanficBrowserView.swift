@@ -76,13 +76,8 @@ struct FanficBrowserView: View {
         .fullScreenCover(item: $readingWork) { work in
             ImportedFanficReader(fanfic: work)
         }
-        .onAppear {
-            if let url = fanficNavigation?.ao3WorkURL {
-                viewModel.selectedSource = AO3ImportService.ffnetURL(from: url) != nil ? .ffnet : .ao3
-                viewModel.savedURLs[viewModel.selectedSource] = url
-                viewModel.webView?.load(URLRequest(url: url))
-            }
-        }
+        .onAppear(perform: openRequestedPage)
+        .onChange(of: fanficNavigation?.ao3WorkURL) { _, _ in openRequestedPage() }
         .alert("Story import", isPresented: Binding(
             get: { importError != nil },
             set: { if !$0 { importError = nil } }
@@ -134,6 +129,16 @@ struct FanficBrowserView: View {
         }
         Divider()
         Button("Import text file", systemImage: "doc.badge.plus") { showFileImport = true }
+    }
+
+    /// Loads a page another screen asked for (a story, an author, an import to retry).
+    /// The source follows the page's host, so author and search pages open too.
+    private func openRequestedPage() {
+        guard let url = fanficNavigation?.ao3WorkURL else { return }
+        viewModel.selectedSource = url.host?.lowercased().hasSuffix("fanfiction.net") == true ? .ffnet : .ao3
+        viewModel.savedURLs[viewModel.selectedSource] = url
+        viewModel.webView?.load(URLRequest(url: url))
+        fanficNavigation?.ao3WorkURL = nil
     }
 
     private func startImport() {

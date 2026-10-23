@@ -16,7 +16,8 @@ async function getPage(url) {
         return new DOMParser().parseFromString(await r.text(),'text/html');
     } finally {clearTimeout(timer);}
 }
-const safe = value => {try {const u=new URL(String(value).trim(),targetURL);return u.protocol==='https:'?u.href:null;}catch{return null;}};
+// Missing values stay null; String(undefined) would resolve to ".../undefined".
+const safe = value => {if(value==null||!String(value).trim())return null;try {const u=new URL(String(value).trim(),targetURL);return u.protocol==='https:'?u.href:null;}catch{return null;}};
 function objectAt(script, marker) {
     const start=script.indexOf(marker); if(start<0)return null;
     let begin=script.indexOf('{',start+marker.length), depth=0, quoted=false, escape=false;
@@ -58,7 +59,8 @@ try {
  chapters.sort((a,b)=>a.number-b.number);
  const title=text('.post-title h1,h1.entry-title,h1');
  if(!title||!chapters.length)throw Error('The series title or chapter list was not found. Open the series page in Add and wait for its chapter list to load.');
- const cover=safe(doc.querySelector('meta[property="og:image"]')?.content||doc.querySelector('.summary_image img')?.getAttribute('data-src')||doc.querySelector('.summary_image img')?.getAttribute('src'));
+ const coverImage=doc.querySelector('.summary_image img,.thumb img[itemprop="image"],img.wp-post-image[itemprop="image"]');
+ const cover=safe(doc.querySelector('meta[property="og:image"]')?.content||coverImage?.getAttribute('data-src')||coverImage?.getAttribute('data-lazy-src')||coverImage?.getAttribute('src'));
  return JSON.stringify({work:{title,description:text('.summary__content,.description,.entry-content > p'),authors:[...doc.querySelectorAll('.author-content a,i[itemprop="name"]')].map(n=>n.textContent.trim()),tags:[...doc.querySelectorAll('.genres-content a,a[rel="tag"]')].map(n=>({name:n.textContent.trim(),tag_type:'genre'})),cover,chapters}});
 } catch(error) {return failure(controller.signal.aborted?'Import cancelled or timed out. Your saved copy was retained.':error.message);}
 finally {globalThis.__astralComicImportAbort=null;}

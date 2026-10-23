@@ -24,6 +24,8 @@ struct FanficReaderView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.fanficNavigation) private var fanficNavigation
+    @Environment(\.openURL) private var openURL
 
     @State private var chapterContent = ""
     @State private var preparedChapter = FanficReaderDocument(text: "")
@@ -81,16 +83,22 @@ struct FanficReaderView: View {
                         LazyVStack(alignment: .leading, spacing: paragraphSpacing) {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Chapter \(chapterDisplayNum)").font(.subheadline).foregroundStyle(textColor.opacity(0.75))
-                                if let title = currentChapter.title { Text(title).font(fontFamily.boldFont(size: fontSize * 1.2)).foregroundStyle(textColor) }
+                                // Untitled chapters are saved as "Chapter N"; don't print the heading twice.
+                                if let title = currentChapter.title, title.caseInsensitiveCompare("Chapter \(chapterDisplayNum)") != .orderedSame {
+                                    Text(title).font(fontFamily.boldFont(size: fontSize * 1.2)).foregroundStyle(textColor)
+                                }
                             }
                             .padding(.bottom, 16)
                             ForEach(paragraphs.indices, id: \.self) { index in
                                 let paragraph = paragraphs[index]
-                                Text(preparedChapter.sceneBreaks.contains(index) ? "* * *" : paragraph)
+                                let isBreak = preparedChapter.sceneBreaks.contains(index)
+                                let centered = isBreak || FanficTextMarks.isCentered(paragraph)
+                                Text(isBreak ? AttributedString("* * *") : FanficTextMarks.styled(paragraph, font: fontFamily, size: fontSize))
                                     .font(fontFamily.font(size: fontSize))
                                     .lineSpacing((lineHeight - 1) * fontSize)
                                     .foregroundStyle(textColor)
-                                    .frame(maxWidth: .infinity, alignment: preparedChapter.sceneBreaks.contains(index) ? .center : .leading)
+                                    .multilineTextAlignment(centered ? .center : .leading)
+                                    .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
                                     .id(index)
                                     .onTapGesture { toggleControls() }
                                     .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
@@ -187,7 +195,7 @@ struct FanficReaderView: View {
         }
         .sheet(isPresented: $showBookmarkSheet) {
             FanficBookmarkSheet(
-                paragraphText: bookmarkParagraphIndex.flatMap { paragraphs.indices.contains($0) ? paragraphs[$0] : nil } ?? "",
+                paragraphText: bookmarkParagraphIndex.flatMap { paragraphs.indices.contains($0) ? FanficTextMarks.plain(paragraphs[$0]) : nil } ?? "",
                 chapterTitle: currentChapter.title, chapterNumber: currentChapter.chapterNumber,
                 wordOffset: bookmarkParagraphIndex.map { wordOffsetForParagraph($0) } ?? 0,
                 onSave: { selectedText, heading, wordOffset in
@@ -232,6 +240,13 @@ struct FanficReaderView: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// Leaves the reader for the page in Add, or Safari when Add isn't reachable.
+    private func openSourcePage(_ url: URL) {
+        guard let fanficNavigation else { openURL(url); return }
+        dismiss()
+        fanficNavigation.openInBrowser(url)
     }
 
     private func toggleControls() {
@@ -295,6 +310,15 @@ struct FanficReaderView: View {
                 if let nextChapter { Button("Next chapter") { navigateTo(nextChapter) } }
                 Button("Start chapter over") { visibleParagraph = nil; scrollTargetIndex = 0; scrollController.restoreToStart(); scrollProgress.fraction = 0; scrollProgress.offset = nil; scrollProgress.paragraph = 0 }
                 Button(fanfic.completedAt == nil ? "Mark finished" : "Mark unfinished") { fanfic.completedAt = fanfic.completedAt == nil ? .now : nil; try? modelContext.save() }
+                Divider()
+                if let story = FanficLinks.story(fanfic) {
+                    Button("Story page", systemImage: "safari") { openSourcePage(story) }
+                }
+                ForEach(FanficLinks.authors(fanfic), id: \.self) { name in
+                    if let url = FanficLinks.author(name, sourceKey: fanfic.sourceKey) {
+                        Button("\(name)'s page", systemImage: "person") { openSourcePage(url) }
+                    }
+                }
             } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
             .accessibilityLabel("More reader actions")
         }
@@ -503,7 +527,7 @@ struct FanficReaderView: View {
         defer { isLoading = false }
         do {
             let text = try await content(for: currentChapter)
-            let prepared = await FanficReaderPreparation.shared.prepare(text)
+            let prepared = await FanficReaderPreparation.shared.prepare(text, keepsLineBreaks: fanfic.sourceKey != "local")
             chapterContent = text; preparedChapter = prepared
             restorePosition()
             offlineError = false
@@ -599,7 +623,7 @@ struct FanficReaderView: View {
             defer { isTransitioning = false; pullProgress = 0 }
             do {
                 let text = try await content(for: chapter)
-                let prepared = await FanficReaderPreparation.shared.prepare(text)
+                let prepared = await FanficReaderPreparation.shared.prepare(text, keepsLineBreaks: fanfic.sourceKey != "local")
                 try Task.checkCancellation()
                 hasRestoredScroll = false
                 currentChapter = chapter; chapterContent = text; preparedChapter = prepared

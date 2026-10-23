@@ -46,6 +46,12 @@ detail toolbar opens the work in Browse for an explicit reimport. AO3 reading pr
 and permanent deletion stay local. Existing AO3 entries without saved text need a
 one-time reimport; there is no backend fallback for missing chapter files.
 
+## Imported Formatting (23 October 2026)
+
+Chapters are saved as plain text. The AO3 and FFNet importers mark italics (U+E000/E001), bold (U+E002/E003) and centred paragraphs (U+E004) with private-use characters. `FanficTextMarks` turns them into styled runs in the reader, and strips them for word counts, scene breaks and bookmark snippets. Imported stories keep single line breaks inside a paragraph; plain-text files join them. A story imported before this change gets the marks with **Update**.
+
+Author and story links in the detail header and the reader's ••• menu open the source page in Add (`FanficNavigation.openInBrowser`). Continue Reading presents the reader from the tab root (`FanficNavigation.readerSelection`); presenting it from inside the library's NavigationStack rebuilt the reader when its menu opened.
+
 ## FFNet Imports Without a Backend
 
 Select FFNet in **Add**, open a story and tap **Add to library**. Chapters load in a
