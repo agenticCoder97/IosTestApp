@@ -115,6 +115,9 @@ struct FanficLibraryView: View {
     }
 
     var body: some View {
+        // Filtering and sorting run once per update rather than once per use.
+        let filteredFanfics = filteredFanfics
+        let inProgressFanfics = inProgressFanfics
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if let latestSync = filteredFanfics.compactMap(\.lastSyncedAt).max() {

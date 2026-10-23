@@ -15,7 +15,9 @@ final class AO3ImportService {
     static func workURL(from url: URL?) -> URL? {
         guard let url, url.scheme == "https",
               url.host?.lowercased() == "archiveofourown.org" else { return nil }
-        let parts = url.path.split(separator: "/")
+        // Works opened from a collection live at /collections/<name>/works/<id>.
+        let path = url.path.split(separator: "/")
+        let parts = path.first == "collections" && path.count >= 4 ? Array(path.dropFirst(2)) : Array(path)
         guard parts.count >= 2, parts[0] == "works",
               !parts[1].isEmpty, parts[1].allSatisfy(\.isNumber) else { return nil }
         return URL(string: "https://archiveofourown.org/works/\(parts[1])")

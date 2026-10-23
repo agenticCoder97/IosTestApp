@@ -7,7 +7,7 @@ Add a new entry whenever you merge a feature/fix PR into `development`. Keep ent
 ## feature/app-polish-pass-3 — 2026-10-23
 
 - [ios] Webtoon zoom now scales the whole strip (scroll and pan while zoomed); paged modes turn pages from the outer thirds in reading direction; the launch intro can be skipped and no longer swallows the first tap.
-- [ios] Audit fixes: stale chapter loads and close-during-switch no longer save the wrong chapter, Continue Reading stays open after Mark finished, closing search clears its filter, plain-text fan fiction splits into paragraphs, MangaDex import no longer crashes on repeated chapters, "Save all" no longer stops silently on a page-load cancel, `.avif` pages open, plus VoiceOver labels and a working VoiceOver page scrubber.
+- [ios] Audit fixes: stale chapter loads and close-during-switch no longer save the wrong chapter, Continue Reading stays open after Mark finished, closing search clears its filter, plain-text fan fiction splits into paragraphs, MangaDex import no longer crashes on repeated chapters, "Save all" no longer stops silently on a page-load cancel, MangaDex retries server errors and can save chapters edited after import, AO3 collection links import, `.avif` pages open, plus VoiceOver labels and a working VoiceOver page scrubber.
 - Verified on the iPhone 17 Pro simulator (intro, strip zoom, L→R and R→L tap zones, Continue Reading). Unfixed audit findings are listed in docs/2026-10-23-polish-pass-3.md.
 
 ## feature/app-polish-pass-2 — 2026-10-23

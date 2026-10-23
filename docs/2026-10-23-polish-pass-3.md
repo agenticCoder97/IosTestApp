@@ -29,6 +29,7 @@
 - The bookmark undo banner stayed over every tab until dismissed. It now leaves after 6 seconds.
 - Title sort was case-sensitive and not number-aware. It now uses `localizedStandardCompare`.
 - Comic and fan fiction detail saved SwiftData on every appearance. They now save only when the chapter count changed.
+- Library filtering and sorting ran up to three times per update, including on every search keystroke. They now run once.
 
 ### Scrapers and saving
 - A MangaDex import could crash if a chapter was added or removed while the feed was paged, which repeats a release. Duplicates are now dropped.
@@ -36,6 +37,9 @@
 - "Save all" stopped silently and reported "completed" when a page load was cancelled by a redirect (−999). Since pass 2, any `URLError.cancelled` had counted as the user cancelling. Now only the task's own cancellation stops a batch; anything else marks that chapter failed and the batch continues.
 - Local comics with `.avif` pages were imported but then refused to open, because the reader's page list ignored `.avif`.
 - AO3's "details could not be read" error told the user to open an FFNet page.
+- MangaDex requests failed outright on a server error or dropped connection. They now get one spaced retry; rate limits still surface to the user.
+- A MangaDex chapter whose pages the uploader changed after import could never be saved ("incomplete page list"). Saving now adopts the current page count.
+- AO3 works opened from a collection (`/collections/…/works/<id>`) were not recognised. They now import like any other work.
 
 ### VoiceOver
 - Comic pages are read as "Page 3 of 12", and Retry says which page.
@@ -55,11 +59,12 @@ iPhone 17 Pro simulator, iOS 26.4, Debug build:
   - R→L: physical left third → page 3, as expected.
   - Middle third: hides the controls.
 - **Continue Reading:** on the sample comic, the reader stayed open after Mark finished. The change was reverted afterwards.
+- **MangaDex save:** after the page-count change, a single-chapter save (Ch. 2, 11 pages) completed with no error.
 - **Cancel:** the pass-2 cancel test was re-run after narrowing what counts as a cancel. Save next 5, then Cancel during the second chapter: two chapters saved, three returned to unsaved with no error, and the job reads cancelled · 2 of 5.
 - **Tests:**
   - AstralSmoke 6/6, including the new `testTapSkipsIntro`. The launch tests now find the intro as any element type, because it is tappable.
   - ComicFeature 20, including 6 new `ComicStripZoom` tests.
-  - FanficFeature 11, including 4 new paragraph-splitting tests.
+  - FanficFeature 13, including 4 new paragraph-splitting tests and 2 AO3 link tests.
   - Core 30 and DesignSystem 10.
   - The Core test target hadn't compiled, because `JobStatus` wasn't `CaseIterable`. It is now.
 
@@ -83,12 +88,8 @@ These need a decision or are larger than this pass:
 - **The hidden page loader** has no domain allowlist and throws on concurrent loads from the same source (`DeviceSourcePageLoader`).
 - **AO3:**
   - Image-only chapters (fanart, podfic embeds) fail the whole import.
-  - Collection URLs are rejected.
   - `parseInt` stops at "1,234".
 - **FFNet:** the chapter count is read from the whole page, so a one-shot whose text says "Chapter 1 of 3" goes looking for chapter 2.
-- **MangaDex:**
-  - A chapter's stored page count goes stale after an uploader edit, which blocks saving.
-  - API calls don't retry 5xx responses.
 - **Heavy main-thread work:** AO3/FFNet import parsing and re-encoding, and per-page storage queries during comic saves.
 - **Fan fiction reader:**
   - A chapter that fits on one screen reads 0%, so the story never reaches 100%.
@@ -99,7 +100,6 @@ These need a decision or are larger than this pass:
   - The Completion filter hides comics with unknown status.
   - The tag filter matches raw JSON.
   - Sort counts as a filter for the empty state.
-  - Filters are recomputed several times per render.
   - Stats and Storage are slow with large libraries.
 - **Activity:** companion jobs stay "running" forever once the companion is off.
 - **VoiceOver:**

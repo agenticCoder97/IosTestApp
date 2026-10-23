@@ -48,7 +48,12 @@ final class ChapterDownloadService {
         do {
             try checkDiskSpace(estimatedBytes: Int64(chapter.totalPages) * 500_000)
             let pages: [PageResponse]
-            if chapter.comic?.sourceKey == "mangadex-device" { pages = try await MangaDexDeviceService.pages(chapter.id) }
+            if chapter.comic?.sourceKey == "mangadex-device" {
+                pages = try await MangaDexDeviceService.pages(chapter.id)
+                // The at-home list is the chapter as it is now. An uploader edit since
+                // import changes the count, which must not make every save fail.
+                if !pages.isEmpty { chapter.totalPages = pages.count }
+            }
             else if let comic = chapter.comic, DeviceComicService.sources.contains(comic.sourceKey) { pages = try await DeviceComicService.pages(comic: comic, chapter: chapter) }
             else { pages = try await APIClient.shared.request(.chapterPages(comicId: comicId, chapterId: chapter.id)) }
             guard !pages.isEmpty, Set(pages.map(\.pageNumber)).count == pages.count,

@@ -108,11 +108,26 @@ enum MangaDexDeviceService {
 
 /// Serial request slots survive actor reentrancy; rate-limit responses defer future
 /// requests and surface to the user instead of spinning retries against the source.
+/// A server error or dropped connection gets one spaced retry.
 private actor MangaDexAPI {
     static let shared = MangaDexAPI()
     private var nextRequest = Date.distantPast
     private var nextAtHome = Date.distantPast
     func get<T: Decodable & Sendable>(_ path: String, atHome: Bool = false) async throws -> T {
+        do { return try await fetch(path, atHome: atHome) }
+        catch let error where Self.isTransient(error) {
+            try await Task.sleep(for: .seconds(1.5))
+            return try await fetch(path, atHome: atHome)
+        }
+    }
+
+    private static func isTransient(_ error: Error) -> Bool {
+        if case APIError.httpError(let code) = error { return (500...599).contains(code) }
+        guard let code = (error as? URLError)?.code else { return false }
+        return code == .timedOut || code == .networkConnectionLost
+    }
+
+    private func fetch<T: Decodable & Sendable>(_ path: String, atHome: Bool) async throws -> T {
         let now = Date()
         let slot = max(now, nextRequest, atHome ? nextAtHome : now)
         nextRequest = slot.addingTimeInterval(0.3)

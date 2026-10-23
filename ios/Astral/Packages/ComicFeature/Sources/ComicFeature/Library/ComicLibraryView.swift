@@ -93,6 +93,9 @@ struct ComicLibraryView: View {
     }
 
     var body: some View {
+        // Filtering and sorting run once per update rather than once per use.
+        let displayedComics = displayedComics
+        let inProgressComics = inProgressComics
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // Backend error banner
