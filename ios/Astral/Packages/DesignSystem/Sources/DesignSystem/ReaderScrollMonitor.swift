@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Core
+import os
 
 /// Observes the owning scroll view without replacing its delegate. A chapter pull
 /// must BEGIN at a content edge, exceed 120pt while held, and be released there. Momentum,
@@ -14,14 +15,16 @@ public struct ReaderScrollMonitor: UIViewRepresentable {
     public var onPosition: (Double) -> Void
     public var onPull: (Double) -> Void
     public var onRelease: (Bool) -> Void
+    public var onReady: (() -> Void)?
 
     public init(controller: ReaderScrollController? = nil, axis: Axis = .vertical, reversed: Bool = false, reportsProgrammaticChanges: Bool = false, enabled: Bool = true, onPosition: @escaping (Double) -> Void,
-                onPull: @escaping (Double) -> Void, onRelease: @escaping (Bool) -> Void) {
+                onPull: @escaping (Double) -> Void, onRelease: @escaping (Bool) -> Void, onReady: (() -> Void)? = nil) {
         self.axis = axis; self.reversed = reversed
         self.reportsProgrammaticChanges = reportsProgrammaticChanges
         self.controller = controller
         self.enabled = enabled; self.onPosition = onPosition
         self.onPull = onPull; self.onRelease = onRelease
+        self.onReady = onReady
     }
     public func makeUIView(context: Context) -> Probe {
         let view = Probe(); view.isUserInteractionEnabled = false; view.coordinator = context.coordinator; return view
@@ -65,6 +68,7 @@ public struct ReaderScrollMonitor: UIViewRepresentable {
             observation = view.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.changed() }
             }
+            parent.onReady?()
         }
         fileprivate func detach() {
             scroll?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged))
@@ -100,6 +104,7 @@ public struct ReaderScrollMonitor: UIViewRepresentable {
         }
         private func changed() {
             guard let scroll else { return }
+            parent.controller?.updateOffsetSnapshot()
             let (offset, extent) = position(scroll)
             let fraction = extent > 0 ? min(1, max(0, offset / extent)) : 0
             if scroll.isDragging || scroll.isDecelerating || parent.reportsProgrammaticChanges || parent.controller?.isApplyingMovement == true {
@@ -130,14 +135,52 @@ public struct ReaderPullHint: View {
     }
 }
 
+/// A geometry transform may run away from the main actor. It can read this
+/// synchronized value without touching UIKit or assuming an executor.
+public struct ReaderScrollOffsetSnapshot: Sendable {
+    private let storage = OSAllocatedUnfairLock(initialState: Double?.none)
+    public var offset: Double? { storage.withLock { $0 } }
+    fileprivate func update(_ value: Double?) { storage.withLock { $0 = value } }
+    fileprivate init() {}
+}
+
 @MainActor public final class ReaderScrollController {
-    fileprivate weak var scrollView: UIScrollView? { didSet { applyRestore() } }
+    public nonisolated let offsetSnapshot = ReaderScrollOffsetSnapshot()
+    fileprivate weak var scrollView: UIScrollView? {
+        didSet { updateOffsetSnapshot(); applyRestore() }
+    }
     fileprivate var isApplyingMovement = false
+    public private(set) var isRestoringPosition = false
     private var pendingOffset: Double?
     private var pendingStart = false
     public var offset: Double? { scrollView.map { Double($0.contentOffset.y) } }
+    public var isUserScrolling: Bool { scrollView.map { $0.isDragging || $0.isDecelerating } ?? false }
+    /// Moves immediately, clamped to the content. Used to correct a page jump
+    /// whose lazy-layout estimate missed; it is not reported as reading.
+    public func jump(to offset: Double) {
+        guard let view = scrollView, offset.isFinite else { return }
+        let top = -view.adjustedContentInset.top
+        let bottom = max(top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+        pendingOffset = nil; pendingStart = false
+        isRestoringPosition = true
+        view.setContentOffset(CGPoint(x: view.contentOffset.x, y: min(bottom, max(top, offset))), animated: false)
+        updateOffsetSnapshot()
+        isRestoringPosition = false
+    }
+    fileprivate func updateOffsetSnapshot() { offsetSnapshot.update(offset) }
+    /// Compensates for content resizing above the reading position. It is not a
+    /// reading movement, so it is not reported to `onPosition` or as a restore.
+    public func shift(by delta: Double) {
+        guard let view = scrollView, delta.isFinite, delta != 0 else { return }
+        let top = -view.adjustedContentInset.top
+        let bottom = max(top, view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom)
+        let y = view.contentOffset.y + delta
+        view.contentOffset.y = view.isDragging ? y : min(bottom, max(top, y))
+        updateOffsetSnapshot()
+    }
     public func restore(offset: Double) { pendingStart = false; pendingOffset = offset; applyRestore() }
     public func restoreToStart() { pendingStart = true; pendingOffset = nil; applyRestore() }
+    public func cancelRestore() { pendingStart = false; pendingOffset = nil }
     fileprivate func applyRestore() {
         guard let view = scrollView, view.contentSize.height > 0, pendingStart || pendingOffset != nil else { return }
         let top = -view.adjustedContentInset.top
@@ -146,7 +189,10 @@ public struct ReaderPullHint: View {
         guard offset <= bottom else { return }
         pendingOffset = nil; pendingStart = false
         isApplyingMovement = true
+        isRestoringPosition = true
         view.setContentOffset(CGPoint(x: view.contentOffset.x, y: max(top, offset)), animated: false)
+        updateOffsetSnapshot()
+        isRestoringPosition = false
         isApplyingMovement = false
     }
     public init() {}
@@ -157,6 +203,7 @@ public struct ReaderPullHint: View {
         let y = min(bottom, max(top, view.contentOffset.y + view.bounds.height * (forward ? 0.8 : -0.8)))
         isApplyingMovement = true
         view.setContentOffset(CGPoint(x: view.contentOffset.x, y: y), animated: false)
+        updateOffsetSnapshot()
         isApplyingMovement = false
     }
 }

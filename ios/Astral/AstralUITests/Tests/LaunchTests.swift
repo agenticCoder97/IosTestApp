@@ -59,18 +59,20 @@ final class AddScreenLayoutTests: XCTestCase {
         app.launchArguments = ["--uitesting", "-activeContentType", contentType]
         app.launch()
         defer { app.terminate() }
-        let addTab = app.tabBars.buttons.matching(identifier: "Add").allElementsBoundByIndex.first { $0.isHittable }
-        XCTAssertNotNil(addTab)
-        addTab?.tap()
+        // Bind to the native bar before the browser introduces remote WebKit AX elements.
+        let bar = app.tabBars.allElementsBoundByAccessibilityElement.first { $0.buttons["Add"].isHittable }
+        XCTAssertNotNil(bar)
+        guard let bar else { return }
+        let addTab = bar.buttons["Add"]
+        addTab.tap()
         let localImport = app.buttons[importID]
         XCTAssertTrue(localImport.waitForExistence(timeout: 5))
         XCTAssertTrue(localImport.isHittable)
         XCTAssertLessThanOrEqual(localImport.frame.width, 60, "File import should remain an icon-sized toolbar action")
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.waitForExistence(timeout: 10))
-        let bar = app.tabBars.allElementsBoundByIndex.first { $0.buttons["Add"].isHittable }
-        XCTAssertNotNil(bar)
-        if let bar { XCTAssertLessThanOrEqual(web.frame.maxY, bar.frame.minY + 1, "The tab bar must not cover the browser viewport") }
+        XCTAssertTrue(addTab.isHittable, "The active tab bar must remain available on Add")
+        XCTAssertLessThanOrEqual(web.frame.maxY, bar.frame.minY + 1, "The tab bar must not cover the browser viewport")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Add-\(contentType)"
         screenshot.lifetime = .keepAlways

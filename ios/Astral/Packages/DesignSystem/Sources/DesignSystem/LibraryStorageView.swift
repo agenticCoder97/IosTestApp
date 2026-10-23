@@ -12,6 +12,7 @@ public struct LibraryStorageView: View {
     @State private var selectedFanfic: LocalFanfic?
     @State private var message: String?
     @State private var sizes: [UUID: Int64] = [:]
+    @State private var pageCacheBytes: Int64?
     public init() {}
     public var body: some View {
         List {
@@ -19,8 +20,17 @@ public struct LibraryStorageView: View {
                 let saved = comics.filter { ($0.chapters ?? []).contains { $0.localPagesPath != nil } }.count
                 LabeledContent("Offline comics", value: "\(saved) / \(comicOfflineLimit)")
                 if saved > comicOfflineLimit { Text("Above your new limit. Remove saved pages to free slots; your current copies have been kept.").foregroundStyle(.secondary) }
-                Text("Removing saved copies keeps story metadata, favourites, bookmarks and reading position. To read again, import the original file or fetch the story from its source. Export a backup first for copies you cannot replace.")
+                Text("Removing saved copies keeps story metadata, favourites, bookmarks and reading position. Fetch the story from its source to read again. Imported files stay with their story because reimporting creates a separate library entry. Export a backup before deleting copies you cannot replace.")
                     .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section {
+                LabeledContent("Recently read pages", value: pageCacheBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "Calculating…")
+                Button("Clear recently read pages") {
+                    Task { await ComicPageCache.shared.clear(); pageCacheBytes = 0 }
+                }
+                .disabled((pageCacheBytes ?? 0) == 0)
+            } footer: {
+                Text("Pages streamed while reading are kept for quick scrolling back and re-reading, up to \(ByteCountFormatter.string(fromByteCount: ComicPageCache.byteLimit, countStyle: .file)). iOS may clear them when space is low. They don't count toward offline comics.")
             }
             Section("Comics") {
                 ForEach(comics) { story in
@@ -28,8 +38,9 @@ public struct LibraryStorageView: View {
                         Text(story.title)
                         Text(sizes[story.id].map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "Calculating size…").font(.caption).foregroundStyle(.secondary)
                         Button("Remove saved pages…", role: .destructive) { selectedComic = story }
-                            .disabled(!(story.chapters ?? []).contains { $0.localPagesPath != nil } || active(story.id))
+                            .disabled(story.sourceKey == "local" || !(story.chapters ?? []).contains { $0.localPagesPath != nil } || active(story.id))
                             .accessibilityIdentifier("storage.removeComic." + story.id.uuidString)
+                        if story.sourceKey == "local" { localCopyExplanation }
                         if active(story.id) { Text("Cancel the active import/download in Activity before removing pages.").font(.caption) }
                     }.padding(.vertical, 4)
                 }
@@ -40,14 +51,16 @@ public struct LibraryStorageView: View {
                         Text(story.title)
                         Text("\((story.chapters ?? []).filter { $0.localTextPath != nil }.count) saved chapters").font(.caption).foregroundStyle(.secondary)
                         Button("Remove saved text…", role: .destructive) { selectedFanfic = story }
-                            .disabled(!(story.chapters ?? []).contains { $0.localTextPath != nil } || active(story.id))
+                            .disabled(story.sourceKey == "local" || !(story.chapters ?? []).contains { $0.localTextPath != nil } || active(story.id))
                             .accessibilityIdentifier("storage.removeFanfic." + story.id.uuidString)
+                        if story.sourceKey == "local" { localCopyExplanation }
                     }.padding(.vertical, 4)
                 }
             }
         }
         .navigationTitle("Storage")
         .onAppear { updateSizes() }
+        .task { pageCacheBytes = await ComicPageCache.shared.totalBytes() }
         .confirmationDialog("Remove saved content?", isPresented: Binding(get: { selectedComic != nil || selectedFanfic != nil }, set: { if !$0 { selectedComic = nil; selectedFanfic = nil } }), titleVisibility: .visible) {
             Button("Remove saved copies", role: .destructive) {
                 do {
@@ -57,8 +70,12 @@ public struct LibraryStorageView: View {
                 } catch { message = error.localizedDescription }
                 selectedComic = nil; selectedFanfic = nil
             }
-        } message: { Text("Metadata and reading position remain. Content must be imported again to read offline.") }
+        } message: { Text("Metadata and reading position remain. Fetch content from its source again to read offline.") }
         .alert("Storage", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") { message = nil } } message: { Text(message ?? "") }
+    }
+    private var localCopyExplanation: some View {
+        Text("Imported files cannot yet be reattached to this story. To free space, export a library backup, then delete the story from its detail menu.")
+            .font(.caption).foregroundStyle(.secondary)
     }
     private func active(_ id: UUID) -> Bool { jobs.contains { $0.storyId == id && ["running", "queued"].contains($0.status) && ($0.jobType ?? "").hasPrefix("local") } }
     private func updateSizes() {

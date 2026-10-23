@@ -41,12 +41,12 @@ public enum LocalFileImportService {
         let existingBytes = try context.fetch(FetchDescriptor<LocalComicChapter>()).reduce(Int64(0)) { $0 + ($1.downloadSizeBytes ?? 0) }
         var beganMutation = false
         do {
-            let plannedBytes = try await ComicFolderStorage.shared.size(source)
-            try ComicStoragePolicy.reserve(bytes: plannedBytes, token: storageToken, context: context)
-            let records = try await ComicFolderStorage.shared.copy(source, storyID: id, existingBytes: existingBytes)
+            let plan = try await ComicFolderStorage.shared.plan(source)
+            try ComicStoragePolicy.reserve(bytes: plan.bytes, token: storageToken, context: context)
+            let records = try await ComicFolderStorage.shared.copy(plan, storyID: id, existingBytes: existingBytes)
             try Task.checkCancellation()
             let actualBytes = records.reduce(Int64(0)) { $0 + $1.bytes }
-            try ComicStoragePolicy.reserve(bytes: max(0, actualBytes - plannedBytes), token: storageToken, context: context)
+            try ComicStoragePolicy.reserve(bytes: max(0, actualBytes - plan.bytes), token: storageToken, context: context)
             try context.save(); beganMutation = true
             let story = LocalComic(id: id, title: source.lastPathComponent, sourceKey: "local", totalChapters: records.count, status: "complete", isDownloaded: true, seenTotalChapters: records.count)
             story.completionStatus = "complete"; context.insert(story)
@@ -65,7 +65,6 @@ public enum LocalFileImportService {
             try? context.save(); throw error
         }
     }
-    private static func isImage(_ url: URL) -> Bool { ["jpg", "jpeg", "png", "webp", "gif", "heic", "avif"].contains(url.pathExtension.lowercased()) }
     public enum ImportError: LocalizedError {
         case invalid(String)
         public var errorDescription: String? { if case .invalid(let message) = self { message } else { nil } }
@@ -75,19 +74,17 @@ public enum LocalFileImportService {
 private actor ComicFolderStorage {
     static let shared = ComicFolderStorage()
     struct Record: Sendable { let id: UUID; let title: String; let pages: Int; let path: String; let bytes: Int64 }
+    struct PlannedChapter: Sendable { let title: String; let pages: [URL] }
+    struct Plan: Sendable { let chapters: [PlannedChapter]; let bytes: Int64 }
     func remove(_ id: UUID) { try? FileManager.default.removeItem(at: URL.documentsDirectory.appendingPathComponent("comics/\(id)")) }
-    func size(_ source: URL) throws -> Int64 {
+    func plan(_ source: URL) throws -> Plan {
+        // Reject links anywhere in the selected folder before selecting page files.
         let files = FileManager.default.enumerator(at: source, includingPropertiesForKeys: [.fileSizeKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles])
-        var bytes: Int64 = 0
         while let file = files?.nextObject() as? URL {
             try Task.checkCancellation()
-            let values = try file.resourceValues(forKeys: [.fileSizeKey, .isSymbolicLinkKey])
+            let values = try file.resourceValues(forKeys: [.isSymbolicLinkKey])
             guard values.isSymbolicLink != true else { throw LocalFileImportService.ImportError.invalid("Symbolic links are not supported in comic folders.") }
-            if ["jpg", "jpeg", "png", "webp", "gif", "heic", "avif"].contains(file.pathExtension.lowercased()) { bytes += Int64(values.fileSize ?? 0) }
         }
-        return bytes
-    }
-    func copy(_ source: URL, storyID: UUID, existingBytes: Int64) throws -> [Record] {
         let fm = FileManager.default
         func images(_ directory: URL) throws -> [URL] {
             try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
@@ -99,18 +96,36 @@ private actor ComicFolderStorage {
             let attrs = try $0.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             return attrs.isDirectory == true && attrs.isSymbolicLink != true
         }.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-        let chapters: [(String, [URL])] = try rootImages.isEmpty ? folders.compactMap { directory in
-            let pages = try images(directory); return pages.isEmpty ? nil : (directory.lastPathComponent, pages)
-        } : [(source.lastPathComponent, rootImages)]
+        let folderChapters: [PlannedChapter] = try folders.compactMap { directory in
+            let pages = try images(directory)
+            return pages.isEmpty ? nil : PlannedChapter(title: directory.lastPathComponent, pages: pages)
+        }
+        guard rootImages.isEmpty || folderChapters.isEmpty else {
+            throw LocalFileImportService.ImportError.invalid("This folder has both page images and chapter folders. Move root images, such as a cover, into a chapter folder, or select a folder containing only page images. No pages were imported.")
+        }
+        let chapters = rootImages.isEmpty ? folderChapters : [PlannedChapter(title: source.lastPathComponent, pages: rootImages)]
         guard !chapters.isEmpty else { throw LocalFileImportService.ImportError.invalid("Choose a folder of page images, or a folder with one subfolder per chapter.") }
+        var bytes: Int64 = 0
+        for chapter in chapters {
+            for page in chapter.pages {
+                try Task.checkCancellation()
+                let values = try page.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                guard values.isRegularFile == true else { throw LocalFileImportService.ImportError.invalid("Invalid image: " + page.lastPathComponent) }
+                bytes += Int64(values.fileSize ?? 0)
+            }
+        }
+        return Plan(chapters: chapters, bytes: bytes)
+    }
+    func copy(_ plan: Plan, storyID: UUID, existingBytes: Int64) throws -> [Record] {
+        let fm = FileManager.default
         var records: [Record] = []; var usedBytes = existingBytes
         do {
-            for (title, pages) in chapters {
+            for chapter in plan.chapters {
                 let id = UUID(), path = "comics/\(storyID)/\(UUID().uuidString)"
                 let directory = URL.documentsDirectory.appendingPathComponent(path)
                 try fm.createDirectory(at: directory, withIntermediateDirectories: true)
                 var bytes: Int64 = 0
-                for (number, page) in pages.enumerated() {
+                for (number, page) in chapter.pages.enumerated() {
                     try Task.checkCancellation()
                     guard try page.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true,
                           let image = CGImageSourceCreateWithURL(page as CFURL, nil), CGImageSourceGetCount(image) > 0 else { throw LocalFileImportService.ImportError.invalid("Invalid image: " + page.lastPathComponent) }
@@ -121,7 +136,7 @@ private actor ComicFolderStorage {
                     guard free > size + 50 * 1024 * 1024 else { throw LocalFileImportService.ImportError.invalid("Not enough free space for these pages.") }
                     try fm.copyItem(at: page, to: directory.appendingPathComponent(String(format: "page_%04d", number + 1) + "." + page.pathExtension.lowercased()))
                 }
-                records.append(Record(id: id, title: title, pages: pages.count, path: path, bytes: bytes))
+                records.append(Record(id: id, title: chapter.title, pages: chapter.pages.count, path: path, bytes: bytes))
             }
             return records
         } catch { remove(storyID); throw error }

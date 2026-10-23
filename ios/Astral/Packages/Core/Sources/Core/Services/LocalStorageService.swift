@@ -32,6 +32,7 @@ public enum LocalStorageService {
         try fm.removeItem(at: journal)
     }
     public static func removeComicCopies(_ comic: LocalComic, context: ModelContext) throws {
+        try ensureCopiesCanBeRemoved(sourceKey: comic.sourceKey)
         let id = comic.id
         try ensureIdle(id, context: context)
         let chapters = try context.fetch(FetchDescriptor<LocalComicChapter>(predicate: #Predicate { $0.comicId == id }))
@@ -50,6 +51,7 @@ public enum LocalStorageService {
         try? FileManager.default.removeItem(at: journal)
     }
     public static func removeFanficCopies(_ fanfic: LocalFanfic, context: ModelContext) throws {
+        try ensureCopiesCanBeRemoved(sourceKey: fanfic.sourceKey)
         let id = fanfic.id
         try ensureIdle(id, context: context)
         let chapters = try context.fetch(FetchDescriptor<LocalFanficChapter>(predicate: #Predicate { $0.fanficId == id }))
@@ -73,6 +75,11 @@ public enum LocalStorageService {
         try JSONEncoder().encode(["original": original.path, "held": held.path]).write(to: journal, options: .atomic)
         try FileManager.default.moveItem(at: original, to: held)
         return held
+    }
+    private static func ensureCopiesCanBeRemoved(sourceKey: String) throws {
+        guard sourceKey != "local" else {
+            throw ComicStoragePolicy.StorageError.message("Keep imported files with their story. Importing them again creates a separate story and does not reconnect this reading position or bookmarks. Export a library backup before deleting the story to free space.")
+        }
     }
     public static func ensureIdle(_ id: UUID, context: ModelContext) throws {
         if try context.fetch(FetchDescriptor<LocalScrapeJob>(predicate: #Predicate { $0.storyId == id })).contains(where: { ["running", "queued"].contains($0.status) && ($0.jobType ?? "").hasPrefix("local") }) {

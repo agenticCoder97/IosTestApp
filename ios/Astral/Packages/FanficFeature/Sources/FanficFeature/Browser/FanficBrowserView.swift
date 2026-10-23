@@ -14,126 +14,45 @@ struct FanficBrowserView: View {
     @State private var importError: String?
     @State private var importTask: Task<Void, Never>?
     @State private var importedWork: LocalFanfic?
-    @State private var readImported = false
+    @State private var readingWork: LocalFanfic?
+    @Query private var fanfics: [LocalFanfic]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.fanficNavigation) private var fanficNavigation
 
     var body: some View {
         VStack(spacing: 0) {
-
-            if viewModel.isScraping {
-                HStack { Text("Importing on this device…").font(.callout); Spacer(); Button("Cancel") { cancelImport() } }.padding(.horizontal, 16)
-            } else if let importedWork {
-                HStack {
-                    Text("Saved: " + importedWork.title).font(.callout).lineLimit(1)
-                    Button("Read now") { readImported = true }
-                    Button("View in library") { fanficNavigation?.activeSection = .library }
-                    Button("Dismiss", systemImage: "xmark") { self.importedWork = nil }.labelStyle(.iconOnly)
-                }.padding(12)
+            HStack(spacing: 0) {
+                BrowserSourceChips(sources: FanficSource.allCases, selection: $viewModel.selectedSource,
+                                   isDisabled: viewModel.isScraping, label: sourceLabel)
+                fileImportButton.padding(.trailing, 12)
             }
-            Text("Open a story, then tap Import. Chapters are saved on this device. Keep Astral open until the import finishes.")
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 6)
-            // Loading progress bar
-            if viewModel.isLoading {
-                ProgressView(value: viewModel.loadProgress)
-                    .tint(AstralColors.gold)
-                    .scaleEffect(x: 1, y: 0.5)
-                    .padding(.horizontal, 16)
-            }
-
-            // Browser action bar
-            HStack(spacing: 10) {
-                Button(action: viewModel.goBack) {
-                    Image(systemName: "chevron.backward")
-                }
-                .disabled(!viewModel.canGoBack)
-                .foregroundColor(viewModel.canGoBack ? .primary : .secondary)
-
-                Button(action: viewModel.goForward) {
-                    Image(systemName: "chevron.forward")
-                }
-                .disabled(!viewModel.canGoForward)
-                .foregroundColor(viewModel.canGoForward ? .primary : .secondary)
-
-                Button(action: viewModel.reload) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .foregroundColor(.primary)
-
-                // Address bar with cookie indicator
-                HStack(spacing: 4) {
-                    if viewModel.cookieCount > 0 {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(AstralColors.success)
-                    }
-                    TextField("Enter URL", text: $viewModel.addressBarText)
-                        .textFieldStyle(.plain)
-                        .font(.caption)
-                        .foregroundColor(.primary)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .onSubmit { viewModel.navigateToAddress() }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 6))
-
-                Button(action: {
-                    importTask = Task { @MainActor in
-                        if [.ao3, .ffnet].contains(viewModel.selectedSource) {
-                            guard let webView = viewModel.webView else { return }
-                            viewModel.isScraping = true
-                            defer { viewModel.isScraping = false }
-                            do {
-                                importedWork = try await AO3ImportService.shared.importWork(from: webView, modelContext: modelContext, onCancel: { cancelImport() })
-                                fanficNavigation?.ao3WorkURL = nil
-                            } catch is CancellationError {
-                                // Leaving an import doesn't create a partial library entry.
-                            } catch {
-                                importError = error.localizedDescription
-                            }
-                        } else if let job = await viewModel.extractCookiesAndScrape() {
-                            modelContext.insert(job)
-                        }
-                    }
-                }) {
-                    if viewModel.isScraping {
-                        ProgressView()
-                            .tint(AstralColors.gold)
-                            .scaleEffect(0.75)
-                            .frame(width: 20, height: 20)
-                    } else {
-                        Image(systemName: "arrow.down.circle")
-                            .foregroundColor(viewModel.canScrape ? AstralColors.gold : .secondary)
-                    }
-                }
-                .disabled(!viewModel.canScrape || viewModel.isScraping || viewModel.isLoading)
-                .buttonStyle(PressButtonStyle(scale: 0.85))
-                .accessibilityLabel(viewModel.selectedSource == .ao3 ? "Import AO3 work" : "Import FFNet story")
-                .accessibilityIdentifier("fanfic.browser.import")
-
-                Button {
-                    viewModel.resetToSourceHome()
-                } label: {
-                    Image(systemName: "house")
-                        .foregroundColor(.primary)
-                }
-            }
-            .disabled(viewModel.isScraping)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-
-            // WebView
+            .padding(.top, 6)
+            BrowserAddressBar(text: $viewModel.addressBarText, url: viewModel.currentURL,
+                              progress: viewModel.loadProgress, isLoading: viewModel.isLoading,
+                              prompt: "Search \(sourceLabel(viewModel.selectedSource)) or enter address",
+                              onSubmit: viewModel.navigateToAddress, onReload: viewModel.reload, onStop: viewModel.stop)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .disabled(viewModel.isScraping)
             FanficWebViewRepresentable(viewModel: viewModel)
                 .allowsHitTesting(!viewModel.isScraping)
         }
         .background(AstralColors.background)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) { sourceMenu }
-            ToolbarItem(placement: .topBarTrailing) { fileImportButton }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 8) {
+                if let importedWork, !viewModel.isScraping {
+                    BrowserImportBanner(title: importedWork.title, primaryTitle: "Read now",
+                                        onPrimary: { readingWork = importedWork },
+                                        onDismiss: { self.importedWork = nil })
+                }
+                BrowserBottomBar(canGoBack: viewModel.canGoBack, canGoForward: viewModel.canGoForward, state: importState,
+                                 onBack: viewModel.goBack, onForward: viewModel.goForward,
+                                 onImport: startImport, onOpen: { readingWork = existingWork }, onCancel: cancelImport) {
+                    browserMenu
+                }
+            }
+            .animation(AstralAnimation.smooth, value: importedWork?.id)
         }
+        .toolbar(.hidden, for: .navigationBar)
         .fileImporter(isPresented: $showFileImport, allowedContentTypes: [.plainText]) { result in
             do {
                 let story = try LocalFileImportService.importText(result.get(), context: modelContext)
@@ -143,12 +62,8 @@ struct FanficBrowserView: View {
         .alert("File import", isPresented: Binding(get: { fileImportMessage != nil }, set: { if !$0 { fileImportMessage = nil } })) {
             Button("OK") { fileImportMessage = nil }
         } message: { Text(fileImportMessage ?? "") }
-
-        .navigationTitle("Add fan fiction").navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(isPresented: $readImported) {
-            if let importedWork {
-                ImportedFanficReader(fanfic: importedWork)
-            }
+        .fullScreenCover(item: $readingWork) { work in
+            ImportedFanficReader(fanfic: work)
         }
         .onAppear {
             if let url = fanficNavigation?.ao3WorkURL {
@@ -165,41 +80,69 @@ struct FanficBrowserView: View {
         } message: {
             Text(importError ?? "")
         }
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .top) {
             if let toast = viewModel.scrapeToast {
                 ToastView(toast.message, isSuccess: toast.isSuccess)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, 24)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 104)
             }
         }
         .animation(AstralAnimation.smooth, value: viewModel.scrapeToast?.message)
     }
 
-    private var sourceMenu: some View {
-        Menu {
-            ForEach(FanficSource.allCases, id: \.self) { source in
-                Button {
-                    viewModel.selectedSource = source
-                } label: {
-                    Label(sourceLabel(source), systemImage: viewModel.selectedSource == source ? "checkmark" : "")
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "globe")
-                Text(sourceLabel(viewModel.selectedSource))
-                Image(systemName: "chevron.down").font(.caption2.weight(.bold))
-            }
-            .font(.subheadline.weight(.medium))
+    /// The saved story for the work that is open, matched by its canonical source URL.
+    private var existingWork: LocalFanfic? {
+        guard let url = viewModel.currentURL,
+              let canonical = AO3ImportService.workURL(from: url) ?? AO3ImportService.ffnetURL(from: url) else { return nil }
+        return fanfics.first { story in
+            story.sourceUrl.flatMap(URL.init(string:)).flatMap { AO3ImportService.workURL(from: $0) ?? AO3ImportService.ffnetURL(from: $0) } == canonical
         }
-        .accessibilityLabel("Choose source")
-        .accessibilityValue(sourceLabel(viewModel.selectedSource))
-        .disabled(viewModel.isScraping)
+    }
+
+    private var importState: BrowserImportState {
+        if viewModel.isScraping { return .importing("Saving chapters…") }
+        if existingWork != nil { return .inLibrary("In library · Read") }
+        if viewModel.canScrape && !viewModel.isLoading { return .ready("Add to library") }
+        if viewModel.canScrape { return .unavailable("Loading the story…") }
+        return .unavailable(viewModel.selectedSource == .ao3 ? "Open a work to add it" : "Open a story to add it")
+    }
+
+    @ViewBuilder private var browserMenu: some View {
+        if existingWork != nil {
+            Button("Update from \(sourceLabel(viewModel.selectedSource))", systemImage: "arrow.triangle.2.circlepath") { startImport() }
+                .disabled(viewModel.isScraping || viewModel.isLoading)
+        }
+        Button("\(sourceLabel(viewModel.selectedSource)) home", systemImage: "house") { viewModel.resetToSourceHome() }
+        if let url = viewModel.currentURL {
+            Button("Open in Safari", systemImage: "safari") { UIApplication.shared.open(url) }
+            ShareLink(item: url) { Label("Share page", systemImage: "square.and.arrow.up") }
+        }
+        Divider()
+        Button("Import text file", systemImage: "doc.badge.plus") { showFileImport = true }
+    }
+
+    private func startImport() {
+        guard let webView = viewModel.webView, !viewModel.isScraping else { return }
+        importTask = Task { @MainActor in
+            viewModel.isScraping = true
+            defer { viewModel.isScraping = false }
+            do {
+                importedWork = try await AO3ImportService.shared.importWork(from: webView, modelContext: modelContext, onCancel: { cancelImport() })
+                fanficNavigation?.ao3WorkURL = nil
+                Haptics.play(.bookmark)
+            } catch is CancellationError {
+                // Leaving an import doesn't create a partial library entry.
+            } catch {
+                importError = error.localizedDescription
+            }
+        }
     }
 
     private var fileImportButton: some View {
         Button("Import text file", systemImage: "doc.badge.plus") { showFileImport = true }
             .labelStyle(.iconOnly)
+            .foregroundStyle(AstralColors.body)
+            .frame(width: 40, height: 40)
             .accessibilityHint("Choose a UTF-8 text file to save as a single chapter.")
             .accessibilityIdentifier("fanfic.browser.fileImport")
             .disabled(viewModel.isScraping)
@@ -208,7 +151,7 @@ struct FanficBrowserView: View {
     private func sourceLabel(_ source: FanficSource) -> String {
         switch source {
         case .ao3: "AO3"
-        case .ffnet: "FFNet"
+        case .ffnet: "FanFiction.net"
         }
     }
     private func cancelImport() {
@@ -246,13 +189,17 @@ final class FanficBrowserViewModel {
     }
 
     func navigateToAddress() {
-        var text = addressBarText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        if !text.hasPrefix("http://") && !text.hasPrefix("https://") {
-            text = "https://" + text
-        }
-        guard let url = URL(string: text) else { return }
+        guard let url = BrowserAddress.url(for: addressBarText, search: searchURL) else { return }
         webView?.load(URLRequest(url: url))
+    }
+
+    /// Plain words search the selected source instead of failing as an address.
+    func searchURL(_ text: String) -> URL? {
+        let query = BrowserAddress.query(text)
+        switch selectedSource {
+        case .ao3: return URL(string: "https://archiveofourown.org/works/search?work_search%5Bquery%5D=\(query)")
+        case .ffnet: return URL(string: "https://www.fanfiction.net/search/?keywords=\(query)&type=story")
+        }
     }
 
     var sourceURL: URL {
@@ -340,6 +287,7 @@ final class FanficBrowserViewModel {
     func goBack() { webView?.goBack() }
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
+    func stop() { webView?.stopLoading() }
 
     func resetToSourceHome() {
         savedURLs.removeValue(forKey: selectedSource)
@@ -383,6 +331,22 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
                 viewModel.isLoading = webView.isLoading
             }
         }
+        // Client-side navigation changes the URL and history without didFinish.
+        context.coordinator.urlObservation = webView.observe(\.url) { webView, _ in
+            Task { @MainActor in
+                viewModel.currentURL = webView.url
+                viewModel.addressBarText = webView.url?.absoluteString ?? ""
+                viewModel.evaluateCanScrape(url: webView.url)
+            }
+        }
+        context.coordinator.historyObservations = [
+            webView.observe(\.canGoBack) { webView, _ in Task { @MainActor in viewModel.canGoBack = webView.canGoBack } },
+            webView.observe(\.canGoForward) { webView, _ in Task { @MainActor in viewModel.canGoForward = webView.canGoForward } },
+        ]
+        let refresh = UIRefreshControl()
+        refresh.tintColor = UIColor(AstralColors.gold)
+        refresh.addTarget(context.coordinator, action: #selector(Coordinator.pullToRefresh(_:)), for: .valueChanged)
+        webView.scrollView.refreshControl = refresh
 
         return webView
     }
@@ -403,10 +367,20 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
         var loadedSource: FanficSource
         var progressObservation: NSKeyValueObservation?
         var loadingObservation: NSKeyValueObservation?
+        var urlObservation: NSKeyValueObservation?
+        var historyObservations: [NSKeyValueObservation] = []
 
         init(viewModel: FanficBrowserViewModel) {
             self.viewModel = viewModel
             self.loadedSource = viewModel.selectedSource
+        }
+
+        @MainActor @objc func pullToRefresh(_ control: UIRefreshControl) {
+            viewModel.reload()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                control.endRefreshing()
+            }
         }
 
         func webView(
@@ -424,6 +398,11 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
             }
             let allowed = viewModel.allowedDomains.contains { domain in
                 host == domain || host.hasSuffix("." + domain)
+            }
+            // Author links (Tumblr, Discord…) leave the importer and open in Safari.
+            if !allowed && navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url,
+               ["https", "http"].contains(url.scheme ?? "") {
+                UIApplication.shared.open(url)
             }
             decisionHandler(allowed ? .allow : .cancel)
         }

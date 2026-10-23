@@ -10,119 +10,49 @@ struct ComicBrowserView: View {
     @State private var importTask: Task<Void, Never>?
     @State private var showFileImport = false
     @State private var fileImportMessage: String?
+    @State private var importedComic: LocalComic?
+    @State private var openComic: LocalComic?
 
     @State private var viewModel = ComicBrowserViewModel()
+    @Query(filter: #Predicate<LocalComic> { $0.status != "deleted" }) private var comics: [LocalComic]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.comicNavigation) private var comicNavigation
 
     var body: some View {
         VStack(spacing: 0) {
-
-            Text(viewModel.selectedSource == .mangadex ? "MangaDex: paste a title link into the address field, then tap Import. English releases are labeled by group." : "Open a series/gallery, then Import. Chapters and downloads are handled on this device. Complete any source verification in this browser.")
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16)
-            if viewModel.isScraping { Button("Cancel import") { cancelImport() } }
-            // Loading progress bar
-            if viewModel.isLoading {
-                ProgressView(value: viewModel.loadProgress)
-                    .tint(AstralColors.gold)
-                    .scaleEffect(x: 1, y: 0.5)
-                    .padding(.horizontal, 16)
+            HStack(spacing: 0) {
+                BrowserSourceChips(sources: ComicSource.browserOrder, selection: $viewModel.selectedSource,
+                                   isDisabled: viewModel.isScraping, label: \.displayName)
+                fileImportButton.padding(.trailing, 12)
             }
-
-            // Browser action bar
-            HStack(spacing: 10) {
-                Button(action: viewModel.goBack) {
-                    Image(systemName: "chevron.backward")
-                }
-                .disabled(!viewModel.canGoBack)
-                .foregroundColor(viewModel.canGoBack ? .primary : .secondary)
-
-                Button(action: viewModel.goForward) {
-                    Image(systemName: "chevron.forward")
-                }
-                .disabled(!viewModel.canGoForward)
-                .foregroundColor(viewModel.canGoForward ? .primary : .secondary)
-
-                Button(action: viewModel.reload) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .foregroundColor(.primary)
-
-                // Address bar with cookie indicator
-                HStack(spacing: 4) {
-                    if viewModel.cookieCount > 0 {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(AstralColors.success)
-                    }
-                    TextField("Enter URL", text: $viewModel.addressBarText)
-                        .textFieldStyle(.plain)
-                        .font(.caption)
-                        .foregroundColor(.primary)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .onSubmit { viewModel.navigateToAddress() }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 6))
-
-                Button(action: {
-                    importTask = Task { @MainActor in
-                        if viewModel.selectedSource == .mangadex {
-                            guard let id = MangaDexDeviceService.titleID(URL(string: viewModel.addressBarText)) ?? MangaDexDeviceService.titleID(viewModel.currentURL) else { return }
-                            viewModel.isScraping = true
-                            defer { viewModel.isScraping = false }
-                            do {
-                                let story = try await MangaDexDeviceService.importTitle(id, context: modelContext, onCancel: { importTask?.cancel() })
-                                fileImportMessage = "Added " + story.title + ". Open it from Library or Activity; use Download to save chapters offline."
-                            } catch { fileImportMessage = error.localizedDescription }
-                        } else if let browser = viewModel.webView {
-                            viewModel.isScraping = true
-                            defer { viewModel.isScraping = false }
-                            do {
-                                let story = try await DeviceComicService.importTitle(from: browser, source: viewModel.selectedSource.rawValue, context: modelContext, onCancel: { cancelImport() })
-                                fileImportMessage = "Added " + story.title + ". Open it from Library or Activity. Save chapters when you want them offline."
-                            } catch { fileImportMessage = error.localizedDescription }
-                        }
-                    }
-                }) {
-                    if viewModel.isScraping {
-                        ProgressView()
-                            .tint(AstralColors.gold)
-                            .scaleEffect(0.75)
-                            .frame(width: 20, height: 20)
-                    } else {
-                        Image(systemName: "arrow.down.circle")
-                            .foregroundColor(viewModel.canScrape ? AstralColors.gold : .secondary)
-                    }
-                }
-                .disabled(viewModel.isScraping || (viewModel.selectedSource == .mangadex ? (MangaDexDeviceService.titleID(URL(string: viewModel.addressBarText)) ?? MangaDexDeviceService.titleID(viewModel.currentURL)) == nil : (!viewModel.canScrape || viewModel.isLoading)))
-                .buttonStyle(PressButtonStyle(scale: 0.85))
-                .accessibilityLabel("Import comic")
-
-                Button {
-                    viewModel.resetToSourceHome()
-                } label: {
-                    Image(systemName: "house")
-                        .foregroundColor(.primary)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-
-            // WebView
+            .padding(.top, 6)
+            BrowserAddressBar(text: $viewModel.addressBarText, url: viewModel.currentURL,
+                              progress: viewModel.loadProgress, isLoading: viewModel.isLoading,
+                              prompt: "Search \(viewModel.selectedSource.displayName) or enter address",
+                              onSubmit: viewModel.navigateToAddress, onReload: viewModel.reload, onStop: viewModel.stop)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .disabled(viewModel.isScraping)
             ComicWebViewRepresentable(viewModel: viewModel)
                 .allowsHitTesting(!viewModel.isScraping)
         }
         .background(AstralColors.background)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) { sourceMenu }
-            ToolbarItem(placement: .topBarTrailing) { fileImportButton }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 8) {
+                if let importedComic, !viewModel.isScraping {
+                    BrowserImportBanner(title: importedComic.title, primaryTitle: "Open",
+                                        onPrimary: { openComic = importedComic },
+                                        onDismiss: { self.importedComic = nil })
+                }
+                BrowserBottomBar(canGoBack: viewModel.canGoBack, canGoForward: viewModel.canGoForward, state: importState,
+                                 onBack: viewModel.goBack, onForward: viewModel.goForward,
+                                 onImport: startImport, onOpen: { openComic = existingComic }, onCancel: cancelImport) {
+                    browserMenu
+                }
+            }
+            .animation(AstralAnimation.smooth, value: importedComic?.id)
         }
-        .navigationTitle("Add comics")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationDestination(item: $openComic) { comic in ComicDetailView(comic: comic) }
         .onAppear { openRequestedSource() }
         .onChange(of: comicNavigation?.sourceURL) { _, _ in openRequestedSource() }
         .fileImporter(isPresented: $showFileImport, allowedContentTypes: [.folder]) { result in
@@ -130,12 +60,12 @@ struct ComicBrowserView: View {
                 viewModel.isScraping = true
                 defer { viewModel.isScraping = false }
                 do {
-                    let story = try await LocalFileImportService.importComicFolder(result.get(), context: modelContext, onCancel: { importTask?.cancel() })
-                    fileImportMessage = "Saved: " + story.title + ". Open it from Library or Activity."
+                    importedComic = try await LocalFileImportService.importComicFolder(result.get(), context: modelContext, onCancel: { importTask?.cancel() })
+                } catch is CancellationError {
                 } catch { fileImportMessage = error.localizedDescription }
             }
         }
-        .alert("Import", isPresented: Binding(get: { fileImportMessage != nil }, set: { if !$0 { fileImportMessage = nil } })) {
+        .alert("Couldn't add comic", isPresented: Binding(get: { fileImportMessage != nil }, set: { if !$0 { fileImportMessage = nil } })) {
             Button("OK") { fileImportMessage = nil }
         } message: { Text(fileImportMessage ?? "") }
 
@@ -150,40 +80,82 @@ struct ComicBrowserView: View {
                 onDecline: { viewModel.declineMatch(modelContext: modelContext) }
             )
         }
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .top) {
             if let toast = viewModel.scrapeToast {
                 ToastView(toast.message, isSuccess: toast.isSuccess)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, 24)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 104)
             }
         }
         .animation(AstralAnimation.smooth, value: viewModel.scrapeToast?.message)
     }
-    private var sourceMenu: some View {
-        Menu {
-            ForEach(ComicSource.allCases, id: \.self) { source in
-                Button {
-                    viewModel.selectedSource = source
-                } label: {
-                    Label(source.rawValue, systemImage: viewModel.selectedSource == source ? "checkmark" : "")
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "globe")
-                Text(viewModel.selectedSource.rawValue)
-                Image(systemName: "chevron.down").font(.caption2.weight(.bold))
-            }
-            .font(.subheadline.weight(.medium))
+
+    /// The saved comic for the series that is open. MangaDex comics use the
+    /// title UUID as their ID; browser sources are matched by series path.
+    private var existingComic: LocalComic? {
+        let source = viewModel.selectedSource
+        if source == .mangadex {
+            guard let id = MangaDexDeviceService.titleID(viewModel.currentURL) else { return nil }
+            return comics.first { $0.id == id }
         }
-        .accessibilityLabel("Choose source")
-        .accessibilityValue(viewModel.selectedSource.rawValue)
-        .disabled(viewModel.isScraping)
+        guard let canonical = DeviceComicService.canonical(viewModel.currentURL, source: source.rawValue) else { return nil }
+        return comics.first {
+            $0.sourceKey == source.rawValue &&
+            UserDefaults.standard.string(forKey: "reading.source." + $0.id.uuidString).flatMap(URL.init(string:))?.path == canonical.path
+        }
+    }
+
+    private var canImport: Bool {
+        viewModel.selectedSource == .mangadex
+            ? MangaDexDeviceService.titleID(viewModel.currentURL) != nil
+            : viewModel.canScrape && !viewModel.isLoading
+    }
+
+    private var importState: BrowserImportState {
+        if viewModel.isScraping { return .importing(viewModel.selectedSource == .mangadex ? "Fetching chapters…" : "Reading series…") }
+        if existingComic != nil { return .inLibrary("In library · Open") }
+        if canImport { return .ready("Add to library") }
+        if viewModel.canScrape { return .unavailable("Loading the series…") }
+        return .unavailable(viewModel.selectedSource == .mangadex ? "Open a title to add it" : "Open a series to add it")
+    }
+
+    @ViewBuilder private var browserMenu: some View {
+        if existingComic != nil {
+            Button("Check for new chapters", systemImage: "arrow.triangle.2.circlepath") { startImport() }
+                .disabled(viewModel.isScraping || !canImport)
+        }
+        Button("\(viewModel.selectedSource.displayName) home", systemImage: "house") { viewModel.resetToSourceHome() }
+        if let url = viewModel.currentURL {
+            Button("Open in Safari", systemImage: "safari") { UIApplication.shared.open(url) }
+            ShareLink(item: url) { Label("Share page", systemImage: "square.and.arrow.up") }
+        }
+        Divider()
+        Button("Import image folder", systemImage: "folder.badge.plus") { showFileImport = true }
+    }
+
+    private func startImport() {
+        guard !viewModel.isScraping else { return }
+        importTask = Task { @MainActor in
+            viewModel.isScraping = true
+            defer { viewModel.isScraping = false }
+            do {
+                if viewModel.selectedSource == .mangadex {
+                    guard let id = MangaDexDeviceService.titleID(viewModel.currentURL) else { return }
+                    importedComic = try await MangaDexDeviceService.importTitle(id, context: modelContext, onCancel: { importTask?.cancel() })
+                } else if let browser = viewModel.webView {
+                    importedComic = try await DeviceComicService.importTitle(from: browser, source: viewModel.selectedSource.rawValue, context: modelContext, onCancel: { cancelImport() })
+                }
+                Haptics.play(.bookmark)
+            } catch is CancellationError {
+            } catch { fileImportMessage = error.localizedDescription }
+        }
     }
 
     private var fileImportButton: some View {
         Button("Import image folder", systemImage: "folder.badge.plus") { showFileImport = true }
             .labelStyle(.iconOnly)
+            .foregroundStyle(AstralColors.body)
+            .frame(width: 40, height: 40)
             .accessibilityHint("Choose a folder of page images. Subfolders become chapters, sorted by name.")
             .accessibilityIdentifier("comic.browser.fileImport")
             .disabled(viewModel.isScraping)
@@ -202,6 +174,19 @@ struct ComicBrowserView: View {
         comicNavigation?.sourceURL = nil
     }
 
+}
+
+extension ComicSource {
+    static let browserOrder: [ComicSource] = [.mangadex, .toongod, .hentai20, .nhentai]
+
+    var displayName: String {
+        switch self {
+        case .mangadex: "MangaDex"
+        case .toongod: "ToonGod"
+        case .hentai20: "Hentai20"
+        case .nhentai: "nhentai"
+        }
+    }
 }
 
 @MainActor @Observable
@@ -236,13 +221,19 @@ final class ComicBrowserViewModel {
     }
 
     func navigateToAddress() {
-        var text = addressBarText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        if !text.hasPrefix("http://") && !text.hasPrefix("https://") {
-            text = "https://" + text
-        }
-        guard let url = URL(string: text) else { return }
+        guard let url = BrowserAddress.url(for: addressBarText, search: searchURL) else { return }
         webView?.load(URLRequest(url: url))
+    }
+
+    /// Plain words search the selected source instead of failing as an address.
+    func searchURL(_ text: String) -> URL? {
+        let query = BrowserAddress.query(text)
+        switch selectedSource {
+        case .mangadex: return URL(string: "https://mangadex.org/search?q=\(query)")
+        case .toongod: return URL(string: "https://www.toongod.org/?s=\(query)&post_type=wp-manga")
+        case .hentai20: return URL(string: "https://hentai20.io/?s=\(query)&post_type=wp-manga")
+        case .nhentai: return URL(string: "https://nhentai.net/search/?q=\(query)")
+        }
     }
 
     var sourceURL: URL {
@@ -403,6 +394,7 @@ final class ComicBrowserViewModel {
     func goBack() { webView?.goBack() }
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
+    func stop() { webView?.stopLoading() }
 
     func resetToSourceHome() {
         savedURLs.removeValue(forKey: selectedSource)
@@ -461,6 +453,14 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
                 viewModel.evaluateCanScrape(url: url)
             }
         }
+        context.coordinator.historyObservations = [
+            webView.observe(\.canGoBack) { webView, _ in Task { @MainActor in viewModel.canGoBack = webView.canGoBack } },
+            webView.observe(\.canGoForward) { webView, _ in Task { @MainActor in viewModel.canGoForward = webView.canGoForward } },
+        ]
+        let refresh = UIRefreshControl()
+        refresh.tintColor = UIColor(AstralColors.gold)
+        refresh.addTarget(context.coordinator, action: #selector(Coordinator.pullToRefresh(_:)), for: .valueChanged)
+        webView.scrollView.refreshControl = refresh
 
         return webView
     }
@@ -482,10 +482,19 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
         var progressObservation: NSKeyValueObservation?
         var loadingObservation: NSKeyValueObservation?
         var urlObservation: NSKeyValueObservation?
+        var historyObservations: [NSKeyValueObservation] = []
 
         init(viewModel: ComicBrowserViewModel) {
             self.viewModel = viewModel
             self.loadedSource = viewModel.selectedSource
+        }
+
+        @MainActor @objc func pullToRefresh(_ control: UIRefreshControl) {
+            viewModel.reload()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                control.endRefreshing()
+            }
         }
 
         // MARK: - Navigation Policy
@@ -508,6 +517,11 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
             // Secure domain check — require exact match or subdomain (dot prefix)
             let allowed = viewModel.allowedDomains.contains { domain in
                 host == domain || host.hasSuffix("." + domain)
+            }
+            // These sites are ad-heavy, so other domains stay blocked; say so
+            // instead of leaving a tapped link apparently broken.
+            if !allowed && navigationAction.navigationType == .linkActivated {
+                viewModel.showToast(ScrapeToast(message: "Blocked a link to another site", isSuccess: false))
             }
             decisionHandler(allowed ? .allow : .cancel)
         }

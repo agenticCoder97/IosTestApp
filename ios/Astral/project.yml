@@ -64,3 +64,20 @@ targets:
         GENERATE_INFOPLIST_FILE: true
     dependencies:
       - target: Astral
+
+schemes:
+  AstralSmoke:
+    build:
+      targets:
+        Astral: all
+        AstralUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: AstralUITests
+          parallelizable: false
+          selectedTests:
+            - LaunchTests
+            - AddScreenLayoutTests

@@ -247,11 +247,17 @@ private struct ContinueReadingCardLink: View {
         return chapters.first { $0.id == ReadingPositionStore.position(story: comic.id)?.chapterID } ?? chapters.first { $0.chapterNumber == Double(comic.lastReadChapterNumber) } ?? chapters.first
     }
 
+    @State private var openChapter: LocalComicChapter?
+
+    // Full-screen presentation, like comic detail: the reader owns the status bar
+    // and is not built eagerly while the strip lays out.
     var body: some View {
-        NavigationLink {
-            if let chapter = nextChapter { ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter) }
-        } label: {
+        Button { openChapter = nextChapter } label: {
             ContinueReadingCard(comic: comic)
+        }
+        .accessibilityHint("Opens the reader at your saved position")
+        .fullScreenCover(item: $openChapter) { chapter in
+            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
         }
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import DesignSystem
 
 /// Prepared once per loaded chapter, never rebuilt by scroll progress updates.
 struct FanficReaderDocument: Sendable {
@@ -55,7 +56,8 @@ struct FanficProgressReadout: View {
     let chapter: String
     let total: Int
     var body: some View {
-        Text("\(progress.percent)% · Ch. \(chapter) of \(total)")
-            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+        Text("Ch. \(chapter) of \(total) · \(progress.percent)%")
+            .font(.footnote).monospacedDigit().foregroundStyle(AstralColors.body)
+            .accessibilityLabel("Chapter \(chapter) of \(total), \(progress.percent) percent through the chapter")
     }
 }
