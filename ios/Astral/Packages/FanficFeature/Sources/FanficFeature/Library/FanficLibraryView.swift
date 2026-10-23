@@ -441,7 +441,7 @@ struct FanficRowView: View {
                             .lineLimit(1)
                     }
 
-                    Text("\(fanfic.totalChapters) chapters · \(fanfic.sourceKey.uppercased()) · \(SourceRating.canonical(fanfic.rating))")
+                    Text("\(fanfic.totalChapters) chapters · \(SourceLabel.name(for: fanfic.sourceKey)) · \(SourceRating.canonical(fanfic.rating))")
                         .font(.caption).foregroundStyle(AstralColors.muted)
                     if let words = fanfic.wordCount { Text("\(words.formatted()) words").font(.caption).foregroundStyle(AstralColors.muted) }
 

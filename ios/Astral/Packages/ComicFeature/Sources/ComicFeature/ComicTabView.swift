@@ -46,7 +46,7 @@ public struct ComicTabView: View {
             NavigationStack { ComicBrowserView() }
                 .tabItem { Label("Add", systemImage: "plus.circle") }.tag(ComicSection.browse)
             NavigationStack {
-                LocalActivityView(contentType: "comic", retry: { job in navigation.sourceKey = ComicSource(rawValue: job.sourceKey ?? ""); navigation.sourceURL = job.sourceUrl.flatMap(URL.init(string:)); navigation.activeSection = .browse }) { job in
+                LocalActivityView(contentType: "comic", storyTitle: { job in comics.first { $0.id == job.storyId }?.title }, retry: { job in navigation.sourceKey = ComicSource(rawValue: job.sourceKey ?? ""); navigation.sourceURL = job.sourceUrl.flatMap(URL.init(string:)); navigation.activeSection = .browse }) { job in
                     if let story = comics.first(where: { $0.id == job.storyId }) {
                         ComicDetailView(comic: story)
                     } else { ContentUnavailableView("Story is no longer in your library", systemImage: "books.vertical") }

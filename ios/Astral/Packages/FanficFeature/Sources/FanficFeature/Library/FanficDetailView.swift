@@ -42,30 +42,26 @@ struct FanficDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
+        let current = currentChapter
+        let marks = bookmarkIndex
+        let allSaved = !chapters.isEmpty && chapters.allSatisfy { $0.localTextPath != nil || $0.isDownloaded }
+        return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let rating = fanfic.rating { Text(rating).font(.subheadline).padding(.horizontal, 16) }
-                if let warnings = fanfic.warnings, !warnings.isEmpty { Text(warnings).font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16) }
+                header
                 if fanfic.sourceKey == "local" && !fanfic.isFullyDownloaded {
-                    Text("This imported text is missing. Importing the original file in Add creates a separate story. Restoring a library backup containing this text replaces your current collection with that saved collection.")
-                        .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
+                    Text("This imported text is missing. Importing the original file in Add creates a separate story; restoring a library backup replaces your whole collection.")
+                        .font(.footnote).foregroundStyle(AstralColors.warning).padding(.horizontal, 16)
                 }
-                // Continue Reading
-                if !chapters.isEmpty {
-                    FanficContinueReadingButton(
-                        chapters: Array(chapters),
-                        lastReadChapterNumber: fanfic.lastReadChapterNumber,
-                        onSelect: { chapter in
-                            selectedChapter = chapter
-                        }
-                    )
-                    .accessibilityIdentifier(AccessibilityID.detailContinueReading)
-                    .padding(.horizontal, 16)
+                if let current {
+                    continueButton(current)
+                        .accessibilityIdentifier(AccessibilityID.detailContinueReading)
+                        .padding(.horizontal, 16)
                 }
 
                 // Metadata header
                 if fanfic.summary != nil || fanfic.fandom != nil || fanfic.wordCount != nil {
-                    DisclosureGroup("Story details, rating and warnings") { metadataHeader }
+                    DisclosureGroup("Story details") { metadataHeader }
+                        .tint(AstralColors.gold)
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                 }
@@ -76,13 +72,15 @@ struct FanficDetailView: View {
                         Button {
                             withAnimation(AstralAnimation.quick) { activeTab = tab }
                         } label: {
-                            Text(tab.rawValue)
+                            Text(tab == .bookmarks && !bookmarks.isEmpty ? "Bookmarks (\(bookmarks.count))" : tab.rawValue)
                                 .font(AstralTypography.captionMedium)
                                 .foregroundStyle(activeTab == tab ? AstralColors.gold : AstralColors.muted)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
+                                .background(activeTab == tab ? AstralColors.gold.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(activeTab == tab ? .isSelected : [])
                     }
 
                     if !["ao3", "ffnet"].contains(fanfic.sourceKey) {
@@ -93,8 +91,8 @@ struct FanficDetailView: View {
                     }
 
                 }
-                .background(AstralColors.elevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(3)
+                .background(AstralColors.elevated, in: RoundedRectangle(cornerRadius: 9))
                 .padding(.horizontal, 16)
 
                 // MARK: Tab content
@@ -103,8 +101,8 @@ struct FanficDetailView: View {
                     if chapters.isEmpty {
                         EmptyStateView(
                             icon: "scroll",
-                            title: "No Chapters Yet",
-                            message: "Open this story in Browse and import it to load its chapters."
+                            title: "No chapters yet",
+                            message: "Open this story in Add and import it to load its chapters."
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.top, 40)
@@ -116,20 +114,17 @@ struct FanficDetailView: View {
                                 } label: {
                                     FanficChapterRow(
                                         chapter: chapter,
-                                        isLastRead: chapter.chapterNumber == (fanfic.lastReadChapterNumber ?? 0),
-                                        isRead: false,
-                                        isBookmarked: bookmarks.contains { BookmarkAnchorStore.chapter(for: $0.id).map { $0 == chapter.id } ?? ($0.chapterNumber == chapter.chapterNumber) }
+                                        isCurrent: chapter.id == current?.id && fanfic.lastReadAt != nil,
+                                        showsSavedState: !allSaved,
+                                        isBookmarked: marks.chapterIDs.contains(chapter.id) || marks.unanchoredNumbers.contains(chapter.chapterNumber)
                                     )
                                 }
                                 .accessibilityIdentifier(AccessibilityID.chapterRow(Int(chapter.chapterNumber)))
                                 .buttonStyle(.plain)
                                 .contextMenu {
-                                    Button {
-                                        withAnimation(AstralAnimation.bouncy) {
-                                            addBookmark(for: chapter)
-                                        }
-                                    } label: {
-                                        Label("Bookmark", systemImage: "bookmark")
+                                    let isBookmarked = marks.chapterIDs.contains(chapter.id) || marks.unanchoredNumbers.contains(chapter.chapterNumber)
+                                    Button(isBookmarked ? "Remove bookmark" : "Bookmark chapter", systemImage: isBookmarked ? "bookmark.slash" : "bookmark") {
+                                        toggleBookmark(for: chapter)
                                     }
                                 }
 
@@ -144,8 +139,8 @@ struct FanficDetailView: View {
                     if bookmarks.isEmpty {
                         EmptyStateView(
                             icon: "bookmark",
-                            title: "No Bookmarks",
-                            message: "Swipe a chapter or long-press a paragraph to bookmark it."
+                            title: "No bookmarks yet",
+                            message: "Long-press a paragraph in the reader, or long-press a chapter here."
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.top, 40)
@@ -185,15 +180,25 @@ struct FanficDetailView: View {
                                             .font(AstralTypography.caption)
                                             .foregroundStyle(AstralColors.muted)
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.leading, 16)
+                                    .padding(.trailing, 52)
                                     .padding(.vertical, 10)
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
+                                .overlay(alignment: .trailing) {
+                                    Button { deleteBookmark(bookmark) } label: {
+                                        Image(systemName: "trash").font(.footnote).frame(width: 36, height: 36)
+                                    }
+                                    .foregroundStyle(AstralColors.muted)
+                                    .padding(.trailing, 8)
+                                    .accessibilityLabel("Delete bookmark")
+                                }
                                 .contextMenu {
                                     Button(role: .destructive) {
                                         deleteBookmark(bookmark)
                                     } label: {
-                                        Label("Delete", systemImage: "trash")
+                                        Label("Delete bookmark", systemImage: "trash")
                                     }
                                 }
 
@@ -212,7 +217,7 @@ struct FanficDetailView: View {
             FanficReaderView(fanfic: fanfic, chapters: Array(chapters), chapter: chapter, bookmark: selectedBookmark)
         }
         .navigationTitle(fanfic.title)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -305,6 +310,97 @@ struct FanficDetailView: View {
         } catch {
             AstralLogger.error("syncChapters failed: \(error)", context: "FanficDetail")
         }
+    }
+
+    // MARK: - Header and continue
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 16) {
+            StoryThumbnail(path: fanfic.thumbnailPath, title: fanfic.title, icon: "scroll.fill", width: 84, height: 112, baseURL: AppConfig.staticBaseURL)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(fanfic.title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(AstralColors.white)
+                    .lineLimit(3)
+                if let authors = fanfic.authorsText, !authors.isEmpty {
+                    Text("by \(authors)")
+                        .font(.subheadline)
+                        .foregroundStyle(AstralColors.body)
+                        .lineLimit(1)
+                }
+                Text([SourceLabel.name(for: fanfic.sourceKey), fanfic.rating, fanfic.completionStatus.capitalized].compactMap { $0 }.joined(separator: " · "))
+                    .font(.footnote)
+                    .foregroundStyle(AstralColors.muted)
+                    .lineLimit(2)
+                Text(["\(chapters.count) chapter\(chapters.count == 1 ? "" : "s")", fanfic.wordCount.map { "\($0.formatted()) words" }].compactMap { $0 }.joined(separator: " · "))
+                    .font(.footnote)
+                    .foregroundStyle(AstralColors.muted)
+                if let warnings = fanfic.warnings, !warnings.isEmpty {
+                    // Source warnings stay visible before reading. AO3's "no
+                    // warnings" values are information, not a caution.
+                    let real = warnings.components(separatedBy: ", ").filter {
+                        !["No Archive Warnings Apply", "Creator Chose Not To Use Archive Warnings"].contains($0)
+                    }
+                    Label(real.isEmpty ? warnings : real.joined(separator: ", "),
+                          systemImage: real.isEmpty ? "info.circle" : "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(real.isEmpty ? AstralColors.muted : AstralColors.warning)
+                        .lineLimit(3)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    private func continueButton(_ chapter: LocalFanficChapter) -> some View {
+        let isFirstOpen = fanfic.lastReadAt == nil
+        let number = chapter.chapterNumber.formatted(.number.grouping(.never).precision(.fractionLength(0...1)))
+        let fraction = ReadingPositionStore.position(story: fanfic.id, chapter: chapter.id)?.fraction ?? 0
+        let percent = Int((fraction * 100).rounded())
+        return Button {
+            selectedChapter = chapter
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isFirstOpen ? "book.fill" : "arrow.right.circle.fill")
+                Text(isFirstOpen ? "Start reading — Ch. \(number)"
+                                 : "Continue — Ch. \(number)" + (percent > 0 && percent < 100 ? " · \(percent)%" : ""))
+                    .font(AstralTypography.bodyMedium)
+            }
+            .foregroundStyle(.black)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(AstralColors.gold, in: Capsule())
+        }
+        .buttonStyle(PressButtonStyle(scale: 0.98))
+    }
+
+    /// The chapter the reader would open: the saved position, else the legacy
+    /// chapter number, else the first chapter.
+    private var currentChapter: LocalFanficChapter? {
+        if let saved = ReadingPositionStore.position(story: fanfic.id), let chapter = chapters.first(where: { $0.id == saved.chapterID }) { return chapter }
+        if let number = fanfic.lastReadChapterNumber, number > 0 {
+            return chapters.first { $0.chapterNumber == number } ?? chapters.first { $0.chapterNumber > number } ?? chapters.first
+        }
+        return chapters.first
+    }
+
+    /// Bookmarked chapters, resolved once per update rather than per row.
+    private var bookmarkIndex: (chapterIDs: Set<UUID>, unanchoredNumbers: Set<Double>) {
+        var ids = Set<UUID>(), numbers = Set<Double>()
+        for bookmark in bookmarks {
+            if let id = BookmarkAnchorStore.chapter(for: bookmark.id) { ids.insert(id) } else { numbers.insert(bookmark.chapterNumber) }
+        }
+        return (ids, numbers)
+    }
+
+    private func toggleBookmark(for chapter: LocalFanficChapter) {
+        let existing = bookmarks.first {
+            BookmarkAnchorStore.chapter(for: $0.id).map { $0 == chapter.id } ?? ($0.chapterNumber == chapter.chapterNumber)
+        }
+        if let existing { deleteBookmark(existing) }
+        else { addBookmark(for: chapter); Haptics.play(.bookmark) }
     }
 
     private var metadataHeader: some View {
@@ -530,11 +626,12 @@ struct FanficDetailView: View {
     }
 
     private func addBookmark(for chapter: LocalFanficChapter) {
+        // A chapter bookmark opens the chapter at its start.
         let bookmark = LocalBookmark(
             contentType: "fanfic",
             storyId: fanfic.id,
             chapterNumber: chapter.chapterNumber,
-            scrollPercent: fanfic.scrollOffsetPercent
+            heading: chapter.title
         )
         modelContext.insert(bookmark)
         BookmarkAnchorStore.save(bookmark: bookmark.id, chapter: chapter.id)
@@ -568,294 +665,85 @@ struct FanficDetailView: View {
     }
 }
 
-// MARK: - Bookmarks Section
-
-private struct FanficBookmarksSection: View {
-    let bookmarks: [LocalBookmark]
-    let onDelete: (LocalBookmark) -> Void
-
-    @State private var isExpanded = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header — rotates chevron instead of swapping symbols
-            Button {
-                withAnimation(AstralAnimation.smooth) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack {
-                    Image(systemName: "bookmark.fill")
-                        .foregroundStyle(AstralColors.gold)
-                    Text("Bookmarks (\(bookmarks.count))")
-                        .font(AstralTypography.bodyMedium)
-                        .foregroundStyle(AstralColors.white)
-                    Spacer()
-                    Image(systemName: "chevron.up")
-                        .font(.caption)
-                        .foregroundStyle(AstralColors.muted)
-                        .rotationEffect(.degrees(isExpanded ? 0 : -180))
-                        .animation(AstralAnimation.smooth, value: isExpanded)
-                }
-            }
-            .buttonStyle(.plain)
-
-            // Rows — push in from top on expand, scale/fade out on collapse
-            if isExpanded {
-                VStack(spacing: 0) {
-                    ForEach(bookmarks) { bookmark in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let heading = bookmark.heading {
-                                    Text(heading)
-                                        .font(AstralTypography.captionMedium)
-                                        .foregroundStyle(AstralColors.white)
-                                        .lineLimit(1)
-                                }
-                                Text(bookmark.displayLabel)
-                                    .font(AstralTypography.caption)
-                                    .foregroundStyle(AstralColors.body)
-                                    .lineLimit(1)
-                                if let note = bookmark.note {
-                                    Text("— \(note)")
-                                        .font(AstralTypography.caption)
-                                        .foregroundStyle(AstralColors.muted)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                            Button {
-                                withAnimation(AstralAnimation.snappy) {
-                                    onDelete(bookmark)
-                                }
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.caption)
-                                    .foregroundStyle(AstralColors.error)
-                            }
-                            .buttonStyle(PressButtonStyle(scale: 0.85))
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                .transition(
-                    .asymmetric(
-                        insertion: .push(from: .top).combined(with: .opacity),
-                        removal: .opacity.combined(with: .scale(scale: 0.97, anchor: .top))
-                    )
-                )
-            }
-        }
-        .padding(12)
-        .astralCard()
-    }
-}
-
 // MARK: - Chapter Row
 
 private struct FanficChapterRow: View {
     let chapter: LocalFanficChapter
-    let isLastRead: Bool
-    let isRead: Bool
+    let isCurrent: Bool
+    /// Only meaningful when some chapters are saved and others are not.
+    let showsSavedState: Bool
     let isBookmarked: Bool
 
-    private var textColor: Color {
-        isRead ? AstralColors.muted : AstralColors.white
-    }
-
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(chapterLabel)
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("Ch. \(chapter.chapterNumber.formatted(.number.grouping(.never).precision(.fractionLength(0...1))))")
                         .font(AstralTypography.bodyMedium)
-                        .foregroundStyle(textColor)
-
-                    if isLastRead {
-                        Text("Last Read")
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.gold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(AstralColors.gold.opacity(0.15))
-                            .clipShape(Capsule())
-                    }
-
-                    if isBookmarked {
-                        Image(systemName: "bookmark.fill")
-                            .font(.caption)
-                            .foregroundStyle(AstralColors.gold)
-                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                        .foregroundStyle(isCurrent ? AstralColors.gold : AstralColors.white)
+                    if let title = chapter.title, !title.isEmpty {
+                        Text(title)
+                            .font(AstralTypography.body)
+                            .foregroundStyle(AstralColors.body)
+                            .lineLimit(1)
                     }
                 }
-                .animation(AstralAnimation.bouncy, value: isBookmarked)
-
-                if let title = chapter.title {
-                    Text(title)
+                if let words = chapter.wordCount, words > 0 {
+                    Text("\(words.formatted()) words · \(max(1, words / 238)) min")
                         .font(AstralTypography.caption)
                         .foregroundStyle(AstralColors.muted)
                 }
-
-                HStack(spacing: 8) {
-                    if let wc = chapter.wordCount {
-                        Text("\(wc / 1000)K words")
-                            .font(AstralTypography.caption)
-                            .foregroundStyle(AstralColors.muted)
-                    }
-                    if chapter.isDownloaded {
-                        StatusBadge.downloaded()
-                    }
-                }
             }
-
-            Spacer()
-
-            downloadStatusIcon(for: chapter)
-
-            statusIcon(for: chapter.scrapeStatus)
+            Spacer(minLength: 8)
+            if isCurrent {
+                Text("Reading")
+                    .font(AstralTypography.caption)
+                    .foregroundStyle(AstralColors.gold)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(AstralColors.gold.opacity(0.15), in: Capsule())
+            }
+            if isBookmarked {
+                Image(systemName: "bookmark.fill")
+                    .font(.caption)
+                    .foregroundStyle(AstralColors.gold)
+                    .accessibilityLabel("Bookmarked")
+            }
+            if showsSavedState {
+                savedStateIcon
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(AstralColors.muted)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
+        .background(isCurrent ? AstralColors.gold.opacity(0.05) : .clear)
         .contentShape(Rectangle())
     }
 
-    private var chapterLabel: String {
-        let num = chapter.chapterNumber
-        return num.truncatingRemainder(dividingBy: 1) == 0
-            ? "Chapter \(Int(num))"
-            : "Chapter \(num)"
-    }
-
     @ViewBuilder
-    private func downloadStatusIcon(for chapter: LocalFanficChapter) -> some View {
-        switch chapter.downloadStatus {
-        case .complete:
+    private var savedStateIcon: some View {
+        if chapter.localTextPath != nil || chapter.isDownloaded {
             Image(systemName: "arrow.down.circle.fill")
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundStyle(AstralColors.success)
-        case .downloading, .queued:
-            ProgressView()
-                .scaleEffect(0.6)
-        case .failed:
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(AstralColors.error)
-        case .none:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder
-    private func statusIcon(for status: String) -> some View {
-        switch status {
-        case "scraped":
-            if isRead {
-                Image(systemName: "checkmark.circle.fill")
+                .accessibilityLabel("Saved on this device")
+        } else {
+            switch chapter.downloadStatus {
+            case .downloading, .queued:
+                ProgressView().controlSize(.mini)
+            case .failed:
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(AstralColors.error)
+                    .accessibilityLabel("Couldn't save")
+            case .complete, .none:
+                Image(systemName: "icloud")
                     .font(.caption)
                     .foregroundStyle(AstralColors.muted)
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(AstralColors.muted)
+                    .accessibilityLabel("Not saved")
             }
-        case "pending":
-            Image(systemName: "clock")
-                .foregroundStyle(AstralColors.muted)
-        case "failed":
-            Image(systemName: "exclamationmark.circle")
-                .foregroundStyle(AstralColors.error)
-        default:
-            EmptyView()
-        }
-    }
-}
-
-// MARK: - Continue Reading Button
-
-private struct FanficContinueReadingButton: View {
-    let chapters: [LocalFanficChapter]
-    let lastReadChapterNumber: Double?
-    let onSelect: (LocalFanficChapter) -> Void
-
-    private enum ReadingState {
-        case start(LocalFanficChapter)
-        case continueReading(LocalFanficChapter)
-        case readAgain(LocalFanficChapter)
-    }
-
-    private var readingState: ReadingState? {
-        guard let firstChapter = chapters.first else { return nil }
-        guard let lastRead = lastReadChapterNumber, lastRead > 0 else { return .start(firstChapter) }
-        // Resume the current chapter at saved scroll position (reader restores via scrollOffsetPercent)
-        if let current = chapters.first(where: { $0.chapterNumber == lastRead }) {
-            return .continueReading(current)
-        }
-        if let next = chapters.first(where: { $0.chapterNumber > lastRead }) {
-            return .continueReading(next)
-        }
-        return .readAgain(firstChapter)
-    }
-
-    var body: some View {
-        if let state = readingState {
-            Button {
-                onSelect(targetChapter(for: state))
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: iconName(for: state))
-                    Text(label(for: state))
-                        .font(AstralTypography.bodyMedium)
-                }
-                .foregroundStyle(labelColor(for: state))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(backgroundColor(for: state))
-                .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func targetChapter(for state: ReadingState) -> LocalFanficChapter {
-        switch state {
-        case .start(let ch), .continueReading(let ch), .readAgain(let ch): return ch
-        }
-    }
-
-    private func iconName(for state: ReadingState) -> String {
-        switch state {
-        case .start: return "book.fill"
-        case .continueReading: return "arrow.right.circle.fill"
-        case .readAgain: return "arrow.counterclockwise"
-        }
-    }
-
-    private func label(for state: ReadingState) -> String {
-        switch state {
-        case .start(let ch):
-            let num = ch.chapterNumber
-            let formatted = num.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(num))" : "\(num)"
-            return "Start Reading — Ch. \(formatted)"
-        case .continueReading(let ch):
-            let num = ch.chapterNumber
-            let formatted = num.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(num))" : "\(num)"
-            return "Continue — Ch. \(formatted)"
-        case .readAgain:
-            return "Read Again — Ch. 1"
-        }
-    }
-
-    private func backgroundColor(for state: ReadingState) -> Color {
-        switch state {
-        case .start, .continueReading: return AstralColors.gold
-        case .readAgain: return AstralColors.elevated
-        }
-    }
-
-    private func labelColor(for state: ReadingState) -> Color {
-        switch state {
-        case .start, .continueReading: return .black
-        case .readAgain: return AstralColors.muted
         }
     }
 }
