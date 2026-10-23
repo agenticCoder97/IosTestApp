@@ -220,6 +220,7 @@ final class AO3ImportService {
         // visible page stays where the reader left it while the import runs.
         let background = FFNetBackgroundPage()
         defer { background.close() }
+        ContentBlocker.shared.apply(to: background.webView)
         func navigate(_ url: URL) async throws {
             let view = background.webView
             defer { if Task.isCancelled { view.stopLoading() } }

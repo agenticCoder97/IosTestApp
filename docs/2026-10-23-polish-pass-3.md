@@ -68,7 +68,8 @@ Feedback from testing with real stories: long FFNet imports flipped the visible 
 
 Verified in the simulator:
 - **Resume:** The Keys of Fire (51 chapters) resumed from the 20 chapters saved by your failed attempt and finished at 51. It ran in the background with the visible page on Chapter 1. No check appeared, and the checkpoint was removed afterwards.
-- **Browser:** the one-row header shows, and on the AO3 home page it hides when scrolling down and returns when scrolling up.
+- **Ad blocker:** the hidden page now uses the browser's ad blocker. This was added after the 51-chapter run, and a 3-chapter FFNet update completed with it in about 10 seconds.
+- **Browser:** the one-row header and source menu show, and on the AO3 home page the header hides when scrolling down and returns when scrolling up.
 
 Not verified:
 - The check-stops-and-saves-partially path, because no check appeared.
