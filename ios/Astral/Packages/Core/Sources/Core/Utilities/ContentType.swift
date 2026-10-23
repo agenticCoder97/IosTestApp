@@ -18,7 +18,7 @@ public enum StoryStatus: String, Codable, Sendable {
     case complete
 }
 
-public enum JobStatus: String, Codable, Sendable {
+public enum JobStatus: String, CaseIterable, Codable, Sendable {
     case queued
     case running
     case partial

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UIKit
 import WebKit
 import Core
 import Networking
@@ -15,7 +16,9 @@ final class AO3ImportService {
     static func workURL(from url: URL?) -> URL? {
         guard let url, url.scheme == "https",
               url.host?.lowercased() == "archiveofourown.org" else { return nil }
-        let parts = url.path.split(separator: "/")
+        // Works opened from a collection live at /collections/<name>/works/<id>.
+        let path = url.path.split(separator: "/")
+        let parts = path.first == "collections" && path.count >= 4 ? Array(path.dropFirst(2)) : Array(path)
         guard parts.count >= 2, parts[0] == "works",
               !parts[1].isEmpty, parts[1].allSatisfy(\.isNumber) else { return nil }
         return URL(string: "https://archiveofourown.org/works/\(parts[1])")
@@ -44,6 +47,9 @@ final class AO3ImportService {
             try modelContext.save()
             return work
         } catch {
+            if let partial = error as? FFNetPartialImport {
+                job.storyId = partial.storyID; job.chaptersScraped = partial.saved; job.totalChapters = partial.expected
+            }
             job.status = error is CancellationError ? "cancelled" : "failed"
             job.errorMessage = error is CancellationError ? "Import cancelled. Saved content was retained." : error.localizedDescription
             job.completedAt = .now
@@ -71,7 +77,17 @@ final class AO3ImportService {
         let script = try String(contentsOf: scriptURL, encoding: .utf8)
         let response: AO3ImportResponse
         if sourceKey == "ffnet" {
-            response = try await readFFNet(script: script, browser: webView, canonical: canonicalURL, context: modelContext)
+            do {
+                response = try await readFFNet(script: script, browser: webView, canonical: canonicalURL, context: modelContext)
+            } catch let stopped as FFNetStopped {
+                // Keep what arrived: the story and its first chapters go into the
+                // library, and importing again continues from the checkpoint.
+                let story = try await commit(stopped.work, sourceKey: sourceKey, canonicalURL: canonicalURL,
+                                             expectedChapters: stopped.expected, modelContext: modelContext)
+                if let page = stopped.verificationPage { webView.load(URLRequest(url: page)) }
+                throw FFNetPartialImport(storyID: story.id, saved: stopped.work.chapters.count, expected: stopped.expected,
+                                         reason: stopped.reason, needsVerification: stopped.verificationPage != nil)
+            }
         } else {
             let result = try await webView.callAsyncJavaScript(script, arguments: ["workURL": fullURL.absoluteString], in: nil, contentWorld: .defaultClient)
             try Task.checkCancellation()
@@ -86,10 +102,20 @@ final class AO3ImportService {
             }
             throw AO3ImportError.message(for: error)
         }
-        guard let work = response.work, !work.title.isEmpty, !work.chapters.isEmpty,
+        guard let work = response.work else { throw AO3ImportError.message(for: "incomplete") }
+        return try await commit(work, sourceKey: sourceKey, canonicalURL: canonicalURL, expectedChapters: nil, modelContext: modelContext)
+    }
+
+    /// Writes a fetched work into the library. When fewer chapters arrived than
+    /// `expectedChapters`, this is a partial FFNet import: chapters not fetched yet
+    /// are left alone rather than marked removed, and the checkpoint is kept.
+    private func commit(_ work: AO3WorkImport, sourceKey: String, canonicalURL: URL, expectedChapters: Int?,
+                        modelContext: ModelContext) async throws -> LocalFanfic {
+        guard !work.title.isEmpty, !work.chapters.isEmpty,
               work.chapters.allSatisfy({ !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             throw AO3ImportError.message(for: "incomplete")
         }
+        let partial = (expectedChapters ?? 0) > work.chapters.count
 
         let existing = try modelContext.fetch(FetchDescriptor<LocalFanfic>(
             predicate: #Predicate { $0.sourceKey == sourceKey }
@@ -134,7 +160,7 @@ final class AO3ImportService {
             fanfic.freeformTags = work.freeformTags
             fanfic.wordCount = work.wordCount
             fanfic.completionStatus = work.complete ? "complete" : "ongoing"
-            fanfic.totalChapters = work.chapters.count
+            fanfic.totalChapters = max(expectedChapters ?? 0, work.chapters.count)
             fanfic.publishedAt = Self.date(work.publishedAt)
             fanfic.updatedAtSource = Self.date(work.updatedAt)
             fanfic.hits = work.hits
@@ -142,8 +168,8 @@ final class AO3ImportService {
             fanfic.commentsCount = work.commentsCount
             fanfic.bookmarksCount = work.bookmarksCount
             fanfic.lastSyncedAt = .now
-            fanfic.isDownloaded = true
-            if existing == nil { fanfic.seenTotalChapters = work.chapters.count }
+            fanfic.isDownloaded = !partial
+            if existing == nil { fanfic.seenTotalChapters = fanfic.totalChapters }
 
             for (index, incoming) in work.chapters.enumerated() {
                 let number = Double(incoming.number)
@@ -167,7 +193,7 @@ final class AO3ImportService {
             }
             // Chapters removed by the author remain readable locally. Their ordinal
             // is moved after the current source chapters to avoid duplicate ordering.
-            for (offset, chapter) in oldChapters.filter({ !usedIDs.contains($0.id) }).enumerated() {
+            for (offset, chapter) in (partial ? [] : oldChapters.filter({ !usedIDs.contains($0.id) })).enumerated() {
                 chapter.scrapeStatus = "removed-at-source"
                 chapter.chapterNumber = Double(work.chapters.count + offset + 1)
             }
@@ -183,26 +209,36 @@ final class AO3ImportService {
         }
         UserDefaults.standard.set(newMapping, forKey: mappingKey)
         await AO3ImportStorage.shared.remove(replacedPaths)
-        if sourceKey == "ffnet" { try? FileManager.default.removeItem(at: Self.ffnetCheckpoint(canonicalURL)) }
-        AstralLogger.info("Imported story locally | chapters=\(work.chapters.count)", context: "AO3Import")
+        if sourceKey == "ffnet" && !partial { try? FileManager.default.removeItem(at: Self.ffnetCheckpoint(canonicalURL)) }
+        AstralLogger.info("Imported story locally | chapters=\(work.chapters.count)\(partial ? " (partial)" : "")", context: "AO3Import")
         await FanficThumbnailService.repair(fanfic, context: modelContext, sourceCover: work.thumbnailURL)
         return fanfic
     }
 
     private func readFFNet(script: String, browser: WKWebView, canonical: URL, context: ModelContext) async throws -> AO3ImportResponse {
-        let originalURL = browser.url
+        // Chapters load in a hidden page that shares the browser's cookies, so the
+        // visible page stays where the reader left it while the import runs.
+        let background = FFNetBackgroundPage()
+        defer { background.close() }
+        ContentBlocker.shared.apply(to: background.webView)
         func navigate(_ url: URL) async throws {
-            defer { if Task.isCancelled { browser.stopLoading() } }
-            browser.load(URLRequest(url: url))
-            let deadline = Date().addingTimeInterval(45)
+            let view = background.webView
+            defer { if Task.isCancelled { view.stopLoading() } }
+            view.load(URLRequest(url: url))
+            let started = Date()
+            var challengedAt: Date?
             try await Task.sleep(for: .milliseconds(300))
             while true {
                 try Task.checkCancellation()
                 let requested = url.path.split(separator: "/")
-                let ready = (try? await browser.callAsyncJavaScript("return document.readyState !== 'loading' && location.pathname.split('/')[2] === storyID && Number(location.pathname.split('/')[3] || 1) === chapterNumber && !!document.querySelector('#storytext,#storycontent,.storycontent,#story_content');", arguments: ["storyID": String(requested[1]), "chapterNumber": Int(requested[2]) ?? 1], in: nil, contentWorld: .defaultClient)) as? Bool == true
-                if ready { break }
-                guard Date() < deadline else { browser.stopLoading(); throw AO3ImportError.message(for: "verification") }
-                try await Task.sleep(for: .milliseconds(200))
+                let state = (try? await view.callAsyncJavaScript(Self.ffnetPageState, arguments: ["storyID": String(requested[1]), "chapterNumber": Int(requested[2]) ?? 1], in: nil, contentWorld: .defaultClient)) as? String
+                if state == "ready" { return }
+                if state == "challenge", challengedAt == nil { challengedAt = Date() }
+                // An automatic check usually clears within seconds; one that needs a
+                // person stops the import so it can be completed in the browser.
+                if let challengedAt, Date().timeIntervalSince(challengedAt) > 25 { view.stopLoading(); throw FFNetLoadError.verification(url) }
+                if challengedAt == nil, Date().timeIntervalSince(started) > 45 { view.stopLoading(); throw AO3ImportError.message(for: "timeout") }
+                try await Task.sleep(for: .milliseconds(250))
             }
         }
         func extract(_ view: WKWebView, title: String = "", count: Int = 0) async throws -> AO3ImportResponse {
@@ -214,17 +250,24 @@ final class AO3ImportService {
         let parts = canonical.path.split(separator: "/")
         guard parts.count >= 2 else { throw AO3ImportError("Open an FFNet story first.") }
         let root = URL(string: browser.url?.scheme == "https" ? "https://" + (browser.url?.host ?? "www.fanfiction.net") : "https://www.fanfiction.net")!
+        func chapterURL(_ number: Int) -> URL { root.appendingPathComponent("s/\(parts[1])/\(number)/") }
         var first: AO3ImportResponse
         if browser.url?.path.split(separator: "/").dropFirst(2).first == "1" { first = try await extract(browser) }
-        else { try await navigate(root.appendingPathComponent("s/\(parts[1])/1/")); first = try await extract(browser) }
+        else {
+            do { try await navigate(chapterURL(1)) }
+            catch FFNetLoadError.verification(let page) { browser.load(URLRequest(url: page)); throw AO3ImportError.message(for: "verification") }
+            first = try await extract(background.webView)
+        }
         if first.error != nil { return first }
         guard var work = first.work, let firstCount = first.expectedChapters, (0...2000).contains(firstCount), work.chapters.count == 1, firstCount > 0 || first.nextChapter == 2 else { throw AO3ImportError("FFNet's chapter list is incomplete.") }
         var count = firstCount
         let checkpointURL = Self.ffnetCheckpoint(canonical)
+        // A checkpoint resumes a stopped import, including one saved to the library
+        // as a partial story, for up to two weeks.
         if let data = try? Data(contentsOf: checkpointURL), data.count <= 55 * 1024 * 1024,
            let saved = try? JSONDecoder().decode(FFNetCheckpoint.self, from: data),
            saved.expected == count, saved.work.title == work.title,
-           (try? checkpointURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate).map({ Date().timeIntervalSince($0) < 3600 }) == true,
+           (try? checkpointURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate).map({ Date().timeIntervalSince($0) < 14 * 86_400 }) == true,
            saved.work.chapters.first?.content.split(whereSeparator: \.isWhitespace).map(String.init) == work.chapters.first?.content.split(whereSeparator: \.isWhitespace).map(String.init),
            !saved.work.chapters.isEmpty, saved.work.chapters.count <= count,
            saved.work.chapters.enumerated().allSatisfy({ $0.element.number == $0.offset + 1 }) {
@@ -243,9 +286,11 @@ final class AO3ImportService {
             while hasMore {
                 let number = work.chapters.count + 1
                 guard number <= 2000 else { throw AO3ImportError.message(for: "tooLarge") }
-                try await Task.sleep(for: .seconds(1))
-                try await navigate(root.appendingPathComponent("s/\(parts[1])/\(number)/"))
-                let result = try await extract(browser, title: work.title, count: count)
+                // Paced like reading rather than a burst, which is what trips
+                // FanFiction.net's check on long stories.
+                try await Task.sleep(for: .seconds(Double.random(in: 2.5...4.5) + (number % 25 == 0 ? 10 : 0)))
+                try await navigate(chapterURL(number))
+                let result = try await extract(background.webView, title: work.title, count: count)
                 if let error = result.error { throw AO3ImportError.message(for: error) }
                 guard let reported = result.expectedChapters, let chapter = result.work?.chapters.first,
                       chapter.number == number, reported == 0 || count == 0 || reported == count else {
@@ -262,11 +307,37 @@ final class AO3ImportService {
                 job?.currentStep = count > 0 ? "Fetching chapter \(number) of \(count)" : "Fetching chapter \(number)"
                 try context.save()
             }
-        } catch { try? checkpoint(); throw error }
+        } catch is CancellationError {
+            try? checkpoint(); throw CancellationError()
+        } catch {
+            try? checkpoint()
+            var page: URL?
+            if case .verification(let url)? = error as? FFNetLoadError { page = url }
+            throw FFNetStopped(work: work, expected: count > work.chapters.count ? count : work.chapters.count + 1,
+                               reason: page == nil ? error : AO3ImportError.message(for: "verification"), verificationPage: page)
+        }
         guard count == work.chapters.count else { throw AO3ImportError.message(for: "incomplete") }
         try checkpoint()
-        if let originalURL { browser.load(URLRequest(url: originalURL)) }
         return AO3ImportResponse(error: nil, work: work, expectedChapters: count)
+    }
+
+    /// "ready" once the requested chapter's text is on the page, "challenge" while
+    /// FanFiction.net shows its verification page, otherwise "loading".
+    private static let ffnetPageState = """
+    if (document.querySelector('#challenge-form, #cf-challenge-running, .cf-turnstile') || /just a moment|verify you are human|attention required/i.test(document.title)) return 'challenge';
+    const parts = location.pathname.split('/');
+    if (document.readyState !== 'loading' && parts[2] === storyID && Number(parts[3] || 1) === chapterNumber && document.querySelector('#storytext,#storycontent,.storycontent,#story_content')) return 'ready';
+    return 'loading';
+    """
+
+    private enum FFNetLoadError: Error { case verification(URL) }
+
+    /// An FFNet import that stopped after fetching at least its first chapter.
+    private struct FFNetStopped: Error {
+        let work: AO3WorkImport
+        let expected: Int
+        let reason: Error
+        let verificationPage: URL?
     }
 
     private struct FFNetCheckpoint: Codable { let expected: Int; let work: AO3WorkImport }
@@ -375,8 +446,50 @@ private struct AO3ImportError: LocalizedError {
         case "unavailable": Self("The source is temporarily unavailable. Please try again later.")
         case "wrongPage": Self("Open the FFNet story itself in Add, then tap Import.")
         case "chapterList": Self("FFNet did not expose a complete chapter list or a Next link. Open the story with its chapter navigation visible, then retry. Your saved copy has not changed.")
-        case "invalidWork": Self("The story title or metadata could not be read. Open a desktop FFNet story page and retry.")
+        case "invalidWork": Self("The story title or details could not be read. Open the story's own page in the browser, then tap Import again.")
         default: Self("Open an accessible story in the browser, then tap Import.")
         }
+    }
+}
+
+/// An FFNet import that saved part of a story before stopping. The partial story
+/// is in the library; Continue import on the story page fetches the rest.
+struct FFNetPartialImport: LocalizedError {
+    let storyID: UUID
+    let saved: Int
+    let expected: Int
+    let reason: Error
+    let needsVerification: Bool
+
+    var errorDescription: String? {
+        let progress = "Saved \(saved) of \(expected) chapters to your library."
+        if needsVerification {
+            return progress + " FanFiction.net asked to confirm you're human. Complete the check on this page, then tap Continue import."
+        }
+        return progress + " " + reason.localizedDescription + " Tap Continue import on the story page to fetch the rest."
+    }
+}
+
+/// A hidden page that shares the browser's website data, including any check
+/// already passed. It stays attached to the window, out of sight, because WebKit
+/// throttles pages that are not in one.
+@MainActor
+private final class FFNetBackgroundPage {
+    let webView: WKWebView
+
+    init() {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        webView = WKWebView(frame: CGRect(x: -2000, y: 0, width: 390, height: 844), configuration: config)
+        webView.isUserInteractionEnabled = false
+        webView.accessibilityElementsHidden = true
+        let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        window?.insertSubview(webView, at: 0)
+    }
+
+    func close() {
+        webView.stopLoading()
+        webView.removeFromSuperview()
     }
 }

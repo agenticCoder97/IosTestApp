@@ -48,7 +48,12 @@ final class ChapterDownloadService {
         do {
             try checkDiskSpace(estimatedBytes: Int64(chapter.totalPages) * 500_000)
             let pages: [PageResponse]
-            if chapter.comic?.sourceKey == "mangadex-device" { pages = try await MangaDexDeviceService.pages(chapter.id) }
+            if chapter.comic?.sourceKey == "mangadex-device" {
+                pages = try await MangaDexDeviceService.pages(chapter.id)
+                // The at-home list is the chapter as it is now. An uploader edit since
+                // import changes the count, which must not make every save fail.
+                if !pages.isEmpty { chapter.totalPages = pages.count }
+            }
             else if let comic = chapter.comic, DeviceComicService.sources.contains(comic.sourceKey) { pages = try await DeviceComicService.pages(comic: comic, chapter: chapter) }
             else { pages = try await APIClient.shared.request(.chapterPages(comicId: comicId, chapterId: chapter.id)) }
             guard !pages.isEmpty, Set(pages.map(\.pageNumber)).count == pages.count,
@@ -108,9 +113,11 @@ final class ChapterDownloadService {
         }
     }
 
-    /// URLSession reports a cancelled task as `URLError.cancelled`, not `CancellationError`.
+    /// Only this task's own cancellation counts. URLSession reports it as
+    /// `URLError.cancelled`, but a page loader's redirect or ad also fails with
+    /// that code, and must be a failed chapter rather than a silent stop.
     static func isCancellation(_ error: Error) -> Bool {
-        error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
+        error is CancellationError || Task.isCancelled
     }
 
     private func savePage(_ data: Data, to destination: URL, token: UUID, context: ModelContext) throws {
@@ -186,7 +193,7 @@ final class ChapterDownloadService {
             return nil
         }
         let sorted = files
-            .filter { ["jpg", "jpeg", "png", "webp", "gif", "heic", "img"].contains($0.pathExtension.lowercased()) }
+            .filter { ["jpg", "jpeg", "png", "webp", "gif", "heic", "avif", "img"].contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         if sorted.isEmpty {
             let rawNames = files.map { $0.lastPathComponent }

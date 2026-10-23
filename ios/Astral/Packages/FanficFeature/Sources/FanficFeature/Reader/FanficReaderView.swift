@@ -117,7 +117,10 @@ struct FanficReaderView: View {
                                 scrollProgress.paragraph = visibleParagraph ?? 0
                                 scrollProgress.layoutSignature = layoutSignature
                                 hideControlsAfterReadingScroll()
-                            }, onPull: { pullProgress = $0 }, onRelease: { next in
+                            }, onPull: { progress in
+                                // No hint past the first or last chapter, where a release does nothing.
+                                pullProgress = (progress > 0 ? nextChapter : previousChapter) == nil ? 0 : progress
+                            }, onRelease: { next in
                                 if let chapter = next ? nextChapter : previousChapter { navigateTo(chapter) }
                             }))
                     }
@@ -134,6 +137,10 @@ struct FanficReaderView: View {
                         didRestoreAnchor = true
                         restorePixelsIfCompatible()
                         hasRestoredScroll = true
+                        // A chapter that fits on one screen never scrolls, so the readout
+                        // would stay at 0%. Once it has laid out, it has been read in full.
+                        try? await Task.sleep(for: .milliseconds(300))
+                        if !Task.isCancelled, scrollController.contentFitsViewport { scrollProgress.fraction = 1 }
                     }
                     .id(currentChapter.id)
                     .onChange(of: scrollTargetIndex) { _, target in
@@ -467,6 +474,9 @@ struct FanficReaderView: View {
     private func persistReadingState(endSession: Bool, syncRemote: Bool) {
         if endSession { readingSession?.endedAt = .now; try? modelContext.save() }
         guard !chapterContent.isEmpty, !isLoading else { return }
+        // A chapter that fits on one screen has no scroll range, so it never moves
+        // past 0%; once it has been on screen it has been read in full.
+        if scrollController.contentFitsViewport { scrollProgress.fraction = 1 }
         fanfic.scrollOffsetPercent = scrollProgress.fraction
         fanfic.lastReadChapterNumber = currentChapter.chapterNumber
         fanfic.lastReadAt = .now

@@ -65,11 +65,13 @@ ComicReaderView supports two modes:
 - **Webtoon** (vertical): `ScrollView(.vertical)` + `LazyVStack` — continuous vertical strip
 - **Paged** (horizontal): `ScrollView(.horizontal)` + `LazyHStack` + `scrollTargetBehavior(.paging)` + `scrollPosition(id:)`
 
-HUD toggled via `simultaneousGesture(LongPressGesture(minimumDuration: 0.5))` — uses simultaneousGesture to avoid blocking scroll.
+Taps (updated 23 October 2026):
+- **Webtoon:** a single tap anywhere shows or hides the controls.
+- **Paged:** the outer thirds turn pages toward the side tapped (`pagedTap`), so R→L reading goes forward from the left third. The middle third, a zoomed page and VoiceOver toggle the controls instead, and a tap past either end shows them. The tap position is read in global coordinates, so the mirrored R→L layout doesn't flip the zones.
 
-Tap zones divide the screen into thirds: left (prev page), center (toggle HUD), right (next page).
-
-Page actions on long press: save image, share.
+Zoom:
+- **Webtoon:** the whole strip zooms (`ComicStripZoom`). `scaleEffect` sits outside the scroll view's named coordinate space, so page tracking and offsets stay in unzoomed coordinates. Vertical scrolling stays live, a horizontal drag moves `anchor.x`, and double-tap toggles 2.2×. At high zoom the very top and bottom of a chapter can't be reached until you zoom out.
+- **Paged:** each page zooms on its own (`ZoomablePageView`), scrolling is disabled while zoomed, and a page resets when it leaves the screen.
 
 Reading progress written to SwiftData on every chapter open. Backend progress sync via PUT endpoint (partially wired).
 

@@ -29,6 +29,9 @@ enum MangaDexDeviceService {
                 offset += feed.data.count
                 if feed.data.isEmpty || offset >= feed.total { break }
             }
+            // A chapter added or removed while paging shifts offsets and can repeat a release.
+            var seen = Set<UUID>()
+            releases = releases.filter { seen.insert($0.id).inserted }
             try Task.checkCancellation()
             guard !releases.isEmpty else { throw DeviceError.message("No readable English chapters are available from MangaDex for this title.") }
             // Preserve existing user data; a source refresh only adds/updates metadata.
@@ -78,7 +81,17 @@ enum MangaDexDeviceService {
     }
     struct Entity<T: Decodable & Sendable>: Decodable, Sendable { let data: T }
     struct Manga: Decodable, Sendable { let attributes: Attributes; let relationships: [Relationship]?
-        struct Attributes: Decodable, Sendable { let title: [String: String]; let description: [String: String]; let status: String }
+        struct Attributes: Decodable, Sendable {
+            let title: [String: String]; let description: [String: String]; let status: String
+            private enum CodingKeys: String, CodingKey { case title, description, status }
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                title = try container.decode([String: String].self, forKey: .title)
+                // MangaDex sends an empty localized string as [] rather than {}.
+                description = (try? container.decode([String: String].self, forKey: .description)) ?? [:]
+                status = try container.decode(String.self, forKey: .status)
+            }
+        }
     }
     struct Chapter: Decodable, Sendable { let id: UUID; let attributes: Attributes; let relationships: [Relationship]?
         struct Attributes: Decodable, Sendable { let chapter: String?; let volume: String?; let title: String?; let pages: Int?; let externalUrl: String? }
@@ -95,11 +108,26 @@ enum MangaDexDeviceService {
 
 /// Serial request slots survive actor reentrancy; rate-limit responses defer future
 /// requests and surface to the user instead of spinning retries against the source.
+/// A server error or dropped connection gets one spaced retry.
 private actor MangaDexAPI {
     static let shared = MangaDexAPI()
     private var nextRequest = Date.distantPast
     private var nextAtHome = Date.distantPast
     func get<T: Decodable & Sendable>(_ path: String, atHome: Bool = false) async throws -> T {
+        do { return try await fetch(path, atHome: atHome) }
+        catch let error where Self.isTransient(error) {
+            try await Task.sleep(for: .seconds(1.5))
+            return try await fetch(path, atHome: atHome)
+        }
+    }
+
+    private static func isTransient(_ error: Error) -> Bool {
+        if case APIError.httpError(let code) = error { return (500...599).contains(code) }
+        guard let code = (error as? URLError)?.code else { return false }
+        return code == .timedOut || code == .networkConnectionLost
+    }
+
+    private func fetch<T: Decodable & Sendable>(_ path: String, atHome: Bool) async throws -> T {
         let now = Date()
         let slot = max(now, nextRequest, atHome ? nextAtHome : now)
         nextRequest = slot.addingTimeInterval(0.3)

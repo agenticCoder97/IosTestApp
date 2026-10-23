@@ -8,6 +8,7 @@ public final class BookmarkUndoService {
     public private(set) var message: String?
     public private(set) var canUndo = false
     private var restore: (() throws -> Void)?
+    private var expiry: Task<Void, Never>?
     private init() {}
     public func delete(_ bookmark: LocalBookmark, context: ModelContext) {
         let id = bookmark.id, type = bookmark.contentType, story = bookmark.storyId, number = bookmark.chapterNumber
@@ -27,10 +28,17 @@ public final class BookmarkUndoService {
             }
             message = "Bookmark removed"; canUndo = true
         } catch { context.rollback(); message = "Bookmark could not be removed: " + error.localizedDescription; canUndo = false }
+        // The banner sits over every tab, so it leaves on its own like other undo toasts.
+        expiry?.cancel()
+        expiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            self?.dismiss()
+        }
     }
     public func undo() {
         do { try restore?(); dismiss() }
         catch { message = "Bookmark could not be restored: " + error.localizedDescription }
     }
-    public func dismiss() { message = nil; canUndo = false; restore = nil }
+    public func dismiss() { expiry?.cancel(); expiry = nil; message = nil; canUndo = false; restore = nil }
 }

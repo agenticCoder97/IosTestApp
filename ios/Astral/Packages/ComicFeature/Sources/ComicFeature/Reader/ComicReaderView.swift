@@ -26,6 +26,57 @@ enum ComicChapterPullTrigger {
     }
 }
 
+/// Whole-strip zoom for webtoon mode. Only the rendering is scaled, so the
+/// strip keeps scrolling vertically while zoomed; horizontal drags pan across
+/// it. The page label still uses the unzoomed reading line, so at high zoom it
+/// can lag the panel in view by a page.
+struct ComicStripZoom: Equatable {
+    static let maxScale: CGFloat = 4
+    static let doubleTapScale: CGFloat = 2.2
+
+    var scale: CGFloat = 1
+    var anchor: UnitPoint = .center
+    private var pinchStartScale: CGFloat?
+    private var panStartX: CGFloat?
+
+    var isZoomed: Bool { scale > 1.01 }
+
+    mutating func pinch(magnification: CGFloat, startAnchor: UnitPoint) {
+        if pinchStartScale == nil {
+            pinchStartScale = scale
+            // A fresh zoom centres on the fingers; later pinches keep the framing.
+            if !isZoomed { anchor = Self.clamped(startAnchor) }
+        }
+        scale = min(Self.maxScale, max(1, (pinchStartScale ?? 1) * magnification))
+    }
+
+    mutating func endPinch() {
+        pinchStartScale = nil
+        if scale < 1.08 { scale = 1 }
+    }
+
+    mutating func pan(translationX: CGFloat, width: CGFloat) {
+        guard isZoomed, width > 0 else { return }
+        let start = panStartX ?? anchor.x
+        panStartX = start
+        anchor = Self.clamped(UnitPoint(x: start - translationX / (width * (scale - 1)), y: anchor.y))
+    }
+
+    mutating func endPan() { panStartX = nil }
+
+    mutating func toggle(at location: CGPoint, in size: CGSize) {
+        guard !isZoomed else { scale = 1; return }
+        if size.width > 0, size.height > 0 {
+            anchor = Self.clamped(UnitPoint(x: location.x / size.width, y: location.y / size.height))
+        }
+        scale = Self.doubleTapScale
+    }
+
+    private static func clamped(_ point: UnitPoint) -> UnitPoint {
+        UnitPoint(x: min(1, max(0, point.x)), y: min(1, max(0, point.y)))
+    }
+}
+
 struct ComicReaderPageSource {
     let networkPageCount: Int
     let localPageURLs: [URL]?
@@ -124,6 +175,7 @@ struct ComicReaderView: View {
     @State private var loadErrorMessage: String?
     @State private var appliedSkip = 0
     @State private var saveChapterTask: Task<Void, Never>?
+    @State private var chapterTask: Task<Void, Never>?
     @State private var isSavingChapter = false
     @State private var saveError: String?
     @State private var imagePipeline = ComicImagePipeline()
@@ -177,6 +229,7 @@ struct ComicReaderView: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @AppStorage("readerAlwaysShowControls") private var alwaysShowControls = false
     @State private var isZoomed = false
+    @State private var stripZoom = ComicStripZoom()
     @State private var isTransitioning = false
     @State private var transitionError: String?
     @State private var failedIndex: Int?
@@ -258,6 +311,8 @@ struct ComicReaderView: View {
         }
         .onDisappear {
             autoScrollActive = false
+            // A chapter still opening must not be recorded as read after the reader closes.
+            chapterTask?.cancel(); jumpTask?.cancel()
             scrollController.cancelRestore()
             persistReadingState(endSession: true, syncRemote: false)
             let pipeline = imagePipeline
@@ -270,7 +325,7 @@ struct ComicReaderView: View {
             else { autoScrollActive = false; persistReadingState(endSession: phase == .background, syncRemote: false) }
         }
         .onChange(of: readingMode) { _, _ in
-            autoScrollActive = false; isZoomed = false
+            autoScrollActive = false; isZoomed = false; stripZoom = ComicStripZoom()
             scrollController.cancelRestore()
             webtoonPosition.reset()
             webtoonPosition.chapterID = currentChapter?.id
@@ -358,7 +413,10 @@ struct ComicReaderView: View {
                         hideChromeAfterReadingScroll()
                         if fraction >= 0.999 { autoScrollActive = false }
                     },
-                    onPull: { pullProgress = $0 },
+                    onPull: { progress in
+                        // No hint past the first or last chapter, where a release does nothing.
+                        pullProgress = (progress > 0 ? nextChapterIndex : previousChapterIndex) == nil ? 0 : progress
+                    },
                     onRelease: { next in if next { goToNextChapter() } else { goToPrevChapter() } },
                     onReady: webtoonScrollReady))
                 .modifier(AutoScrollModifier(isActive: autoScrollActive && !showSettings && !showChapterList && scenePhase == .active, speed: autoScrollSpeed))
@@ -409,17 +467,49 @@ struct ComicReaderView: View {
                 }
             }
         }
+        .scaleEffect(stripZoom.scale, anchor: stripZoom.anchor)
+        .simultaneousGesture(MagnifyGesture()
+            .onChanged { stripZoom.pinch(magnification: $0.magnification, startAnchor: $0.startAnchor) }
+            .onEnded { _ in withAnimation(.easeOut(duration: 0.2)) { stripZoom.endPinch() } })
+        .simultaneousGesture(DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.stripZoomSpace))
+            .onChanged { stripZoom.pan(translationX: $0.translation.width, width: readerViewport.width) }
+            .onEnded { _ in stripZoom.endPan() },
+            including: stripZoom.isZoomed ? .all : .subviews)
+        .coordinateSpace(name: Self.stripZoomSpace)
     }
 
+    private static let stripZoomSpace = "comicStripZoom"
+
     @ViewBuilder private func pageView(_ index: Int) -> some View {
-        ZoomablePageView(onSingleTap: toggleHUD, onZoom: { isZoomed = $0 }) {
-            if let request = imageRequest(at: index) {
-                ComicPageView(request: request, pipeline: imagePipeline, aspectRatio: pageAspectRatio(at: index), onImageReady: { ratio in
-                    ComicPageRatios.shared[request.url] = ratio
-                    guard readingMode == .webtoon else { return }
-                    restoreWebtoonPositionIfReady()
+        if readingMode == .webtoon {
+            // The strip zooms as a whole; pages only route taps.
+            pageImage(index)
+                .contentShape(Rectangle())
+                .gesture(SpatialTapGesture(count: 2, coordinateSpace: .named(Self.stripZoomSpace)).exclusively(before: TapGesture()).onEnded { result in
+                    switch result {
+                    case .first(let tap):
+                        withAnimation(.easeOut(duration: 0.25)) { stripZoom.toggle(at: tap.location, in: readerViewport) }
+                    case .second: toggleHUD()
+                    }
                 })
+        } else {
+            ZoomablePageView(onSingleTap: pagedTap, onZoom: { isZoomed = $0 }) {
+                // Letterbox margins and padding take taps too, so the side zones cover the screen.
+                pageImage(index).padding(.vertical, 70)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
             }
+        }
+    }
+
+    @ViewBuilder private func pageImage(_ index: Int) -> some View {
+        if let request = imageRequest(at: index) {
+            ComicPageView(request: request, pipeline: imagePipeline, aspectRatio: pageAspectRatio(at: index),
+                          accessibilityName: "Page \(index + appliedSkip + 1) of \(pageSource.pageCount + appliedSkip)", onImageReady: { ratio in
+                ComicPageRatios.shared[request.url] = ratio
+                guard readingMode == .webtoon else { return }
+                restoreWebtoonPositionIfReady()
+            })
         }
     }
 
@@ -454,13 +544,15 @@ struct ComicReaderView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
                 ForEach(0..<pageSource.pageCount, id: \.self) { index in
-                    pageView(index).padding(.vertical, 70).containerRelativeFrame(.horizontal).id(index)
+                    pageView(index).containerRelativeFrame(.horizontal).id(index)
                 }
             }
             .scrollTargetLayout()
             .background(ReaderScrollMonitor(axis: .horizontal, reversed: reversed,
                 enabled: !isZoomed && !isTransitioning && !showSettings && !showChapterList,
-                onPosition: { _ in }, onPull: { pullProgress = $0 },
+                onPosition: { _ in }, onPull: { progress in
+                    pullProgress = (progress > 0 ? nextChapterIndex : previousChapterIndex) == nil ? 0 : progress
+                },
                 onRelease: { next in if next { goToNextChapter() } else { goToPrevChapter() } }))
         }
         .scrollBounceBehavior(.always, axes: .horizontal)
@@ -475,6 +567,24 @@ struct ComicReaderView: View {
             proxy.scrollTo(resumePageForLayout, anchor: .center)
         }
         }
+    }
+
+    /// Paged modes turn pages from the outer thirds of the screen. A tap moves
+    /// toward the side tapped, so it follows left-to-right and manga order alike.
+    /// The middle, a zoomed page and VoiceOver keep tap-to-toggle controls.
+    private func pagedTap(atGlobalX x: CGFloat?) {
+        let width = readerViewport.width
+        guard let x, width > 0, !voiceOverEnabled, !isTransitioning else { toggleHUD(); return }
+        let zone = x / width
+        guard zone < 0.3 || zone > 0.7 else { toggleHUD(); return }
+        let forward = (readingMode == .rightToLeft) == (zone < 0.3)
+        let target = currentPage + (forward ? 1 : -1)
+        guard (0..<pageSource.pageCount).contains(target) else {
+            // Past either end, show the controls with their chapter buttons.
+            if !showHUD { toggleHUD() }
+            return
+        }
+        withAnimation(ReaderMotion.pageTurn) { scrolledPageID = target }
     }
 
     private func toggleHUD() {
@@ -515,7 +625,8 @@ struct ComicReaderView: View {
                     }
                 }
                 Button(comic.isFavorite ? "Remove favourite" : "Add favourite", systemImage: "heart") { comic.isFavorite.toggle(); try? modelContext.save() }
-                Button("Bookmark current page", systemImage: "bookmark") { bookmarkCurrentChapter() }
+                Button(isCurrentChapterBookmarked ? "Remove chapter bookmark" : "Bookmark current page",
+                       systemImage: isCurrentChapterBookmarked ? "bookmark.slash" : "bookmark") { bookmarkCurrentChapter() }
                 if comic.sourceKey != "local" {
                     Button(isSavingChapter ? "Saving chapter…" : (currentChapter?.isDownloaded == true ? "Saved on this device" : "Save chapter for offline reading"), systemImage: "arrow.down.circle") {
                         saveCurrentChapter()
@@ -579,6 +690,14 @@ struct ComicReaderView: View {
         .environment(\.layoutDirection, readingMode == .rightToLeft ? .rightToLeft : .leftToRight)
         .accessibilityLabel("Page")
         .accessibilityValue("\(displayedPage + appliedSkip + 1) of \(pageSource.pageCount + appliedSkip)")
+        // VoiceOver adjusts the value without a drag ending, so move the reader directly.
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: jumpToPage(currentPage + 1)
+            case .decrement: jumpToPage(currentPage - 1)
+            @unknown default: break
+            }
+        }
         .padding(.top, 6)
     }
 
@@ -630,6 +749,8 @@ struct ComicReaderView: View {
                             }
                         }
                         .buttonStyle(PressButtonStyle(scale: 0.94))
+                        .accessibilityLabel(mode == .webtoon ? "Vertical scroll" : mode == .leftToRight ? "Left to right" : "Right to left")
+                        .accessibilityAddTraits(readingMode == mode ? .isSelected : [])
                     }
                 }
             }
@@ -663,10 +784,13 @@ struct ComicReaderView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "sun.max.fill")
                         .foregroundStyle(AstralColors.muted)
+                        .accessibilityHidden(true)
                     Slider(value: $brightnessOverlay, in: 0...0.75)
                         .tint(AstralColors.gold)
+                        .accessibilityLabel("Dim pages")
                     Image(systemName: "sun.min.fill")
                         .foregroundStyle(AstralColors.muted)
+                        .accessibilityHidden(true)
                 }
             }
 
@@ -689,7 +813,7 @@ struct ComicReaderView: View {
                     .font(AstralTypography.body)
                     .foregroundStyle(AstralColors.white)
                 Spacer()
-                Toggle("", isOn: $forceLandscape)
+                Toggle("Force Landscape", isOn: $forceLandscape)
                     .tint(AstralColors.gold)
                     .labelsHidden()
             }
@@ -974,6 +1098,8 @@ struct ComicReaderView: View {
     }
     private func apply(_ source: ChapterPages, chapter: LocalComicChapter) {
         scrollController.cancelRestore()
+        jumpTask?.cancel()
+        if webtoonPosition.chapterID != chapter.id { previousPageJump = nil }
         let skip = min(max(0, comic.skipFirstNPages), max(0, source.count - 1))
         let sameChapter = webtoonPosition.chapterID == chapter.id
         if !sameChapter || appliedSkip != skip {
@@ -1000,7 +1126,10 @@ struct ComicReaderView: View {
         pages = Array(source.network.dropFirst(appliedSkip))
         localPageURLs = source.local.map { Array($0.dropFirst(appliedSkip)) }
         let saved = ReadingPositionStore.position(story: comic.id, chapter: chapter.id)
-        let legacy = comic.lastReadChapterNumber == Int(chapter.chapterNumber) ? max(0, comic.lastReadPageNumber - 1) : 0
+        // The single last-page field predates per-chapter positions. Using it for a
+        // story that has them would open an unread "Ch. 5.5" at Ch. 5's page.
+        let legacy = ReadingPositionStore.position(story: comic.id) == nil && Double(comic.lastReadChapterNumber) == chapter.chapterNumber
+            ? max(0, comic.lastReadPageNumber - 1) : 0
         currentPage = min(max(0, (saved?.page ?? legacy) - appliedSkip), max(0, source.count - appliedSkip - 1))
         if let bookmark = initialBookmark, !appliedInitialBookmark, bookmarkMatches(bookmark, chapter: chapter) {
             currentPage = min(max(0, (bookmark.pageNumber ?? 1) - appliedSkip - 1), max(0, source.count - appliedSkip - 1))
@@ -1011,17 +1140,22 @@ struct ComicReaderView: View {
         }
         resumePageForLayout = currentPage
         scrolledPageID = currentPage
-        isZoomed = false; offlineError = false
+        isZoomed = false; stripZoom = ComicStripZoom(); offlineError = false
         restoreWebtoonPositionIfReady()
     }
     private func loadPages() async {
-        guard let chapter = currentChapter else { isLoading = false; return }
-        do { let source = try await fetchPages(chapter); apply(source, chapter: chapter); loadErrorMessage = nil }
-        catch {
+        defer { isLoading = false }
+        guard let chapter = currentChapter else { return }
+        do {
+            let source = try await fetchPages(chapter)
+            // A chapter opened while this one was loading owns the reader now.
+            guard currentChapter?.id == chapter.id else { return }
+            apply(source, chapter: chapter); loadErrorMessage = nil
+        } catch {
+            guard currentChapter?.id == chapter.id else { return }
             offlineError = (error as? URLError) != nil
             loadErrorMessage = error.localizedDescription
         }
-        isLoading = false
     }
     private func useSavedPagesIfAvailable() {
         guard let chapter = currentChapter, chapter.downloadStatus == .complete,
@@ -1049,7 +1183,7 @@ struct ComicReaderView: View {
         guard chapters.indices.contains(index), index != currentChapterIndex, !isTransitioning else { return }
         persistReadingState(endSession: false, syncRemote: false)
         isTransitioning = true; transitionError = nil; failedIndex = nil; autoScrollActive = false
-        Task { @MainActor in
+        chapterTask = Task { @MainActor in
             defer { isTransitioning = false; pullProgress = 0 }
             do {
                 let chapter = chapters[index]
@@ -1061,6 +1195,7 @@ struct ComicReaderView: View {
                 readingSession?.chaptersRead += 1
                 persistReadingState(endSession: false, syncRemote: false)
                 Haptics.play(.chapterNav)
+            } catch is CancellationError {
             } catch { failedIndex = index; transitionError = error.localizedDescription; showHUD = true }
         }
     }
@@ -1073,6 +1208,7 @@ struct ComicPageView: View {
     let request: ComicImagePipeline.Request
     let pipeline: ComicImagePipeline
     let aspectRatio: CGFloat
+    var accessibilityName = "Page"
     var onImageReady: (CGFloat) -> Void = { _ in }
     @State private var retryID = UUID()
     @State private var image: UIImage?
@@ -1085,7 +1221,7 @@ struct ComicPageView: View {
 
     var body: some View {
         Group {
-            if let image { Image(uiImage: image).resizable().scaledToFit() }
+            if let image { Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(accessibilityName) }
             else {
                 // Keep the measured height while the image is released offscreen.
                 Rectangle().fill(AstralColors.elevated.opacity(0.6)).aspectRatio(measuredRatio ?? aspectRatio, contentMode: .fit)
@@ -1096,6 +1232,7 @@ struct ComicPageView: View {
                                 Text("Page didn't load").font(.footnote)
                                 Button("Retry") { retryID = UUID() }
                                     .buttonStyle(.bordered).tint(AstralColors.gold)
+                                    .accessibilityLabel("Retry \(accessibilityName.lowercased())")
                             }
                             .foregroundStyle(AstralColors.muted)
                         } else { ProgressView().tint(AstralColors.gold) }
@@ -1213,14 +1350,15 @@ private struct AutoScrollFinder: UIViewRepresentable {
 /// Wraps a comic page view with pinch-to-zoom and double-tap-to-zoom.
 private struct ZoomablePageView<Content: View>: View {
     let content: Content
-    let onSingleTap: () -> Void
+    /// Receives the tap's x in global coordinates, or nil while the page is zoomed.
+    let onSingleTap: (CGFloat?) -> Void
     let onZoom: (Bool) -> Void
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var size: CGSize = .zero
-    init(onSingleTap: @escaping () -> Void, onZoom: @escaping (Bool) -> Void, @ViewBuilder content: () -> Content) {
+    init(onSingleTap: @escaping (CGFloat?) -> Void, onZoom: @escaping (Bool) -> Void, @ViewBuilder content: () -> Content) {
         self.onSingleTap = onSingleTap; self.onZoom = onZoom; self.content = content()
     }
     private func clamped(_ value: CGSize) -> CGSize {
@@ -1237,14 +1375,18 @@ private struct ZoomablePageView<Content: View>: View {
             .highPriorityGesture(scale > 1 ? DragGesture().onChanged { value in
                 offset = clamped(CGSize(width: lastOffset.width + value.translation.width, height: lastOffset.height + value.translation.height))
             }.onEnded { _ in lastOffset = offset } : nil)
-            .gesture(TapGesture(count: 2).exclusively(before: TapGesture()).onEnded { result in
+            .gesture(TapGesture(count: 2).exclusively(before: SpatialTapGesture(coordinateSpace: .global)).onEnded { result in
                 switch result {
                 case .first:
                     scale = scale > 1 ? 1 : 2.5; lastScale = scale; offset = .zero; lastOffset = .zero; onZoom(scale > 1)
-                case .second: onSingleTap()
+                case .second(let tap): onSingleTap(scale > 1 ? nil : tap.location.x)
                 }
             })
-            .onDisappear { onZoom(false) }
+            .onDisappear {
+                // A page swiped back into view starts unzoomed, matching the reader's zoom flag.
+                scale = 1; lastScale = 1; offset = .zero; lastOffset = .zero
+                onZoom(false)
+            }
     }
 }
 

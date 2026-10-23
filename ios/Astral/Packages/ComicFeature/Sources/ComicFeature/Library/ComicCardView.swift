@@ -141,6 +141,8 @@ struct ComicCardView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Favourite")
+                .accessibilityAddTraits(comic.isFavorite ? .isSelected : [])
                 .padding(6)
             }
 

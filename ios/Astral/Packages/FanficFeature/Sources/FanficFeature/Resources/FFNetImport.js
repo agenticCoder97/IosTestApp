@@ -1,4 +1,4 @@
-// Extract one fully parsed chapter; Swift drives paced navigation in this browser session.
+// Extract one fully parsed chapter; Swift paces navigation in a hidden page that shares the browser session.
 const fail = error => JSON.stringify({error});
 const id = new URL(workURL).pathname.match(/^\/s\/(\d+)/)?.[1];
 if (!id || !/(^|\.)fanfiction\.net$/.test(location.hostname) || location.pathname.match(/^\/s\/(\d+)/)?.[1] !== id) return fail('wrongPage');

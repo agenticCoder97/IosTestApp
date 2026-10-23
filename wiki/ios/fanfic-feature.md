@@ -48,15 +48,18 @@ one-time reimport; there is no backend fallback for missing chapter files.
 
 ## FFNet Imports Without a Backend
 
-Select FFNet in **Add**, open a story and tap **Import FFNet story**. The importer
-uses normal visible chapter navigation in the phone's WKWebView, supports desktop
-and mobile layouts, and saves validated plain-text chapters to the same local
+Select FFNet in **Add**, open a story and tap **Add to library**. Chapters load in a
+hidden WKWebView that shares the browser's website data, so the visible page stays put
+and browsing continues during the import (updated 23 October 2026). The importer supports
+desktop and mobile layouts and saves validated plain-text chapters to the same local
 library/reader. No Astral backend is involved. Keep Astral open during acquisition.
 
-Imports check chapter count and ordinal identity, pace acquisition and retain a
-short-lived checkpoint for retry. An interrupted acquisition does not create a
-partially completed library entry. Verification/login remains in the source browser;
-source protection can interrupt an import. Update and restoring removed text use
+Imports check chapter count and ordinal identity and pace acquisition at 2.5–4.5 s per
+chapter with a longer pause every 25. A security check that needs a person stops the
+import and opens the check in the visible browser. An import that stops after its first
+chapter saves the chapters fetched so far as a partial story, and the story page offers
+**Continue import · N of M**, resuming from a checkpoint kept for 14 days. Cancel keeps
+the checkpoint but adds no partial story. Update and restoring removed text use
 this same importer. See the [phone sources verification record](../../docs/2026-10-21-phone-sources-and-storage.md)
 for the current live acceptance boundary.
 

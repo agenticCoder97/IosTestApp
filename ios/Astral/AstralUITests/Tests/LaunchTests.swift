@@ -8,7 +8,7 @@ final class LaunchTests: XCTestCase {
         app.launchArguments = ["--intro-time=1.3"]
         app.launch()
         defer { app.terminate() }
-        XCTAssertTrue(app.otherElements["launch.intro"].waitForExistence(timeout: 5))
+        XCTAssertTrue(intro(in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(app.tabBars.buttons.matching(identifier: "Library")
             .allElementsBoundByIndex.contains { $0.isHittable })
         let artwork = XCTAttachment(screenshot: app.screenshot())
@@ -22,7 +22,8 @@ final class LaunchTests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         defer { app.terminate() }
-        let intro = app.otherElements["launch.intro"]
+        let intro = intro(in: app)
+        XCTAssertTrue(intro.waitForExistence(timeout: 5))
         XCTAssertTrue(intro.waitForNonExistence(timeout: 8))
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 3))
         let library = app.tabBars.buttons.matching(identifier: "Library")
@@ -37,7 +38,27 @@ final class LaunchTests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.otherElements["launch.intro"].exists)
+        XCTAssertFalse(intro(in: app).exists)
+    }
+
+    /// A tap skips the film, and the next tap reaches the library.
+    @MainActor
+    func testTapSkipsIntro() {
+        let app = XCUIApplication()
+        app.launch()
+        defer { app.terminate() }
+        let intro = intro(in: app)
+        XCTAssertTrue(intro.waitForExistence(timeout: 5))
+        intro.tap()
+        XCTAssertTrue(intro.waitForNonExistence(timeout: 2))
+        let settings = app.tabBars.buttons.matching(identifier: "Settings")
+            .allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(settings, app.debugDescription)
+    }
+
+    /// The intro is skippable, so it may be exposed as a button rather than a plain element.
+    private func intro(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "launch.intro").firstMatch
     }
 }
 

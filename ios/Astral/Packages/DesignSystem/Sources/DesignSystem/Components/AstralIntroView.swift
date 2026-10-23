@@ -25,8 +25,14 @@ public struct AstralIntroView: View {
             IntroArtwork(time: previewTime ?? (reduceMotion ? IntroMotion.duration : clock.elapsed(at: timeline.date)))
         }
         .background(AstralColors.background.ignoresSafeArea())
+        .contentShape(Rectangle())
+        .onTapGesture(perform: finish)
+        // Once finished, the fading film must not catch the first tap meant for the library.
+        .allowsHitTesting(!completed)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Astral")
+        .accessibilityHint("Double-tap to skip")
+        .accessibilityAction { finish() }
         .accessibilityIdentifier("launch.intro")
         .task(id: PlaybackState(scene: scenePhase, reducedMotion: reduceMotion)) {
             await updatePlayback()
@@ -44,7 +50,13 @@ public struct AstralIntroView: View {
         let remaining = reduceMotion ? 0.25 : max(0, IntroMotion.duration - clock.elapsed(at: Date()))
         do { try await Task.sleep(for: .seconds(remaining)) }
         catch { return }
-        guard !Task.isCancelled, !completed else { return }
+        guard !Task.isCancelled else { return }
+        finish()
+    }
+
+    /// Tapping skips the rest of the film; frozen preview frames stay put.
+    private func finish() {
+        guard !completed, previewTime == nil else { return }
         completed = true
         onComplete()
     }

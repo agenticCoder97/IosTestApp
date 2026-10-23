@@ -18,38 +18,48 @@ struct ComicBrowserView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.comicNavigation) private var comicNavigation
 
+    /// Chrome steps aside while a page is read, but stays during an import.
+    private var chromeCollapsed: Bool { viewModel.chrome.isCollapsed && !viewModel.isScraping }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                BrowserSourceChips(sources: ComicSource.browserOrder, selection: $viewModel.selectedSource,
-                                   isDisabled: viewModel.isScraping, label: \.displayName)
-                fileImportButton.padding(.trailing, 12)
+            // One row of chrome: source, address and folder import.
+            if !chromeCollapsed {
+                HStack(spacing: 8) {
+                    BrowserSourceMenu(sources: ComicSource.browserOrder, selection: $viewModel.selectedSource,
+                                      isDisabled: viewModel.isScraping, label: \.displayName, shortLabel: \.displayName)
+                    BrowserAddressBar(text: $viewModel.addressBarText, url: viewModel.currentURL,
+                                      progress: viewModel.loadProgress, isLoading: viewModel.isLoading,
+                                      prompt: "Search \(viewModel.selectedSource.displayName) or enter address",
+                                      onSubmit: viewModel.navigateToAddress, onReload: viewModel.reload, onStop: viewModel.stop)
+                        .disabled(viewModel.isScraping)
+                    fileImportButton
+                }
+                .padding(.leading, 12).padding(.trailing, 4).padding(.top, 6).padding(.bottom, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .padding(.top, 6)
-            BrowserAddressBar(text: $viewModel.addressBarText, url: viewModel.currentURL,
-                              progress: viewModel.loadProgress, isLoading: viewModel.isLoading,
-                              prompt: "Search \(viewModel.selectedSource.displayName) or enter address",
-                              onSubmit: viewModel.navigateToAddress, onReload: viewModel.reload, onStop: viewModel.stop)
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                .disabled(viewModel.isScraping)
             ComicWebViewRepresentable(viewModel: viewModel)
                 .allowsHitTesting(!viewModel.isScraping)
         }
         .background(AstralColors.background)
+        .animation(.easeInOut(duration: 0.2), value: chromeCollapsed)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 8) {
-                if let importedComic, !viewModel.isScraping {
-                    BrowserImportBanner(title: importedComic.title, primaryTitle: "Open",
-                                        onPrimary: { openComic = importedComic },
-                                        onDismiss: { self.importedComic = nil })
+            if !chromeCollapsed {
+                VStack(spacing: 8) {
+                    if let importedComic, !viewModel.isScraping {
+                        BrowserImportBanner(title: importedComic.title, primaryTitle: "Open",
+                                            onPrimary: { openComic = importedComic },
+                                            onDismiss: { self.importedComic = nil })
+                    }
+                    BrowserBottomBar(canGoBack: viewModel.canGoBack, canGoForward: viewModel.canGoForward, state: importState,
+                                     onBack: viewModel.goBack, onForward: viewModel.goForward,
+                                     onImport: startImport, onOpen: { openComic = existingComic }, onCancel: cancelImport) {
+                        browserMenu
+                    }
                 }
-                BrowserBottomBar(canGoBack: viewModel.canGoBack, canGoForward: viewModel.canGoForward, state: importState,
-                                 onBack: viewModel.goBack, onForward: viewModel.goForward,
-                                 onImport: startImport, onOpen: { openComic = existingComic }, onCancel: cancelImport) {
-                    browserMenu
-                }
+                .animation(AstralAnimation.smooth, value: importedComic?.id)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .animation(AstralAnimation.smooth, value: importedComic?.id)
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $openComic) { comic in ComicDetailView(comic: comic) }
@@ -196,6 +206,7 @@ final class ComicBrowserViewModel {
     var savedURLs: [ComicSource: URL] = [:]
     var canGoBack = false
     var canGoForward = false
+    let chrome = BrowserChromeVisibility()
 
     // AST-30 — MangaDex match flow
     var matchProposal: MangaDexMatchPayload? = nil
@@ -419,6 +430,7 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
         webView.uiDelegate = context.coordinator  // Handle JS alerts/confirms
         webView.allowsBackForwardNavigationGestures = true
         viewModel.webView = webView
+        viewModel.chrome.track(webView.scrollView)
         ContentBlocker.shared.apply(to: webView)
         webView.load(URLRequest(url: viewModel.sourceURL))
         context.coordinator.loadedSource = viewModel.selectedSource
@@ -439,6 +451,7 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
         context.coordinator.urlObservation = webView.observe(\.url) { webView, _ in
             Task { @MainActor in
                 let url = webView.url
+                if viewModel.currentURL != url { viewModel.chrome.reveal() }
                 viewModel.currentURL = url
                 viewModel.addressBarText = url?.absoluteString ?? ""
                 if let url { viewModel.savedURLs[viewModel.selectedSource] = url }
