@@ -30,6 +30,10 @@ Italics, bold, centring and bullets need **Update from AO3** (or FanFiction.net)
 - **Reader:** the ••• menu has **Story page** and **<author>'s page**.
 - **Where links open:** in Add, not Safari, so the page can be updated from there. The browser now follows a requested page's host, so author and search pages open on the right source.
 
+### Link safety
+
+A saved source link that isn't a canonical AO3 or FanFiction.net work page gets no story link; there is no fallback to the raw value. Add loads pages requested from saved data (story links, Activity retries) only over https on the source's own domains. Both browsers refuse top-level navigations that aren't http, https or `about:`, such as `data:`, `file:` or app schemes. Before, the navigation delegate allowed any URL without a host. Unit tests cover the link rules.
+
 ## Reader menus opened from Continue Reading
 
 The fan fiction reader's ••• menu and its sheets (reading settings, chapters) closed immediately when the reader was opened from Continue Reading. This was a regression from PR #72, which moved that presentation into the library to fix "Mark finished".
@@ -65,4 +69,4 @@ iPhone 17 Pro simulator, Debug:
   - Story page: the reader menu still works when opened from there.
 - **FanFiction.net line breaks:** a scan found 13 blocks with line breaks in FFNet chapters. All are dialogue lines, none mid-sentence, so FFNet keeps them too.
 - **Comic covers:** the Hentai20 series page markup has the cover as `img.wp-post-image[itemprop=image]`, and the image loads without a referrer. The importer itself wasn't run against Hentai20 in the simulator.
-- **Tests:** FanficFeature 18, including 5 new formatting and mark-trimming tests. For AstralSmoke and the other packages, see the PR.
+- **Tests:** FanficFeature 21, including 5 new formatting and mark-trimming tests and 3 link-safety tests. For AstralSmoke and the other packages, see the PR.

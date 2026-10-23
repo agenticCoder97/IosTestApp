@@ -135,10 +135,15 @@ struct FanficBrowserView: View {
     /// The source follows the page's host, so author and search pages open too.
     private func openRequestedPage() {
         guard let url = fanficNavigation?.ao3WorkURL else { return }
-        viewModel.selectedSource = url.host?.lowercased().hasSuffix("fanfiction.net") == true ? .ffnet : .ao3
+        fanficNavigation?.ao3WorkURL = nil
+        // Requests come from saved data (stories, Activity); only source pages load here.
+        guard url.scheme == "https", let host = url.host?.lowercased(),
+              let source = FanficSource.allCases.first(where: { source in
+                  FanficBrowserViewModel.domains(for: source).contains { host == $0 || host.hasSuffix("." + $0) }
+              }) else { return }
+        viewModel.selectedSource = source
         viewModel.savedURLs[viewModel.selectedSource] = url
         viewModel.webView?.load(URLRequest(url: url))
-        fanficNavigation?.ao3WorkURL = nil
     }
 
     private func startImport() {
@@ -196,8 +201,10 @@ final class FanficBrowserViewModel {
     var canGoForward = false
     let chrome = BrowserChromeVisibility()
 
-    var allowedDomains: [String] {
-        switch selectedSource {
+    var allowedDomains: [String] { Self.domains(for: selectedSource) }
+
+    static func domains(for source: FanficSource) -> [String] {
+        switch source {
         case .ao3: return ["archiveofourown.org"]
         case .ffnet: return ["fanfiction.net"]
         }
@@ -406,6 +413,12 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
             decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
             if navigationAction.navigationType == .other && navigationAction.targetFrame == nil {
+                decisionHandler(.cancel)
+                return
+            }
+            // Pages load only over the web; data:, file: and app schemes never replace the page.
+            if navigationAction.targetFrame?.isMainFrame == true,
+               !["https", "http", "about"].contains(navigationAction.request.url?.scheme?.lowercased() ?? "") {
                 decisionHandler(.cancel)
                 return
             }

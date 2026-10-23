@@ -5,9 +5,11 @@ import DesignSystem
 /// Source pages for a saved story and its authors, opened in Add.
 @MainActor
 enum FanficLinks {
+    /// Only canonical AO3 and FanFiction.net work pages (https, known hosts). A saved
+    /// source of any other form, e.g. from a restored backup, gets no link.
     static func story(_ fanfic: LocalFanfic) -> URL? {
-        guard let url = fanfic.sourceUrl.flatMap(URL.init(string:)) else { return nil }
-        return AO3ImportService.workURL(from: url) ?? AO3ImportService.ffnetURL(from: url) ?? url
+        let url = fanfic.sourceUrl.flatMap(URL.init(string:))
+        return AO3ImportService.workURL(from: url) ?? AO3ImportService.ffnetURL(from: url)
     }
 
     static func authors(_ fanfic: LocalFanfic) -> [String] {
