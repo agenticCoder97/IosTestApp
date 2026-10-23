@@ -37,6 +37,11 @@ if (count > 2000 || current > 2000) return fail('tooLarge');
 if (count && (count < current || (nextChapter && nextChapter > count))) return fail('incomplete');
 const copy = body.cloneNode(true);
 copy.querySelectorAll('script,style').forEach(n => n.remove());
+// Private-use marks carry italics, bold and centring to the reader (FanficTextMarks).
+copy.querySelectorAll('em,i,cite').forEach(n => { n.prepend('\uE000'); n.append('\uE001'); });
+copy.querySelectorAll('strong,b').forEach(n => { n.prepend('\uE002'); n.append('\uE003'); });
+copy.querySelectorAll('p,h1,h2,h3,h4,h5,h6').forEach(n => { if (n.closest('[align="center" i],[style*="text-align: center" i],[style*="text-align:center" i],center')) n.prepend('\uE004'); });
+copy.querySelectorAll('li').forEach(n => n.prepend('• '));
 copy.querySelectorAll('br').forEach(n => n.replaceWith('\n'));
 copy.querySelectorAll('hr').forEach(n => n.replaceWith('\n\n***\n\n'));
 copy.querySelectorAll('p,div,blockquote,li,pre').forEach(n => n.append('\n\n'));

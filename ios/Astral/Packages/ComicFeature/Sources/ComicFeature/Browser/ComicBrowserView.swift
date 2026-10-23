@@ -179,6 +179,9 @@ struct ComicBrowserView: View {
     }
     private func openRequestedSource() {
         guard let url = comicNavigation?.sourceURL else { return }
+        // Requests come from saved data; only https pages load here, and the
+        // navigation delegate still limits them to the selected source's domains.
+        guard url.scheme == "https" else { comicNavigation?.sourceURL = nil; return }
         if let source = comicNavigation?.sourceKey { viewModel.selectedSource = source }
         viewModel.savedURLs[viewModel.selectedSource] = url
         viewModel.webView?.load(URLRequest(url: url))
@@ -515,6 +518,12 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
                 return
             }
 
+            // Pages load only over the web; data:, file: and app schemes never replace the page.
+            if navigationAction.targetFrame?.isMainFrame == true,
+               !["https", "http", "about"].contains(navigationAction.request.url?.scheme?.lowercased() ?? "") {
+                decisionHandler(.cancel)
+                return
+            }
             guard let host = navigationAction.request.url?.host?.lowercased() else {
                 decisionHandler(.allow)
                 return

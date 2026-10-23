@@ -61,6 +61,13 @@ public struct FanficTabView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag(FanficSection.settings)
         }
         .tint(AstralColors.gold)
+        // Continue Reading presents from the tab root. Presented from the library inside
+        // the tab's NavigationStack, the reader was rebuilt when its ••• menu opened,
+        // which closed the menu and its sheets.
+        .fullScreenCover(item: $navigation.readerSelection) { selection in
+            FanficReaderView(fanfic: selection.fanfic, chapters: selection.chapters, chapter: selection.chapter)
+                .tint(AstralColors.gold)
+        }
         .environment(\.fanficNavigation, navigation)
         .onAppear {
             if let data = filterPrefsJSON.data(using: .utf8),
@@ -75,15 +82,30 @@ public struct FanficTabView: View {
     }
 }
 
+/// A reader opened from Continue Reading. The chapters travel with it.
+struct FanficReaderSelection: Identifiable {
+    let fanfic: LocalFanfic
+    let chapters: [LocalFanficChapter]
+    let chapter: LocalFanficChapter
+    var id: UUID { chapter.id }
+}
+
 @Observable
 final class FanficNavigation {
     var ao3WorkURL: URL?
+    var readerSelection: FanficReaderSelection?
     var activeSection: FanficSection = .library
     var isSidebarOpen = false
     var showFavourites = false
     var searchText = ""
     var isSearchActive = false
     var filterState = FanficFilterState()
+
+    /// Opens a source page (a story or an author) in Add.
+    func openInBrowser(_ url: URL) {
+        ao3WorkURL = url
+        activeSection = .browse
+    }
 
     func searchFor(_ term: String) {
         searchText = term

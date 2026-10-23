@@ -56,9 +56,16 @@ if (!title || !page.querySelector("#chapters")) {
     return fail("invalidWork");
 }
 
+// Private-use marks carry italics, bold and centring through the saved plain text;
+// the reader turns them back into styling (FanficTextMarks).
+const centred = '[align="center" i], [style*="text-align: center" i], [style*="text-align:center" i], .align-center, center';
 function bodyText(element) {
     const copy = element.cloneNode(true);
     copy.querySelectorAll("h3.landmark, script, style, .end-notes").forEach(node => node.remove());
+    copy.querySelectorAll("em, i, cite").forEach(node => { node.prepend("\uE000"); node.append("\uE001"); });
+    copy.querySelectorAll("strong, b").forEach(node => { node.prepend("\uE002"); node.append("\uE003"); });
+    copy.querySelectorAll("p, h1, h2, h3, h4, h5, h6").forEach(node => { if (node.closest(centred)) node.prepend("\uE004"); });
+    copy.querySelectorAll("li").forEach(node => node.prepend("• "));
     copy.querySelectorAll("br").forEach(node => node.replaceWith("\n"));
     copy.querySelectorAll("hr").forEach(node => node.replaceWith("\n\n***\n\n"));
     copy.querySelectorAll("p, div, blockquote, li, h1, h2, h3, h4, h5, h6, pre").forEach(node => node.append("\n\n"));

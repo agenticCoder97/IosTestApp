@@ -9,14 +9,17 @@ struct FanficReaderDocument: Sendable {
     let sceneBreaks: Set<Int>
     let wordCount: Int
 
-    init(text: String) {
-        paragraphs = Self.paragraphs(in: text)
+    /// `keepsLineBreaks` keeps an imported story's intentional line breaks (lists,
+    /// poems, messages). Plain-text files are often hard-wrapped, so theirs are joined.
+    init(text: String, keepsLineBreaks: Bool = false) {
+        paragraphs = Self.paragraphs(in: text, keepsLineBreaks: keepsLineBreaks)
         var offsets: [Int] = [], breaks: Set<Int> = [], count = 0
         let markers: Set<String> = ["---", "***", "* * *", "—", "~~~", "- - -", "•••", "⁂", "oOo", "xxx", "XXX"]
         for (index, paragraph) in paragraphs.enumerated() {
+            let plain = FanficTextMarks.plain(paragraph).trimmingCharacters(in: .whitespaces)
             offsets.append(count)
-            count += paragraph.split(whereSeparator: \.isWhitespace).count
-            if markers.contains(paragraph) || (paragraph.count <= 10 && paragraph.allSatisfy({ "-*~ ".contains($0) })) {
+            count += plain.split(whereSeparator: \.isWhitespace).count
+            if markers.contains(plain) || (plain.count <= 10 && plain.allSatisfy({ "-*~ ".contains($0) })) {
                 breaks.insert(index)
             }
         }
@@ -26,11 +29,16 @@ struct FanficReaderDocument: Sendable {
     /// Blank lines separate paragraphs; single line breaks inside one are joined.
     /// Plain-text imports often use Windows line endings or one paragraph per
     /// line, and must not collapse into one block laid out as a single Text.
-    static func paragraphs(in text: String) -> [String] {
+    static func paragraphs(in text: String, keepsLineBreaks: Bool = false) -> [String] {
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let clean = { (blocks: [Substring]) in
-            blocks.map { $0.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+            blocks.map { block in
+                // Authors' double spaces after full stops read as gaps in a proportional font.
+                block.split(separator: "\n").map { FanficTextMarks.trimmed(String($0)).replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: keepsLineBreaks ? "\n" : " ")
+            }
+            .filter { !FanficTextMarks.plain($0).trimmingCharacters(in: .whitespaces).isEmpty }
         }
         let blocks = clean(normalized.split(separator: /\n[ \t]*\n/))
         guard blocks.count == 1, normalized.contains("\n") else { return blocks }
@@ -45,7 +53,7 @@ struct FanficReaderDocument: Sendable {
 
 actor FanficReaderPreparation {
     static let shared = FanficReaderPreparation()
-    func prepare(_ text: String) -> FanficReaderDocument { FanficReaderDocument(text: text) }
+    func prepare(_ text: String, keepsLineBreaks: Bool) -> FanficReaderDocument { FanficReaderDocument(text: text, keepsLineBreaks: keepsLineBreaks) }
     func read(_ url: URL) throws -> String { try String(contentsOf: url, encoding: .utf8) }
 }
 

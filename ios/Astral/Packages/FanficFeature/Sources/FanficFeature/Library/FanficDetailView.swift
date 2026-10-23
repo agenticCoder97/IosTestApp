@@ -324,13 +324,10 @@ struct FanficDetailView: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(AstralColors.white)
                     .lineLimit(3)
-                if let authors = fanfic.authorsText, !authors.isEmpty {
-                    Text("by \(authors)")
-                        .font(.subheadline)
-                        .foregroundStyle(AstralColors.body)
-                        .lineLimit(1)
+                if let byline = authorByline {
+                    Text(byline).font(.subheadline).foregroundStyle(AstralColors.body).lineLimit(2)
                 }
-                Text([SourceLabel.name(for: fanfic.sourceKey), fanfic.rating, fanfic.completionStatus.capitalized].compactMap { $0 }.joined(separator: " · "))
+                Text(sourceLine)
                     .font(.footnote)
                     .foregroundStyle(AstralColors.muted)
                     .lineLimit(2)
@@ -354,6 +351,8 @@ struct FanficDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
+        // Author and story links in the header open in Add rather than Safari.
+        .environment(\.openURL, OpenURLAction { url in openInBrowser(url); return .handled })
     }
 
     private func continueButton(_ chapter: LocalFanficChapter) -> some View {
@@ -421,8 +420,8 @@ struct FanficDetailView: View {
                         .foregroundStyle(AstralColors.body)
                 }
                 Spacer()
-                if let urlString = fanfic.sourceUrl, let url = URL(string: urlString) {
-                    Link(destination: url) {
+                if let url = FanficLinks.story(fanfic) {
+                    Button { openInBrowser(url) } label: {
                         HStack(spacing: 4) {
                             Text(fanfic.sourceKey.uppercased())
                                 .font(.system(size: 10, weight: .semibold))
@@ -660,6 +659,37 @@ struct FanficDetailView: View {
         }
     }
 
+    /// "by" and each author, linked to their page. Links open in Add through the
+    /// header's `openURL` handler, and wrap like the rest of the line.
+    private var authorByline: AttributedString? {
+        let names = FanficLinks.authors(fanfic)
+        guard !names.isEmpty else { return fanfic.authorsText.flatMap { $0.isEmpty ? nil : AttributedString("by " + $0) } }
+        var line = AttributedString("by ")
+        for (index, name) in names.enumerated() {
+            if index > 0 { line += AttributedString(", ") }
+            line += link(name, to: FanficLinks.author(name, sourceKey: fanfic.sourceKey))
+        }
+        return line
+    }
+
+    /// "AO3 ↗ · Teen And Up Audiences · Ongoing", with the source linked to the story page.
+    private var sourceLine: AttributedString {
+        var line = link(SourceLabel.name(for: fanfic.sourceKey) + (FanficLinks.story(fanfic) == nil ? "" : " ↗"), to: FanficLinks.story(fanfic))
+        for part in [fanfic.rating, fanfic.completionStatus.capitalized].compactMap({ $0 }) { line += AttributedString(" · " + part) }
+        return line
+    }
+
+    private func link(_ text: String, to url: URL?) -> AttributedString {
+        var run = AttributedString(text)
+        if let url { run.link = url; run.foregroundColor = AstralColors.gold }
+        return run
+    }
+
+    private func openInBrowser(_ url: URL) {
+        dismiss()
+        fanficNavigation?.openInBrowser(url)
+    }
+
     private func openAO3Import() {
         guard let url = fanfic.sourceUrl.flatMap(URL.init(string:)),
               (AO3ImportService.workURL(from: url) ?? AO3ImportService.ffnetURL(from: url)) != nil else { return }
@@ -686,10 +716,12 @@ private struct FanficChapterRow: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text("Ch. \(chapter.chapterNumber.formatted(.number.grouping(.never).precision(.fractionLength(0...1))))")
+                    let number = chapter.chapterNumber.formatted(.number.grouping(.never).precision(.fractionLength(0...1)))
+                    Text("Ch. \(number)")
                         .font(AstralTypography.bodyMedium)
                         .foregroundStyle(isCurrent ? AstralColors.gold : AstralColors.white)
-                    if let title = chapter.title, !title.isEmpty {
+                    // Untitled chapters are saved as "Chapter N"; "Ch. 1 Chapter 1" says it twice.
+                    if let title = chapter.title, !title.isEmpty, title.caseInsensitiveCompare("Chapter \(number)") != .orderedSame {
                         Text(title)
                             .font(AstralTypography.body)
                             .foregroundStyle(AstralColors.body)

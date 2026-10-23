@@ -76,13 +76,8 @@ struct FanficBrowserView: View {
         .fullScreenCover(item: $readingWork) { work in
             ImportedFanficReader(fanfic: work)
         }
-        .onAppear {
-            if let url = fanficNavigation?.ao3WorkURL {
-                viewModel.selectedSource = AO3ImportService.ffnetURL(from: url) != nil ? .ffnet : .ao3
-                viewModel.savedURLs[viewModel.selectedSource] = url
-                viewModel.webView?.load(URLRequest(url: url))
-            }
-        }
+        .onAppear(perform: openRequestedPage)
+        .onChange(of: fanficNavigation?.ao3WorkURL) { _, _ in openRequestedPage() }
         .alert("Story import", isPresented: Binding(
             get: { importError != nil },
             set: { if !$0 { importError = nil } }
@@ -134,6 +129,21 @@ struct FanficBrowserView: View {
         }
         Divider()
         Button("Import text file", systemImage: "doc.badge.plus") { showFileImport = true }
+    }
+
+    /// Loads a page another screen asked for (a story, an author, an import to retry).
+    /// The source follows the page's host, so author and search pages open too.
+    private func openRequestedPage() {
+        guard let url = fanficNavigation?.ao3WorkURL else { return }
+        fanficNavigation?.ao3WorkURL = nil
+        // Requests come from saved data (stories, Activity); only source pages load here.
+        guard url.scheme == "https", let host = url.host?.lowercased(),
+              let source = FanficSource.allCases.first(where: { source in
+                  FanficBrowserViewModel.domains(for: source).contains { host == $0 || host.hasSuffix("." + $0) }
+              }) else { return }
+        viewModel.selectedSource = source
+        viewModel.savedURLs[viewModel.selectedSource] = url
+        viewModel.webView?.load(URLRequest(url: url))
     }
 
     private func startImport() {
@@ -191,8 +201,10 @@ final class FanficBrowserViewModel {
     var canGoForward = false
     let chrome = BrowserChromeVisibility()
 
-    var allowedDomains: [String] {
-        switch selectedSource {
+    var allowedDomains: [String] { Self.domains(for: selectedSource) }
+
+    static func domains(for source: FanficSource) -> [String] {
+        switch source {
         case .ao3: return ["archiveofourown.org"]
         case .ffnet: return ["fanfiction.net"]
         }
@@ -401,6 +413,12 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
             decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
             if navigationAction.navigationType == .other && navigationAction.targetFrame == nil {
+                decisionHandler(.cancel)
+                return
+            }
+            // Pages load only over the web; data:, file: and app schemes never replace the page.
+            if navigationAction.targetFrame?.isMainFrame == true,
+               !["https", "http", "about"].contains(navigationAction.request.url?.scheme?.lowercased() ?? "") {
                 decisionHandler(.cancel)
                 return
             }

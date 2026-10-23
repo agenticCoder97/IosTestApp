@@ -183,7 +183,7 @@ final class AO3ImportService {
                 if chapter.modelContext == nil { modelContext.insert(chapter) }
                 chapter.fanfic = fanfic
                 chapter.title = incoming.title
-                chapter.wordCount = incoming.content.split(whereSeparator: \.isWhitespace).count
+                chapter.wordCount = FanficTextMarks.plain(incoming.content).split(whereSeparator: \.isWhitespace).count
                 chapter.localTextPath = paths[index]
                 chapter.scrapeStatus = "scraped"
                 chapter.isDownloaded = true
