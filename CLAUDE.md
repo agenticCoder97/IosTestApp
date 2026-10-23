@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Regenerate project** (after adding files): `cd ios/Astral && xcodegen generate`
 - **Build from CLI**: `cd ios/Astral && xcodebuild -scheme Astral -sdk iphonesimulator -destination 'platform=iOS Simulator,id=8FF2D1FB-E342-4E2A-BFB6-F608B18609DF' build`
 - **Minimum deployment target**: iOS 17.2
+- **7-day re-sign on device**: `scripts/ios-device-refresh.sh` pulls `origin/development` into its own clone at `~/Library/Application Support/Astral/repo` (launchd jobs can't read `~/Desktop`), builds Release with Xcode's free-account signing (`-allowProvisioningUpdates`), and reinstalls over the existing app (data kept). It ships only what's pushed to `development`. `scripts/ios-device-refresh-install.sh` copies the script there, clones the repo, and installs the launchd job `com.astral.device-refresh` (Mon + Thu 10:00; re-run after editing the script; `--uninstall` removes it). Run now: `launchctl kickstart gui/$(id -u)/com.astral.device-refresh`. Log: `~/Library/Logs/Astral/device-refresh.log`. Phone must be plugged in or paired via Xcode "Connect via network". Each run moves the cached `com.astral.reader` profiles aside so Xcode issues a fresh 7-day one (otherwise it reuses one until expiry); this needs an Apple ID in Xcode > Settings > Accounts. Sideloadly login failed with Apple error -80046, so it's not used.
 
 ## Architecture
 
