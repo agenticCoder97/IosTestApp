@@ -46,7 +46,7 @@ public struct FanficTabView: View {
             NavigationStack { FanficBrowserView() }
                 .tabItem { Label("Add", systemImage: "plus.circle") }.tag(FanficSection.browse)
             NavigationStack {
-                LocalActivityView(contentType: "fanfic", retry: { job in navigation.ao3WorkURL = job.sourceUrl.flatMap(URL.init(string:)); navigation.activeSection = .browse }) { job in
+                LocalActivityView(contentType: "fanfic", storyTitle: { job in fanfics.first { $0.id == job.storyId }?.title }, retry: { job in navigation.ao3WorkURL = job.sourceUrl.flatMap(URL.init(string:)); navigation.activeSection = .browse }) { job in
                     if let story = fanfics.first(where: { $0.id == job.storyId }) {
                         FanficDetailView(fanfic: story)
                     } else { ContentUnavailableView("Story is no longer in your library", systemImage: "books.vertical") }

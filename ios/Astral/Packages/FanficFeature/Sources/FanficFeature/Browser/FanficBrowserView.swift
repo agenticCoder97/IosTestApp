@@ -23,13 +23,13 @@ struct FanficBrowserView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 BrowserSourceChips(sources: FanficSource.allCases, selection: $viewModel.selectedSource,
-                                   isDisabled: viewModel.isScraping, label: sourceLabel)
+                                   isDisabled: viewModel.isScraping, label: \.displayName)
                 fileImportButton.padding(.trailing, 12)
             }
             .padding(.top, 6)
             BrowserAddressBar(text: $viewModel.addressBarText, url: viewModel.currentURL,
                               progress: viewModel.loadProgress, isLoading: viewModel.isLoading,
-                              prompt: "Search \(sourceLabel(viewModel.selectedSource)) or enter address",
+                              prompt: "Search \(viewModel.selectedSource.displayName) or enter address",
                               onSubmit: viewModel.navigateToAddress, onReload: viewModel.reload, onStop: viewModel.stop)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .disabled(viewModel.isScraping)
@@ -109,10 +109,10 @@ struct FanficBrowserView: View {
 
     @ViewBuilder private var browserMenu: some View {
         if existingWork != nil {
-            Button("Update from \(sourceLabel(viewModel.selectedSource))", systemImage: "arrow.triangle.2.circlepath") { startImport() }
+            Button("Update from \(viewModel.selectedSource.displayName)", systemImage: "arrow.triangle.2.circlepath") { startImport() }
                 .disabled(viewModel.isScraping || viewModel.isLoading)
         }
-        Button("\(sourceLabel(viewModel.selectedSource)) home", systemImage: "house") { viewModel.resetToSourceHome() }
+        Button("\(viewModel.selectedSource.displayName) home", systemImage: "house") { viewModel.resetToSourceHome() }
         if let url = viewModel.currentURL {
             Button("Open in Safari", systemImage: "safari") { UIApplication.shared.open(url) }
             ShareLink(item: url) { Label("Share page", systemImage: "square.and.arrow.up") }
@@ -148,12 +148,6 @@ struct FanficBrowserView: View {
             .disabled(viewModel.isScraping)
     }
 
-    private func sourceLabel(_ source: FanficSource) -> String {
-        switch source {
-        case .ao3: "AO3"
-        case .ffnet: "FanFiction.net"
-        }
-    }
     private func cancelImport() {
         importTask?.cancel()
         if let webView = viewModel.webView {

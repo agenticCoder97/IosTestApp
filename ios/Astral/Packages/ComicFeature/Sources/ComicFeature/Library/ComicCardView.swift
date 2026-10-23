@@ -160,15 +160,17 @@ struct ComicCardView: View {
                         Circle()
                             .trim(from: 0, to: progressPercent)
                             .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                            .rotationEffect(.degrees(-135))
+                            .rotationEffect(.degrees(-90))
                     }
-                    .frame(width: 22, height: 22)
+                    .frame(width: 18, height: 18)
 
                     Text(comic.lastReadAt == nil
                          ? "\(comic.totalChapters) chapters"
-                         : "Ch. \((ReadingPositionStore.position(story: comic.id)?.chapterNumber ?? Double(comic.lastReadChapterNumber)).formatted())")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                         : "Ch. \((ReadingPositionStore.position(story: comic.id)?.chapterNumber ?? Double(comic.lastReadChapterNumber)).formatted()) of \(comic.totalChapters)")
+                        .font(.caption.weight(.medium))
+                        .monospacedDigit()
                         .foregroundStyle(AstralColors.body)
+                        .lineLimit(1)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityValue("\(comic.totalChapters) chapters available; \(progressPercent.formatted(.percent.precision(.fractionLength(0)))) reading position")

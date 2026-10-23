@@ -115,7 +115,8 @@ struct ComicBrowserView: View {
         if viewModel.isScraping { return .importing(viewModel.selectedSource == .mangadex ? "Fetching chapters…" : "Reading series…") }
         if existingComic != nil { return .inLibrary("In library · Open") }
         if canImport { return .ready("Add to library") }
-        if viewModel.canScrape { return .unavailable("Loading the series…") }
+        // MangaDex imports through its API, so page loading never gates them.
+        if viewModel.canScrape && viewModel.selectedSource != .mangadex { return .unavailable("Loading the series…") }
         return .unavailable(viewModel.selectedSource == .mangadex ? "Open a title to add it" : "Open a series to add it")
     }
 
@@ -178,15 +179,6 @@ struct ComicBrowserView: View {
 
 extension ComicSource {
     static let browserOrder: [ComicSource] = [.mangadex, .toongod, .hentai20, .nhentai]
-
-    var displayName: String {
-        switch self {
-        case .mangadex: "MangaDex"
-        case .toongod: "ToonGod"
-        case .hentai20: "Hentai20"
-        case .nhentai: "nhentai"
-        }
-    }
 }
 
 @MainActor @Observable

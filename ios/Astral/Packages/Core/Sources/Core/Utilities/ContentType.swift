@@ -44,6 +44,32 @@ public enum FanficSource: String, CaseIterable, Codable, Sendable {
     case ffnet
 }
 
+/// Human-readable names for stored source keys, including device-only keys
+/// such as `mangadex-device` and `local` that have no enum case.
+public enum SourceLabel {
+    public static func name(for key: String?) -> String {
+        switch key?.lowercased() {
+        case "mangadex", "mangadex-device": "MangaDex"
+        case "toongod": "ToonGod"
+        case "hentai20": "Hentai20"
+        case "nhentai": "nhentai"
+        case "ao3": "AO3"
+        case "ffnet": "FanFiction.net"
+        case "local": "Files"
+        case let other?: other.capitalized
+        case nil: "Unknown source"
+        }
+    }
+}
+
+public extension ComicSource {
+    var displayName: String { SourceLabel.name(for: rawValue) }
+}
+
+public extension FanficSource {
+    var displayName: String { SourceLabel.name(for: rawValue) }
+}
+
 public enum FanficRating: String, CaseIterable, Codable, Sendable {
     case general = "G"
     case teen = "T"

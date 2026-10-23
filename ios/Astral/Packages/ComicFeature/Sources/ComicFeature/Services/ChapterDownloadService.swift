@@ -97,13 +97,20 @@ final class ChapterDownloadService {
         } catch {
             try? fileManager.removeItem(at: finalDir)
             guard !chapter.isDeleted, chapter.modelContext != nil else { throw error }
+            // A cancelled save is not a failure; the chapter simply stays unsaved.
+            let cancelled = Self.isCancellation(error)
             chapter.localPagesPath = previousPath
-            chapter.downloadStatus = previousSaved ? previousState : .failed
+            chapter.downloadStatus = previousSaved ? previousState : (cancelled ? .none : .failed)
             chapter.downloadedAt = previousDate; chapter.downloadSizeBytes = previousBytes; chapter.isDownloaded = previousSaved
-            chapter.downloadError = error is CancellationError ? "Download cancelled. Saved copy retained." : error.localizedDescription
+            chapter.downloadError = cancelled ? (previousSaved ? "Download cancelled. Saved copy retained." : nil) : error.localizedDescription
             try? modelContext.save()
-            throw error
+            throw cancelled ? CancellationError() : error
         }
+    }
+
+    /// URLSession reports a cancelled task as `URLError.cancelled`, not `CancellationError`.
+    static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
     }
 
     private func savePage(_ data: Data, to destination: URL, token: UUID, context: ModelContext) throws {
@@ -142,6 +149,7 @@ final class ChapterDownloadService {
             do {
                 try await downloadChapter(comicId: comic.id, chapter: chapter, modelContext: modelContext)
             } catch {
+                if Self.isCancellation(error) { break }
                 job.chaptersFailed += 1; job.errorMessage = error.localizedDescription
                 AstralLogger.error("Download failed ch \(chapter.chapterNumber): \(error)", context: "Download")
                 if error is ComicStoragePolicy.StorageError { break }

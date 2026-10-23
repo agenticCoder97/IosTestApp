@@ -4,6 +4,13 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/app-polish-pass-2 — 2026-10-23
+
+- [ios] Comic detail: compact chapter rows with the current chapter highlighted, jump-to-current and order toggle, long-press to bookmark or save a chapter, "Save next 5/10" from the reading position with visible progress and Cancel. Cancelled saves no longer leave chapters marked failed. Rows no longer re-sort 400+ chapters per update; dead swipe actions removed.
+- [ios] Fan fiction detail: cover/author header, warnings that distinguish "no warnings" from real ones, real word counts with reading time, resume from the saved position.
+- [ios] Activity grouped into In progress / Needs attention / Done with plain summaries, story titles, relative dates, swipe to remove and Clear; repeated or since-resolved failures collapse. Shared source names (MangaDex, FanFiction.net) replace raw keys.
+- Verified on the iPhone 17 Pro simulator, including a live MangaDex import of a 2-chapter title and the offline-limit message. AstralSmoke 5/5.
+
 ## feature/reader-streaming-and-browser — 2026-10-23
 
 - [ios] Stabilise streamed comic reading: page jumps land on the right page, content stays still while earlier pages load, the page label follows the page being read, and exact resume survives re-layout. Adds a purgeable 400 MB streamed-page cache (shown and cleared in Storage) and next-chapter prefetch for MangaDex.
