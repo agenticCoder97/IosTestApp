@@ -96,6 +96,8 @@ struct ComicDetailView: View {
             ComicReaderView(comic: comic, chapters: ChapterOrdering.comics(storedChapters), startingAt: chapter, bookmark: selectedBookmark)
         }
         .onAppear {
+            // Only write when something changed; a save on every appearance re-renders @Query observers.
+            guard comic.seenTotalChapters != comic.totalChapters else { return }
             comic.seenTotalChapters = comic.totalChapters
             try? modelContext.save()
         }

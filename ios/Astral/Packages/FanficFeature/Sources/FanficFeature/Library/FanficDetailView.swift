@@ -122,8 +122,8 @@ struct FanficDetailView: View {
                                 .accessibilityIdentifier(AccessibilityID.chapterRow(Int(chapter.chapterNumber)))
                                 .buttonStyle(.plain)
                                 .contextMenu {
-                                    let isBookmarked = marks.chapterIDs.contains(chapter.id) || marks.unanchoredNumbers.contains(chapter.chapterNumber)
-                                    Button(isBookmarked ? "Remove bookmark" : "Bookmark chapter", systemImage: isBookmarked ? "bookmark.slash" : "bookmark") {
+                                    let isBookmarked = chapterBookmark(for: chapter) != nil
+                                    Button(isBookmarked ? "Remove chapter bookmark" : "Bookmark chapter", systemImage: isBookmarked ? "bookmark.slash" : "bookmark") {
                                         toggleBookmark(for: chapter)
                                     }
                                 }
@@ -270,6 +270,8 @@ struct FanficDetailView: View {
             }
         )
         .onAppear {
+            // Only write when something changed; a save on every appearance re-renders @Query observers.
+            guard fanfic.seenTotalChapters != fanfic.totalChapters else { return }
             fanfic.seenTotalChapters = fanfic.totalChapters
             try? modelContext.save()
         }
@@ -395,11 +397,17 @@ struct FanficDetailView: View {
         return (ids, numbers)
     }
 
-    private func toggleBookmark(for chapter: LocalFanficChapter) {
-        let existing = bookmarks.first {
-            BookmarkAnchorStore.chapter(for: $0.id).map { $0 == chapter.id } ?? ($0.chapterNumber == chapter.chapterNumber)
+    /// The chapter-level bookmark only. Passage bookmarks in the same chapter keep
+    /// their place and are managed from the Bookmarks tab.
+    private func chapterBookmark(for chapter: LocalFanficChapter) -> LocalBookmark? {
+        bookmarks.first {
+            $0.wordOffset == nil && $0.selectedText == nil
+                && (BookmarkAnchorStore.chapter(for: $0.id).map { $0 == chapter.id } ?? ($0.chapterNumber == chapter.chapterNumber))
         }
-        if let existing { deleteBookmark(existing) }
+    }
+
+    private func toggleBookmark(for chapter: LocalFanficChapter) {
+        if let existing = chapterBookmark(for: chapter) { deleteBookmark(existing) }
         else { addBookmark(for: chapter); Haptics.play(.bookmark) }
     }
 

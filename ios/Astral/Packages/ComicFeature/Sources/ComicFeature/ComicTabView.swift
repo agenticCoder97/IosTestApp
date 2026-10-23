@@ -32,7 +32,11 @@ public struct ComicTabView: View {
                             .accessibilityLabel("Favourites")
                             .accessibilityValue(navigation.showFavourites ? "Showing favourites" : "Showing all")
                             .frame(minWidth: 44, minHeight: 44)
-                            Button { navigation.isSearchActive.toggle() } label: { Image(systemName: "magnifyingglass") }
+                            Button {
+                                navigation.isSearchActive.toggle()
+                                // A hidden search must not keep filtering the library.
+                                if !navigation.isSearchActive { navigation.searchText = "" }
+                            } label: { Image(systemName: "magnifyingglass") }
                                 .accessibilityLabel("Search library").frame(minWidth: 44, minHeight: 44)
                             Button { showFilter = true } label: {
                                 Image(systemName: navigation.filterState.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")

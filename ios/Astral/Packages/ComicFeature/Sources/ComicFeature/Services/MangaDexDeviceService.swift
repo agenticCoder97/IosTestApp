@@ -29,6 +29,9 @@ enum MangaDexDeviceService {
                 offset += feed.data.count
                 if feed.data.isEmpty || offset >= feed.total { break }
             }
+            // A chapter added or removed while paging shifts offsets and can repeat a release.
+            var seen = Set<UUID>()
+            releases = releases.filter { seen.insert($0.id).inserted }
             try Task.checkCancellation()
             guard !releases.isEmpty else { throw DeviceError.message("No readable English chapters are available from MangaDex for this title.") }
             // Preserve existing user data; a source refresh only adds/updates metadata.
@@ -78,7 +81,17 @@ enum MangaDexDeviceService {
     }
     struct Entity<T: Decodable & Sendable>: Decodable, Sendable { let data: T }
     struct Manga: Decodable, Sendable { let attributes: Attributes; let relationships: [Relationship]?
-        struct Attributes: Decodable, Sendable { let title: [String: String]; let description: [String: String]; let status: String }
+        struct Attributes: Decodable, Sendable {
+            let title: [String: String]; let description: [String: String]; let status: String
+            private enum CodingKeys: String, CodingKey { case title, description, status }
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                title = try container.decode([String: String].self, forKey: .title)
+                // MangaDex sends an empty localized string as [] rather than {}.
+                description = (try? container.decode([String: String].self, forKey: .description)) ?? [:]
+                status = try container.decode(String.self, forKey: .status)
+            }
+        }
     }
     struct Chapter: Decodable, Sendable { let id: UUID; let attributes: Attributes; let relationships: [Relationship]?
         struct Attributes: Decodable, Sendable { let chapter: String?; let volume: String?; let title: String?; let pages: Int?; let externalUrl: String? }

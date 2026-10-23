@@ -375,7 +375,7 @@ private struct AO3ImportError: LocalizedError {
         case "unavailable": Self("The source is temporarily unavailable. Please try again later.")
         case "wrongPage": Self("Open the FFNet story itself in Add, then tap Import.")
         case "chapterList": Self("FFNet did not expose a complete chapter list or a Next link. Open the story with its chapter navigation visible, then retry. Your saved copy has not changed.")
-        case "invalidWork": Self("The story title or metadata could not be read. Open a desktop FFNet story page and retry.")
+        case "invalidWork": Self("The story title or details could not be read. Open the story's own page in the browser, then tap Import again.")
         default: Self("Open an accessible story in the browser, then tap Import.")
         }
     }

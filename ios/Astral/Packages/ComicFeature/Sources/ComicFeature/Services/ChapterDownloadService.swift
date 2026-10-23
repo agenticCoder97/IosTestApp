@@ -108,9 +108,11 @@ final class ChapterDownloadService {
         }
     }
 
-    /// URLSession reports a cancelled task as `URLError.cancelled`, not `CancellationError`.
+    /// Only this task's own cancellation counts. URLSession reports it as
+    /// `URLError.cancelled`, but a page loader's redirect or ad also fails with
+    /// that code, and must be a failed chapter rather than a silent stop.
     static func isCancellation(_ error: Error) -> Bool {
-        error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
+        error is CancellationError || Task.isCancelled
     }
 
     private func savePage(_ data: Data, to destination: URL, token: UUID, context: ModelContext) throws {
@@ -186,7 +188,7 @@ final class ChapterDownloadService {
             return nil
         }
         let sorted = files
-            .filter { ["jpg", "jpeg", "png", "webp", "gif", "heic", "img"].contains($0.pathExtension.lowercased()) }
+            .filter { ["jpg", "jpeg", "png", "webp", "gif", "heic", "avif", "img"].contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         if sorted.isEmpty {
             let rawNames = files.map { $0.lastPathComponent }

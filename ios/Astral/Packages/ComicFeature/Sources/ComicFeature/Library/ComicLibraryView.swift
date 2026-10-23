@@ -25,6 +25,9 @@ struct ComicLibraryView: View {
     ]
 
     @State private var pendingDeletion: LocalComic?
+    /// Presented here rather than from the card: marking the comic finished
+    /// removes its card from Continue Reading, which would close the reader.
+    @State private var continueReading: ContinueReadingSelection?
 
     private var displayedComics: [LocalComic] {
         let filter = comicNavigation?.filterState
@@ -72,7 +75,7 @@ struct ComicLibraryView: View {
         case .dateAdded:
             return ready.sorted { ascending ? $0.addedAt < $1.addedAt : $0.addedAt > $1.addedAt }
         case .title:
-            return ready.sorted { ascending ? $0.title < $1.title : $0.title > $1.title }
+            return ready.sorted { $0.title.localizedStandardCompare($1.title) == (ascending ? .orderedAscending : .orderedDescending) }
         case .chapters:
             return ready.sorted { ascending
                 ? $0.totalChapters < $1.totalChapters
@@ -111,7 +114,7 @@ struct ComicLibraryView: View {
                 }
 
                 if !filterFavourites && !inProgressComics.isEmpty {
-                    ContinueReadingStrip(comics: inProgressComics)
+                    ContinueReadingStrip(comics: inProgressComics) { continueReading = $0 }
                         .padding(.top, 8)
                 }
 
@@ -152,7 +155,9 @@ struct ComicLibraryView: View {
             }
         }
         .background(AstralColors.background)
-
+        .fullScreenCover(item: $continueReading) { selection in
+            ContinueReaderHost(comic: selection.comic, chapter: selection.chapter)
+        }
         .refreshable { if AppConfig.companionEnabled { await viewModel.fetchComics(modelContext: modelContext, force: true) } }
         .deletePermanentlyAlert(
             isPresented: Binding(
@@ -205,8 +210,30 @@ struct ComicLibraryView: View {
 
 // MARK: - Continue Reading Strip
 
+private struct ContinueReadingSelection: Identifiable {
+    let comic: LocalComic
+    let chapter: LocalComicChapter
+    var id: UUID { chapter.id }
+}
+
+/// Owns the chapter query for a reader opened from Continue Reading.
+private struct ContinueReaderHost: View {
+    let comic: LocalComic
+    let chapter: LocalComicChapter
+    @Query private var chapters: [LocalComicChapter]
+
+    init(comic: LocalComic, chapter: LocalComicChapter) {
+        self.comic = comic; self.chapter = chapter
+        let comicId = comic.id
+        _chapters = Query(filter: #Predicate<LocalComicChapter> { $0.comicId == comicId }, sort: \LocalComicChapter.chapterNumber)
+    }
+
+    var body: some View { ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter) }
+}
+
 private struct ContinueReadingStrip: View {
     let comics: [LocalComic]
+    let onOpen: (ContinueReadingSelection) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -218,7 +245,7 @@ private struct ContinueReadingStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(comics) { comic in
-                        ContinueReadingCardLink(comic: comic)
+                        ContinueReadingCardLink(comic: comic, onOpen: onOpen)
                             .buttonStyle(PressButtonStyle(scale: 0.94))
                     }
                 }
@@ -232,10 +259,11 @@ private struct ContinueReadingStrip: View {
 
 private struct ContinueReadingCardLink: View {
     let comic: LocalComic
+    let onOpen: (ContinueReadingSelection) -> Void
     @Query private var chapters: [LocalComicChapter]
 
-    init(comic: LocalComic) {
-        self.comic = comic
+    init(comic: LocalComic, onOpen: @escaping (ContinueReadingSelection) -> Void) {
+        self.comic = comic; self.onOpen = onOpen
         let comicId = comic.id
         _chapters = Query(
             filter: #Predicate<LocalComicChapter> { $0.comicId == comicId },
@@ -247,18 +275,13 @@ private struct ContinueReadingCardLink: View {
         return chapters.first { $0.id == ReadingPositionStore.position(story: comic.id)?.chapterID } ?? chapters.first { $0.chapterNumber == Double(comic.lastReadChapterNumber) } ?? chapters.first
     }
 
-    @State private var openChapter: LocalComicChapter?
-
     // Full-screen presentation, like comic detail: the reader owns the status bar
     // and is not built eagerly while the strip lays out.
     var body: some View {
-        Button { openChapter = nextChapter } label: {
+        Button { if let nextChapter { onOpen(.init(comic: comic, chapter: nextChapter)) } } label: {
             ContinueReadingCard(comic: comic)
         }
         .accessibilityHint("Opens the reader at your saved position")
-        .fullScreenCover(item: $openChapter) { chapter in
-            ComicReaderView(comic: comic, chapters: chapters, startingAt: chapter)
-        }
     }
 }
 

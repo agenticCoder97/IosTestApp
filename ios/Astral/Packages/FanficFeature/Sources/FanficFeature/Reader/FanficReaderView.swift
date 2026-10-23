@@ -117,7 +117,10 @@ struct FanficReaderView: View {
                                 scrollProgress.paragraph = visibleParagraph ?? 0
                                 scrollProgress.layoutSignature = layoutSignature
                                 hideControlsAfterReadingScroll()
-                            }, onPull: { pullProgress = $0 }, onRelease: { next in
+                            }, onPull: { progress in
+                                // No hint past the first or last chapter, where a release does nothing.
+                                pullProgress = (progress > 0 ? nextChapter : previousChapter) == nil ? 0 : progress
+                            }, onRelease: { next in
                                 if let chapter = next ? nextChapter : previousChapter { navigateTo(chapter) }
                             }))
                     }

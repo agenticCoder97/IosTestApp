@@ -10,9 +10,7 @@ struct FanficReaderDocument: Sendable {
     let wordCount: Int
 
     init(text: String) {
-        paragraphs = text.components(separatedBy: "\n\n").map {
-            $0.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        }.filter { !$0.isEmpty }
+        paragraphs = Self.paragraphs(in: text)
         var offsets: [Int] = [], breaks: Set<Int> = [], count = 0
         let markers: Set<String> = ["---", "***", "* * *", "—", "~~~", "- - -", "•••", "⁂", "oOo", "xxx", "XXX"]
         for (index, paragraph) in paragraphs.enumerated() {
@@ -23,6 +21,20 @@ struct FanficReaderDocument: Sendable {
             }
         }
         wordOffsets = offsets; sceneBreaks = breaks; wordCount = count
+    }
+
+    /// Blank lines separate paragraphs; single line breaks inside one are joined.
+    /// Plain-text imports often use Windows line endings or one paragraph per
+    /// line, and must not collapse into one block laid out as a single Text.
+    static func paragraphs(in text: String) -> [String] {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let clean = { (blocks: [Substring]) in
+            blocks.map { $0.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+        let blocks = clean(normalized.split(separator: /\n[ \t]*\n/))
+        guard blocks.count == 1, normalized.contains("\n") else { return blocks }
+        return clean(normalized.split(separator: "\n"))
     }
 
     func paragraphIndex(wordOffset: Int) -> Int {

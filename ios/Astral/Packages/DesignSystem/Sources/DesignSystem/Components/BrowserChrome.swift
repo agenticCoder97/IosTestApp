@@ -74,6 +74,8 @@ public struct BrowserAddressBar: View {
                 .keyboardType(.webSearch)
                 .submitLabel(.go)
                 .onSubmit { focused = false; onSubmit() }
+                // While unfocused the field's text is invisible; VoiceOver reads the host overlay instead.
+                .accessibilityHidden(!focused)
                 .overlay {
                     if !focused {
                         Text(host)

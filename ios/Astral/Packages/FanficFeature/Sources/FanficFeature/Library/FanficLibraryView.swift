@@ -20,6 +20,9 @@ struct FanficLibraryView: View {
     private var allFanfics: [LocalFanfic]
 
     @State private var pendingDeletion: LocalFanfic?
+    /// Presented here rather than from the card: marking the story finished
+    /// removes its card from Continue Reading, which would close the reader.
+    @State private var continueReading: FanficContinueSelection?
 
     private var inProgressFanfics: [LocalFanfic] {
         allFanfics
@@ -102,7 +105,7 @@ struct FanficLibraryView: View {
                 : ($0.wordCount ?? 0) > ($1.wordCount ?? 0)
             }
         case .title:
-            return result.sorted { ascending ? $0.title < $1.title : $0.title > $1.title }
+            return result.sorted { $0.title.localizedStandardCompare($1.title) == (ascending ? .orderedAscending : .orderedDescending) }
         case .chapters:
             return result.sorted { ascending
                 ? $0.totalChapters < $1.totalChapters
@@ -126,7 +129,7 @@ struct FanficLibraryView: View {
                 }
 
                 if !filterFavourites && !inProgressFanfics.isEmpty && searchText.isEmpty {
-                    FanficContinueReadingStrip(fanfics: inProgressFanfics)
+                    FanficContinueReadingStrip(fanfics: inProgressFanfics) { continueReading = $0 }
                         .padding(.top, 8)
                 }
 
@@ -179,6 +182,9 @@ struct FanficLibraryView: View {
             }
         }
         .background(AstralColors.background)
+        .fullScreenCover(item: $continueReading) { selection in
+            FanficContinueReaderHost(fanfic: selection.fanfic, chapter: selection.chapter)
+        }
         .task(id: allFanfics.map { $0.id.uuidString + ($0.fandom ?? "") + ($0.thumbnailPath ?? "") }.joined()) {
             for story in allFanfics {
                 guard !Task.isCancelled else { return }
@@ -221,8 +227,30 @@ struct FanficLibraryView: View {
 
 // MARK: - Continue Reading Strip
 
+private struct FanficContinueSelection: Identifiable {
+    let fanfic: LocalFanfic
+    let chapter: LocalFanficChapter
+    var id: UUID { chapter.id }
+}
+
+/// Owns the chapter query for a reader opened from Continue Reading.
+private struct FanficContinueReaderHost: View {
+    let fanfic: LocalFanfic
+    let chapter: LocalFanficChapter
+    @Query private var chapters: [LocalFanficChapter]
+
+    init(fanfic: LocalFanfic, chapter: LocalFanficChapter) {
+        self.fanfic = fanfic; self.chapter = chapter
+        let fanficId = fanfic.id
+        _chapters = Query(filter: #Predicate<LocalFanficChapter> { $0.fanficId == fanficId }, sort: \LocalFanficChapter.chapterNumber)
+    }
+
+    var body: some View { FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: chapter) }
+}
+
 private struct FanficContinueReadingStrip: View {
     let fanfics: [LocalFanfic]
+    let onOpen: (FanficContinueSelection) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -234,7 +262,7 @@ private struct FanficContinueReadingStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(fanfics) { fanfic in
-                        FanficContinueCardLink(fanfic: fanfic)
+                        FanficContinueCardLink(fanfic: fanfic, onOpen: onOpen)
                             .buttonStyle(PressButtonStyle(scale: 0.94))
                     }
                 }
@@ -248,10 +276,11 @@ private struct FanficContinueReadingStrip: View {
 
 private struct FanficContinueCardLink: View {
     let fanfic: LocalFanfic
+    let onOpen: (FanficContinueSelection) -> Void
     @Query private var chapters: [LocalFanficChapter]
 
-    init(fanfic: LocalFanfic) {
-        self.fanfic = fanfic
+    init(fanfic: LocalFanfic, onOpen: @escaping (FanficContinueSelection) -> Void) {
+        self.fanfic = fanfic; self.onOpen = onOpen
         let fanficId = fanfic.id
         _chapters = Query(
             filter: #Predicate<LocalFanficChapter> { $0.fanficId == fanficId },
@@ -264,18 +293,13 @@ private struct FanficContinueCardLink: View {
         return chapters.first { $0.id == ReadingPositionStore.position(story: fanfic.id)?.chapterID } ?? chapters.first { $0.chapterNumber == lastRead } ?? chapters.first
     }
 
-    @State private var openChapter: LocalFanficChapter?
-
     // Full-screen presentation, like story detail: the reader owns the status bar
     // and is not built eagerly while the strip lays out.
     var body: some View {
-        Button { openChapter = nextChapter } label: {
+        Button { if let nextChapter { onOpen(.init(fanfic: fanfic, chapter: nextChapter)) } } label: {
             FanficContinueCard(fanfic: fanfic)
         }
         .accessibilityHint("Opens the reader at your saved position")
-        .fullScreenCover(item: $openChapter) { chapter in
-            FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: chapter)
-        }
     }
 }
 
