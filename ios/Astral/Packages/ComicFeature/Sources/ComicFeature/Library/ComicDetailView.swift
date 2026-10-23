@@ -90,7 +90,7 @@ struct ComicDetailView: View {
                             Text(comic.title).font(.title2.weight(.semibold)).foregroundStyle(AstralColors.white)
                             Text(comic.sourceKey == "mangadex-device" ? "MangaDex" : comic.sourceKey.uppercased()).font(.subheadline).foregroundStyle(.secondary)
                             Text("\(chapters.filter { $0.localPagesPath != nil }.count) of \(chapters.count) chapters saved").font(.caption).foregroundStyle(.secondary)
-                            if comic.sourceKey == "local" && !comic.isFullyDownloaded { Text("Import the original folder in Add to restore removed pages.").font(.caption) }
+                            if comic.sourceKey == "local" && !comic.isFullyDownloaded { Text("These imported pages are missing. Importing the original folder in Add creates a separate story. Restoring a library backup containing these pages replaces your current collection with that saved collection.").font(.caption) }
                         }
                     }.padding(16)
 
@@ -701,10 +701,12 @@ private struct ComicChapterRow: View {
                 }
                 .animation(AstralAnimation.bouncy, value: isBookmarked)
 
-                if let title = chapter.title {
-                    Text(title)
+                let label = ComicChapterLabel(chapter)
+                if let subtitle = [label.volume.map { "Vol. " + $0 }, label.name, label.group].compactMap({ $0 }).joined(separator: " · ").nilIfEmpty {
+                    Text(subtitle)
                         .font(AstralTypography.caption)
                         .foregroundStyle(AstralColors.muted)
+                        .lineLimit(2)
                 }
 
                 HStack(spacing: 8) {

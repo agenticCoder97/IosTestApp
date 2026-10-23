@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/reader-streaming-and-browser — 2026-10-23
+
+- [ios] Stabilise streamed comic reading: page jumps land on the right page, content stays still while earlier pages load, the page label follows the page being read, and exact resume survives re-layout. Adds a purgeable 400 MB streamed-page cache (shown and cleared in Storage) and next-chapter prefetch for MangaDex.
+- [ios] Reader polish (status bar hides with controls, page slider, chapter buttons, parsed chapter titles, fanfic gap taps and edge fades) and rebuilt source browsers with source chips, site search, SPA back/forward and an Add / In library bar.
+- [ios] Includes the 22 October reader and local-file reliability pass and the shared Astral/AstralSmoke schemes. Verified on the iPhone 17 Pro simulator with throttled page loads; AstralSmoke 5/5. Not tested on a physical device.
+
 ## codex/fanfic-reliability — 2026-10-21
 
 - [ios] Prepare fanfic chapters off the UI thread, isolate scroll progress updates, restore chapter headings and resume positions, repair local thumbnails, and import complete FFNet chapter lists on the phone.

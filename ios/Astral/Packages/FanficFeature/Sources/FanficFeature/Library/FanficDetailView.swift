@@ -46,6 +46,10 @@ struct FanficDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let rating = fanfic.rating { Text(rating).font(.subheadline).padding(.horizontal, 16) }
                 if let warnings = fanfic.warnings, !warnings.isEmpty { Text(warnings).font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16) }
+                if fanfic.sourceKey == "local" && !fanfic.isFullyDownloaded {
+                    Text("This imported text is missing. Importing the original file in Add creates a separate story. Restoring a library backup containing this text replaces your current collection with that saved collection.")
+                        .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
+                }
                 // Continue Reading
                 if !chapters.isEmpty {
                     FanficContinueReadingButton(

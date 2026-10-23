@@ -16,6 +16,12 @@
 
 ## How Progress is Stored
 
+### Device-owned reading positions (22 October 2026)
+
+`ios/Astral/Packages/Core/Sources/Core/Services/ReadingPositionStore.swift` stores per-story, per-chapter checkpoints in preferences using chapter UUIDs. Comic webtoon checkpoints also preserve the offset within a source page when the viewport, skipped-page count and page count match. Otherwise the reader resumes at the logical source page. Explicit page jumps and chapter restart discard the old offset. Fanfic checkpoints retain their existing paragraph, fraction and layout-compatible pixel offset.
+
+`ios/Astral/Packages/ComicFeature/Sources/ComicFeature/Reader/ComicReaderView.swift` uses UUID bookmark anchors before the legacy chapter-number fallback, keeping alternate releases with identical chapter numbers independent. See [reader and local-file reliability](../../docs/2026-10-22-reader-and-local-file-reliability.md) for verification scope and remaining runtime checks.
+
 ### Backend (ReadingProgress table)
 - content_type + story_id (polymorphic)
 - last_chapter_number
@@ -27,7 +33,9 @@
 - LocalComic: lastReadChapterNumber, lastReadPageNumber, progressPercent, lastReadAt, completedAt
 - LocalFanfic: (similar fields)
 
-## Known Gap: Progress Not Synced to Backend
+## Historical Backend Review: Progress Not Synced
+
+The following records the earlier server-backed architecture review; it is not a current inspection of a running backend. The current library is device-owned and does not require a companion.
 
 **Status:** The `reading_progress` backend table is empty.
 

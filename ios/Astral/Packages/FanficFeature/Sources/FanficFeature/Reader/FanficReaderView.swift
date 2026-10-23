@@ -59,6 +59,7 @@ struct FanficReaderView: View {
     @State private var transitionError: String?
     @State private var failedChapter: LocalFanficChapter?
     @State private var previousJump: LocalFanficChapter?
+    @State private var hideOrigin: Double?
 
     var body: some View {
         ZStack {
@@ -104,6 +105,10 @@ struct FanficReaderView: View {
                         .padding(.horizontal, horizontalMargin)
                         .padding(.top, 80)
                         .padding(.bottom, 90)
+                        // Gaps between paragraphs, margins and the chapter end also
+                        // toggle the controls; paragraph taps are handled above.
+                        .contentShape(Rectangle())
+                        .onTapGesture { toggleControls() }
                         .background(ReaderScrollMonitor(controller: scrollController, enabled: !isTransitioning && !showReaderSettings && !showChapterList,
                             onPosition: { fraction in
                                 guard hasRestoredScroll else { return }
@@ -111,6 +116,7 @@ struct FanficReaderView: View {
                                 scrollProgress.offset = scrollController.offset
                                 scrollProgress.paragraph = visibleParagraph ?? 0
                                 scrollProgress.layoutSignature = layoutSignature
+                                hideControlsAfterReadingScroll()
                             }, onPull: { pullProgress = $0 }, onRelease: { next in
                                 if let chapter = next ? nextChapter : previousChapter { navigateTo(chapter) }
                             }))
@@ -138,17 +144,20 @@ struct FanficReaderView: View {
                     }
                 }
             }
-            VStack {
-                if showReaderBar || alwaysShowControls || voiceOverEnabled { fanficTopBar }
+            safeAreaFade
+            VStack(spacing: 0) {
+                if controlsVisible { fanficTopBar.transition(.move(edge: .top).combined(with: .opacity)) }
                 Spacer()
-                if pullProgress != 0 { ReaderPullHint(progress: pullProgress).padding(.bottom, 80) }
-                if showReaderBar || alwaysShowControls || voiceOverEnabled { fanficBottomBar }
+                if pullProgress != 0 { ReaderPullHint(progress: pullProgress).padding(.bottom, controlsVisible ? 16 : 40) }
+                if controlsVisible { fanficBottomBar.transition(.move(edge: .bottom).combined(with: .opacity)) }
             }
             if isTransitioning { ProgressView("Opening chapter…").padding().background(.regularMaterial, in: Capsule()) }
         }
         .overlay(alignment: .bottom) { BookmarkUndoBanner().padding(.bottom, 70) }
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
+        .statusBarHidden(!controlsVisible)
+        .persistentSystemOverlays(controlsVisible ? .automatic : .hidden)
         .task { await loadChapter() }
         .onAppear { startSession() }
         .onDisappear { persistReadingState(endSession: true, syncRemote: false) }
@@ -197,9 +206,42 @@ struct FanficReaderView: View {
         } message: { Text(transitionError ?? "") }
     }
 
+    private var controlsVisible: Bool { showReaderBar || alwaysShowControls || voiceOverEnabled }
+
+    /// With the controls hidden, prose scrolling under the Dynamic Island and home
+    /// indicator fades into the page colour instead of colliding with them.
+    private var safeAreaFade: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                LinearGradient(stops: [.init(color: backgroundColor, location: 0), .init(color: backgroundColor, location: 0.75),
+                                       .init(color: backgroundColor.opacity(0), location: 1)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: proxy.safeAreaInsets.top + 18)
+                Spacer(minLength: 0)
+                LinearGradient(colors: [backgroundColor.opacity(0), backgroundColor], startPoint: .top, endPoint: .bottom)
+                    .frame(height: proxy.safeAreaInsets.bottom + 12)
+            }
+            // The reader measures the insets; only the drawing extends into them.
+            .ignoresSafeArea()
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
     private func toggleControls() {
         guard !alwaysShowControls else { return }
+        hideOrigin = nil
         withAnimation(ReaderMotion.chrome) { showReaderBar.toggle() }
+    }
+
+    /// A deliberate forward read hides the controls; a tap brings them back.
+    private func hideControlsAfterReadingScroll() {
+        guard showReaderBar, !alwaysShowControls, !voiceOverEnabled, !showReaderSettings, !showChapterList,
+              let offset = scrollController.offset, scrollController.isUserScrolling else { hideOrigin = nil; return }
+        guard let origin = hideOrigin, offset >= origin else { hideOrigin = offset; return }
+        if offset - origin > 140 {
+            withAnimation(ReaderMotion.chrome) { showReaderBar = false }
+            hideOrigin = nil
+        }
     }
     private func startSession() {
         guard readingSession == nil || readingSession?.endedAt != nil else { return }
@@ -231,7 +273,7 @@ struct FanficReaderView: View {
                 .accessibilityLabel("Back").accessibilityIdentifier(AccessibilityID.readerBackButton)
             VStack(alignment: .leading, spacing: 2) {
                 Text(fanfic.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Text(currentChapter.title ?? "Chapter \(chapterDisplayNum)").font(.headline).lineLimit(2)
+                Text(currentChapter.title ?? "Chapter \(chapterDisplayNum)").font(.headline).lineLimit(1)
             }
             Spacer(minLength: 0)
             Menu {
@@ -462,7 +504,9 @@ struct FanficReaderView: View {
         if pendingLayoutSignature == layoutSignature, let offset = pendingPixelOffset { scrollController.restore(offset: offset) }
         pendingPixelOffset = nil; pendingLayoutSignature = nil
     }
-    private var layoutSignature: String { "\(fontFamily.rawValue)/\(fontSize)/\(lineHeight)/\(paragraphSpacing)/\(horizontalMargin)/\(viewportWidth)" }
+    // Width to one decimal: layout passes can report 402.0 and 402.00000000000006
+    // for the same screen, which must not discard a saved pixel position.
+    private var layoutSignature: String { "\(fontFamily.rawValue)/\(fontSize)/\(lineHeight)/\(paragraphSpacing)/\(horizontalMargin)/\(String(format: "%.1f", viewportWidth))" }
     private func restorePosition() {
         didRestoreAnchor = false
         if let bookmark = initialBookmark, !appliedInitialBookmark, bookmark.chapterNumber == currentChapter.chapterNumber {

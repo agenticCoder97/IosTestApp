@@ -264,11 +264,17 @@ private struct FanficContinueCardLink: View {
         return chapters.first { $0.id == ReadingPositionStore.position(story: fanfic.id)?.chapterID } ?? chapters.first { $0.chapterNumber == lastRead } ?? chapters.first
     }
 
+    @State private var openChapter: LocalFanficChapter?
+
+    // Full-screen presentation, like story detail: the reader owns the status bar
+    // and is not built eagerly while the strip lays out.
     var body: some View {
-        NavigationLink {
-            if let chapter = nextChapter { FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: chapter) }
-        } label: {
+        Button { openChapter = nextChapter } label: {
             FanficContinueCard(fanfic: fanfic)
+        }
+        .accessibilityHint("Opens the reader at your saved position")
+        .fullScreenCover(item: $openChapter) { chapter in
+            FanficReaderView(fanfic: fanfic, chapters: chapters, chapter: chapter)
         }
     }
 }
@@ -451,12 +457,13 @@ struct FanficRowView: View {
                         Circle()
                             .trim(from: 0, to: progressPercent)
                             .stroke(AstralColors.gold, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                            .rotationEffect(.degrees(-135))
+                            .rotationEffect(.degrees(-90))
                     }
                     .frame(width: 18, height: 18)
 
-                    Text("Chapter \((fanfic.lastReadChapterNumber ?? 0).formatted()) · \(Int(fanfic.progressPercent * 100))% position")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    // Story-wide progress; the reader shows position within the chapter.
+                    Text("Chapter \((fanfic.lastReadChapterNumber ?? 0).formatted()) of \(fanfic.totalChapters) · \(Int(fanfic.progressPercent * 100))% of story")
+                        .font(.caption.weight(.medium)).monospacedDigit()
                         .foregroundStyle(AstralColors.body)
                 }
             }
