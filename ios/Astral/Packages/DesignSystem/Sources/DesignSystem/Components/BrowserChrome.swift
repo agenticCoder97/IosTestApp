@@ -2,37 +2,75 @@ import SwiftUI
 
 // Shared chrome for the comic and fan fiction source browsers.
 
-/// Horizontal source chips. The selected source is filled gold.
-public struct BrowserSourceChips<Source: Hashable>: View {
+/// Lets browser chrome step aside while a page is read, like Safari: it hides
+/// after a deliberate scroll down and returns on a scroll up, near the top of
+/// the page, or when a new page opens. Programmatic scrolling never toggles it.
+@MainActor @Observable
+public final class BrowserChromeVisibility {
+    public private(set) var isCollapsed = false
+    @ObservationIgnored private var anchor: CGFloat = 0
+    @ObservationIgnored private var observation: NSKeyValueObservation?
+
+    public init() {}
+
+    public func track(_ scrollView: UIScrollView) {
+        observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] view, _ in
+            MainActor.assumeIsolated { self?.scrolled(view) }
+        }
+    }
+
+    public func reveal() { isCollapsed = false }
+
+    private func scrolled(_ view: UIScrollView) {
+        let y = view.contentOffset.y + view.adjustedContentInset.top
+        guard view.isTracking || view.isDecelerating else { anchor = y; return }
+        if y < 40 {
+            if isCollapsed { isCollapsed = false }
+            anchor = y
+        } else if isCollapsed {
+            anchor = max(anchor, y)
+            if anchor - y > 30 { isCollapsed = false; anchor = y }
+        } else {
+            anchor = min(anchor, y)
+            if y - anchor > 60 { isCollapsed = true; anchor = y }
+        }
+    }
+}
+
+/// Compact source switcher that shares the address bar's row, so the browser
+/// keeps one line of chrome above the page instead of two.
+public struct BrowserSourceMenu<Source: Hashable>: View {
     let sources: [Source]
     @Binding var selection: Source
     let label: (Source) -> String
+    let shortLabel: (Source) -> String
     let isDisabled: Bool
 
-    public init(sources: [Source], selection: Binding<Source>, isDisabled: Bool = false, label: @escaping (Source) -> String) {
-        self.sources = sources; self._selection = selection; self.isDisabled = isDisabled; self.label = label
+    public init(sources: [Source], selection: Binding<Source>, isDisabled: Bool = false,
+                label: @escaping (Source) -> String, shortLabel: @escaping (Source) -> String) {
+        self.sources = sources; self._selection = selection; self.isDisabled = isDisabled
+        self.label = label; self.shortLabel = shortLabel
     }
 
     public var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(sources, id: \.self) { source in
-                    let selected = source == selection
-                    Button { selection = source } label: {
-                        Text(label(source))
-                            .font(.subheadline.weight(selected ? .semibold : .medium))
-                            .foregroundStyle(selected ? AstralColors.background : AstralColors.body)
-                            .padding(.horizontal, 14).frame(height: 32)
-                            .background(selected ? AstralColors.gold : AstralColors.elevated, in: Capsule())
-                    }
-                    .buttonStyle(PressButtonStyle(scale: 0.94))
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                }
+        Menu {
+            Picker("Source", selection: $selection) {
+                ForEach(sources, id: \.self) { Text(label($0)).tag($0) }
             }
-            .padding(.horizontal, 16)
+        } label: {
+            HStack(spacing: 4) {
+                Text(shortLabel(selection)).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+            }
+            .foregroundStyle(AstralColors.background)
+            .padding(.horizontal, 12).frame(height: 36)
+            .background(AstralColors.gold, in: Capsule())
+            .fixedSize()
         }
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.5 : 1)
+        .accessibilityLabel("Source")
+        .accessibilityValue(label(selection))
     }
 }
 

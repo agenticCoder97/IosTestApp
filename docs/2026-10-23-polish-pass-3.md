@@ -48,6 +48,32 @@
 - The library favourite button is named and marked selected.
 - The browser address field is no longer read twice when it isn't focused.
 
+## After testing: FFNet imports and the browser
+
+Feedback from testing with real stories: long FFNet imports flipped the visible browser through every chapter, failed on FanFiction.net's security check around chapter 20, and kept nothing. The browser also showed too much chrome.
+
+- **FFNet chapters load in a hidden page.** It shares the browser's cookies, including any check already passed. The visible page stays where you were, and you can keep browsing while the import runs.
+- **Pacing:** 2.5–4.5 seconds between chapters, plus a 10-second pause every 25 chapters. Before, it was 1 second.
+- **Security check:** an automatic check gets 25 seconds to clear. One that needs a person stops the import and opens the check in the browser. A slow page that never showed a check is now reported as a timeout, not as "verification".
+- **Nothing is lost when an import stops part-way:**
+  - The chapters fetched so far go into the library as a partial story.
+  - Activity names the story.
+  - The story's page in the browser shows "Continue import · 20 of 51", which resumes from the next chapter.
+  - The resume checkpoint now lasts 14 days instead of 1 hour.
+  - Cancel keeps the checkpoint but doesn't add a partial story.
+- **Browser chrome:**
+  - The source chips row is gone. A source menu now shares the address bar's row, so there is one row above the page instead of two.
+  - The header and the bottom bar slide away while you scroll down a page. They return when you scroll up, reach the top or open a new page, and stay visible during an import.
+- **Fan fiction progress:** a chapter that fits on one screen now counts as read in full. Before, a short last chapter left the story at 66%.
+
+Verified in the simulator:
+- **Resume:** The Keys of Fire (51 chapters) resumed from the 20 chapters saved by your failed attempt and finished at 51. It ran in the background with the visible page on Chapter 1. No check appeared, and the checkpoint was removed afterwards.
+- **Browser:** the one-row header shows, and on the AO3 home page it hides when scrolling down and returns when scrolling up.
+
+Not verified:
+- The check-stops-and-saves-partially path, because no check appeared.
+- The comic browser on screen. It uses the same code.
+
 ## Verification
 
 iPhone 17 Pro simulator, iOS 26.4, Debug build:

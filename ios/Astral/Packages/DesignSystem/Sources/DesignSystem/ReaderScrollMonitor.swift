@@ -155,6 +155,12 @@ public struct ReaderScrollOffsetSnapshot: Sendable {
     private var pendingStart = false
     public var offset: Double? { scrollView.map { Double($0.contentOffset.y) } }
     public var isUserScrolling: Bool { scrollView.map { $0.isDragging || $0.isDecelerating } ?? false }
+    /// True when laid-out vertical content is fully visible, so there is nothing to scroll.
+    public var contentFitsViewport: Bool {
+        guard let view = scrollView, view.contentSize.height > 0, view.bounds.height > 0 else { return false }
+        let insets = view.adjustedContentInset
+        return view.contentSize.height + insets.top + insets.bottom <= view.bounds.height + 1
+    }
     /// Moves immediately, clamped to the content. Used to correct a page jump
     /// whose lazy-layout estimate missed; it is not reported as reading.
     public func jump(to offset: Double) {
