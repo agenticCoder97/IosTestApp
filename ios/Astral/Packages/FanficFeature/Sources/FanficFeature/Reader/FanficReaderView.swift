@@ -34,7 +34,7 @@ struct FanficReaderView: View {
     @State private var showReaderBar = true
     @State private var showReaderSettings = false
     @AppStorage("fanficReaderFontSize") private var fontSize: Double = 16
-    @AppStorage("fanficReaderLineHeight") private var lineHeight: Double = 1.6
+    @AppStorage("fanficReaderLineHeight") private var lineHeight: Double = 1.3
     @AppStorage("fanficReaderBackground") private var background: ReaderBackground = .dark
     @AppStorage("fanficReaderFontFamily") private var fontFamily: ReaderFont = .system
     @AppStorage("fanficReaderParagraphSpacing") private var paragraphSpacing: Double = 12
@@ -187,7 +187,7 @@ struct FanficReaderView: View {
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) { Button("Done") { showReaderSettings = false } }
                         ToolbarItem(placement: .cancellationAction) { Button("Reset") {
-                            fontSize = 16; lineHeight = 1.6; paragraphSpacing = 12; horizontalMargin = 20; fontFamily = .system; background = .dark
+                            fontSize = 16; lineHeight = 1.3; paragraphSpacing = 12; horizontalMargin = 20; fontFamily = .system; background = .dark
                         } }
                     }
             }
@@ -223,14 +223,11 @@ struct FanficReaderView: View {
 
     private var controlsVisible: Bool { showReaderBar || alwaysShowControls || voiceOverEnabled }
 
-    /// With the controls hidden, prose scrolling under the Dynamic Island and home
-    /// indicator fades into the page colour instead of colliding with them.
+    /// With the controls hidden, prose scrolling under the home indicator fades into
+    /// the page colour. The top is left clear so text reads right up to the screen edge.
     private var safeAreaFade: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
-                LinearGradient(stops: [.init(color: backgroundColor, location: 0), .init(color: backgroundColor, location: 0.75),
-                                       .init(color: backgroundColor.opacity(0), location: 1)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: proxy.safeAreaInsets.top + 18)
                 Spacer(minLength: 0)
                 LinearGradient(colors: [backgroundColor.opacity(0), backgroundColor], startPoint: .top, endPoint: .bottom)
                     .frame(height: proxy.safeAreaInsets.bottom + 12)
@@ -394,20 +391,26 @@ struct FanficReaderView: View {
                     }
                 }
 
+                // The slider drags; the small and large "Aa" step one point at a time.
                 HStack(spacing: 12) {
-                    Text("Aa")
-                        .font(.system(size: 14))
-                        .foregroundStyle(AstralColors.muted)
-                        .frame(width: 24)
+                    Button { fontSize = max(12, (fontSize - 1).rounded()) } label: {
+                        Text("Aa").font(.system(size: 14)).frame(width: 32, height: 44)
+                    }
+                    .accessibilityLabel("Smaller text")
+                    .disabled(fontSize <= 12)
                     Slider(value: $fontSize, in: 12...28)
                         .tint(AstralColors.gold)
-                    Text("Aa")
-                        .font(.system(size: 22))
-                        .foregroundStyle(AstralColors.muted)
-                        .frame(width: 32)
+                    Button { fontSize = min(28, (fontSize + 1).rounded()) } label: {
+                        Text("Aa").font(.system(size: 22)).frame(width: 40, height: 44)
+                    }
+                    .accessibilityLabel("Larger text")
+                    .disabled(fontSize >= 28)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(AstralColors.muted)
 
-                Stepper(value: $lineHeight, in: 1.2...2.2, step: 0.1) {
+                // 1.0 is the font's own leading with no extra space added.
+                Stepper(value: $lineHeight, in: 1.0...2.2, step: 0.1) {
                     labeledReadout("Line height", value: String(format: "%.1f", lineHeight))
                 }
                 .tint(AstralColors.gold)
