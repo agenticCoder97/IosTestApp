@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## fix/ao3-import-whitespace-reader-spacing — 2026-10-26
+
+- [ios] AO3 imports read the page's HTML whitespace the way a browser does: no more sentences broken across lines around italics, `<br>` lines no longer become paragraph gaps, spaces inside italics move outside them, centred poems without `<p>` tags stay centred, and summaries keep their paragraph breaks (Update a story to pick it up).
+- [ios] Fan fiction reader: line height goes down to 1.0 (default 1.3, was 1.6), the small and large "Aa" step the text size by 1pt, and prose reads up to the top of the screen instead of fading under the status bar.
+- Verified on the iPhone 17 simulator by re-importing an 88-chapter AO3 work (408 mid-paragraph breaks and 577 spaces inside italics down to 0) and in the reader settings.
+
 ## feature/app-polish-pass-4 — 2026-10-23
 
 - [ios] Fan fiction keeps italics, bold, centring, list bullets and in-paragraph line breaks from AO3 and FanFiction.net (Update a story to pick them up). Untitled chapters no longer print "Chapter N" twice, and stray or double spaces are tidied.

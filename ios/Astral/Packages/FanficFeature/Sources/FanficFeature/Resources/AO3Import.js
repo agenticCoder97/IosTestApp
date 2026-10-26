@@ -62,14 +62,31 @@ const centred = '[align="center" i], [style*="text-align: center" i], [style*="t
 function bodyText(element) {
     const copy = element.cloneNode(true);
     copy.querySelectorAll("h3.landmark, script, style, .end-notes").forEach(node => node.remove());
+    // AO3's markup puts a newline after each <br> and indents nested tags. Like a
+    // browser, treat that source whitespace as one space; only <br> and blocks break.
+    const walker = copy.ownerDocument.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (!node.parentElement?.closest("pre")) node.data = node.data.replace(/[ \t\n\r\f]+/g, " ");
+    }
+    const blocks = "p, div, blockquote, li, h1, h2, h3, h4, h5, h6, pre, center";
     copy.querySelectorAll("em, i, cite").forEach(node => { node.prepend("\uE000"); node.append("\uE001"); });
     copy.querySelectorAll("strong, b").forEach(node => { node.prepend("\uE002"); node.append("\uE003"); });
-    copy.querySelectorAll("p, h1, h2, h3, h4, h5, h6").forEach(node => { if (node.closest(centred)) node.prepend("\uE004"); });
+    // Centre the innermost blocks only, so a <center> holding <p>s marks each once.
+    copy.querySelectorAll(blocks).forEach(node => {
+        if (node.closest(centred) && !node.querySelector(blocks)) node.prepend("\uE004");
+    });
     copy.querySelectorAll("li").forEach(node => node.prepend("• "));
     copy.querySelectorAll("br").forEach(node => node.replaceWith("\n"));
     copy.querySelectorAll("hr").forEach(node => node.replaceWith("\n\n***\n\n"));
-    copy.querySelectorAll("p, div, blockquote, li, h1, h2, h3, h4, h5, h6, pre").forEach(node => node.append("\n\n"));
-    return copy.textContent.replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    copy.querySelectorAll(blocks).forEach(node => node.append("\n\n"));
+    // Spaces just inside emphasis move outside it, and a closing mark keeps the
+    // punctuation after it ("<em> cheap </em> ." reads "cheap."). Empty
+    // emphasis (an <em> around only a line break) is dropped.
+    return copy.textContent.replace(/\u00a0/g, " ")
+        .replace(/\uE000(\s*)\uE001/g, "$1").replace(/\uE002(\s*)\uE003/g, "$1")
+        .replace(/([\uE000\uE002]) +/g, " $1").replace(/ +([\uE001\uE003])/g, "$1 ")
+        .replace(/([\uE001\uE003]) +(?=[.,;:!?])/g, "$1").replace(/ {2,}/g, " ")
+        .replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 const containers = Array.from(page.querySelectorAll("#chapters > div.chapter"));
@@ -92,7 +109,9 @@ return JSON.stringify({
     work: {
         title,
         authors: tags("h3.byline a[rel='author']"),
-        summary: text("#workskin > .preface .summary blockquote"),
+        // Paragraph breaks kept; the story page shows the summary as plain text.
+        summary: (summaryNode => summaryNode ? bodyText(summaryNode).replace(/[\uE000-\uE004]/g, "") : "")(
+            page.querySelector("#workskin > .preface .summary blockquote")),
         fandom: tags("dd.fandom.tags a").join(", "),
         rating: text("dd.rating.tags a"),
         characters: tags("dd.character.tags a").join(", "),
