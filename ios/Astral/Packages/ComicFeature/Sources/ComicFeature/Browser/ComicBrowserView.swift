@@ -528,10 +528,9 @@ struct ComicWebViewRepresentable: UIViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
-            // Secure domain check — require exact match or subdomain (dot prefix)
-            let allowed = viewModel.allowedDomains.contains { domain in
-                host == domain || host.hasSuffix("." + domain)
-            }
+            // Secure domain check — exact match or subdomain, plus Cloudflare's challenge frame
+            let allowed = BrowserDomains.allows(host, isMainFrame: navigationAction.targetFrame?.isMainFrame ?? true,
+                                                domains: viewModel.allowedDomains)
             // These sites are ad-heavy, so other domains stay blocked; say so
             // instead of leaving a tapped link apparently broken.
             if !allowed && navigationAction.navigationType == .linkActivated {

@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## fix/toongod-challenge-reader-gaps — 2026-10-29
+
+- [ios] Comic and fan fiction browsers let Cloudflare's challenge widget (`challenges.cloudflare.com`) load inside the page, so ToonGod's "Performing security verification" can complete. Other sites stay blocked, in frames too.
+- [ios] Fan fiction reader leaves room for the top and bottom bars only while they show, removing the empty band above a chapter's heading and below its last line. Text doesn't move when the bars are toggled mid-chapter.
+- Reader checked on the iPhone 17 simulator; the Cloudflare change has unit tests but still needs a device check, since the simulator wasn't challenged.
+
 ## fix/ao3-import-whitespace-reader-spacing — 2026-10-26
 
 - [ios] AO3 imports read the page's HTML whitespace the way a browser does: no more sentences broken across lines around italics, `<br>` lines no longer become paragraph gaps, spaces inside italics move outside them, centred poems without `<p>` tags stay centred, and summaries keep their paragraph breaks (Update a story to pick it up).

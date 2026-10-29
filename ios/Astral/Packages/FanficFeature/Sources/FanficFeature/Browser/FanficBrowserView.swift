@@ -426,9 +426,8 @@ struct FanficWebViewRepresentable: UIViewRepresentable {
                 decisionHandler(.allow)
                 return
             }
-            let allowed = viewModel.allowedDomains.contains { domain in
-                host == domain || host.hasSuffix("." + domain)
-            }
+            let allowed = BrowserDomains.allows(host, isMainFrame: navigationAction.targetFrame?.isMainFrame ?? true,
+                                                domains: viewModel.allowedDomains)
             // Author links (Tumblr, Discord…) leave the importer and open in Safari.
             if !allowed && navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url,
                ["https", "http"].contains(url.scheme ?? "") {

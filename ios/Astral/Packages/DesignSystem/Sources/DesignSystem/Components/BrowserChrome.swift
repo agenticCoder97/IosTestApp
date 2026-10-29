@@ -297,3 +297,15 @@ public enum BrowserAddress {
         text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+=?"))) ?? text
     }
 }
+
+/// Which hosts a source browser loads. Everything stays on the source's own
+/// domains, except Cloudflare's challenge widget: it loads in a frame from
+/// its own host, and without it "Performing security verification" never ends.
+public enum BrowserDomains {
+    static let challengeHosts = ["challenges.cloudflare.com"]
+
+    public static func allows(_ host: String, isMainFrame: Bool, domains: [String]) -> Bool {
+        let matches = { (list: [String]) in list.contains { host == $0 || host.hasSuffix("." + $0) } }
+        return matches(domains) || (!isMainFrame && matches(challengeHosts))
+    }
+}

@@ -111,8 +111,13 @@ struct FanficReaderView: View {
                         }
                         .scrollTargetLayout()
                         .padding(.horizontal, horizontalMargin)
-                        .padding(.top, 80)
-                        .padding(.bottom, 90)
+                        // Room for the bars only while they show, so a chapter's first and
+                        // last lines don't sit under an empty band. Not animated: the
+                        // scroll position re-anchors in one step, and an animated
+                        // margin would make the prose wobble as the bars slide.
+                        .padding(.top, controlsVisible ? 72 : 16)
+                        .padding(.bottom, controlsVisible ? 72 : 24)
+                        .animation(nil, value: controlsVisible)
                         // Gaps between paragraphs, margins and the chapter end also
                         // toggle the controls; paragraph taps are handled above.
                         .contentShape(Rectangle())
