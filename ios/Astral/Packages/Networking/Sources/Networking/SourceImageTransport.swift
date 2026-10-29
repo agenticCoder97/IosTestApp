@@ -15,7 +15,7 @@ public enum SourceImageTransport {
         if let referrer, let source = URL(string: referrer), source.scheme == "https" {
             request.setValue(referrer, forHTTPHeaderField: "Referer")
             let host = source.host ?? ""
-            let key = host.contains("toongod") ? "toongod" : host.contains("hentai20") ? "hentai20" : "nhentai"
+            let key = ["toongod", "hentai20", "mangafire"].first { host.contains($0) } ?? "nhentai"
             if let agent = UserDefaults.standard.string(forKey: "reading.sourceUserAgent." + key) { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
         }
         return request

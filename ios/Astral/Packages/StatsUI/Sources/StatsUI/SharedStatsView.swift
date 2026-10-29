@@ -718,6 +718,7 @@ public struct SharedStatsView: View {
             "nhentai": AstralColors.error,
             "toongod": AstralColors.success,
             "hentai20": AstralColors.warning,
+            "mangafire": AstralColors.gold,
         ]
 
         return counts

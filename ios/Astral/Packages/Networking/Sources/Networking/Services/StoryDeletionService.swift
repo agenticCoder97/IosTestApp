@@ -13,7 +13,7 @@ public final class StoryDeletionService {
     public func clearError() { errorMessage = nil }
 
     public func permanentlyDelete(comic: LocalComic, modelContext: ModelContext, deleteFiles: @MainActor @escaping () -> Void) async {
-        await delete(story: comic, id: comic.id, type: "comic", remote: !["local", "mangadex-device", "nhentai", "toongod", "hentai20"].contains(comic.sourceKey), context: modelContext)
+        await delete(story: comic, id: comic.id, type: "comic", remote: !["local", "mangadex-device", "nhentai", "toongod", "hentai20", "mangafire"].contains(comic.sourceKey), context: modelContext)
     }
     public func permanentlyDelete(fanfic: LocalFanfic, modelContext: ModelContext, deleteFiles: @MainActor @escaping () -> Void) async {
         await delete(story: fanfic, id: fanfic.id, type: "fanfic", remote: !["ao3", "ffnet", "local"].contains(fanfic.sourceKey), context: modelContext)

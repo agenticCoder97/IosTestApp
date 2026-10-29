@@ -23,6 +23,7 @@ struct ComicCardView: View {
         case "nhentai": "n.square.fill"
         case "toongod": "t.square.fill"
         case "hentai20": "h.square.fill"
+        case "mangafire": "f.square.fill"
         case "local": "folder.fill"
         case "mangadex", "mangadex-device": "m.square.fill"
         default: "questionmark.square.fill"
