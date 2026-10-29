@@ -37,6 +37,7 @@ public enum ComicSource: String, CaseIterable, Codable, Sendable {
     case toongod
     case hentai20
     case mangadex
+    case mangafire
 }
 
 public enum FanficSource: String, CaseIterable, Codable, Sendable {
@@ -52,6 +53,7 @@ public enum SourceLabel {
         case "mangadex", "mangadex-device": "MangaDex"
         case "toongod": "ToonGod"
         case "hentai20": "Hentai20"
+        case "mangafire": "MangaFire"
         case "nhentai": "nhentai"
         case "ao3": "AO3"
         case "ffnet": "FanFiction.net"

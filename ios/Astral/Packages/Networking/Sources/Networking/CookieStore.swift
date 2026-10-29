@@ -14,6 +14,7 @@ public final class CookieStore: Sendable {
         "nhentai": "nhentai.net",
         "toongod": "toongod.org",
         "hentai20": "hentai20.io",
+        "mangafire": "mangafire.to",
         "ao3": "archiveofourown.org",
         "ffnet": "fanfiction.net",
         "mangadex": "mangadex.org",

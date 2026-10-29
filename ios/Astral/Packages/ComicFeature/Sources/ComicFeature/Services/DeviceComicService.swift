@@ -9,7 +9,7 @@ import DesignSystem
 /// Browser-session source adapters. Acquisition never calls an Astral server.
 @MainActor
 enum DeviceComicService {
-    static let sources: Set<String> = ["nhentai", "toongod", "hentai20"]
+    static let sources = Set(["nhentai", "toongod", "hentai20"]).union(TappedComicSources.sources)
     private static var loaders: [String: DeviceSourcePageLoader] = [:]
     static func canonical(_ url: URL?, source: String) -> URL? {
         guard let url, url.scheme == "https", let host = url.host?.lowercased() else { return nil }
@@ -18,6 +18,7 @@ enum DeviceComicService {
         case "nhentai": allowed = ["nhentai.net", "www.nhentai.net", "nhentai.to", "www.nhentai.to"]
         case "toongod": allowed = ["toongod.org", "www.toongod.org", "toongod.com", "www.toongod.com"]
         case "hentai20": allowed = ["hentai20.io", "www.hentai20.io"]
+        case "mangafire": allowed = ["mangafire.to", "www.mangafire.to"]
         default: return nil
         }
         guard allowed.contains(host) else { return nil }
@@ -25,6 +26,11 @@ enum DeviceComicService {
         if source == "nhentai" {
             guard parts.count >= 2, parts[0] == "g", parts[1].allSatisfy(\.isNumber) else { return nil }
             return URL(string: "https://\(host)/g/\(parts[1])/")
+        }
+        // A chapter page imports its series too.
+        if source == "mangafire" {
+            guard TappedComicSources.MangaFire.titleID(url) != nil else { return nil }
+            return URL(string: "https://\(host)/title/\(parts[1])")
         }
         guard parts.count >= 2, ["manga", "webtoon"].contains(String(parts[0])) else { return nil }
         return URL(string: "https://\(host)/\(parts[0])/\(parts[1])/")
@@ -41,8 +47,10 @@ enum DeviceComicService {
         do {
             await synchronizeCookies()
             if let ua = try? await browser.evaluateJavaScript("navigator.userAgent") as? String { UserDefaults.standard.set(ua, forKey: "reading.sourceUserAgent." + source) }
-            let response = try await extract(browser, url: url, source: source, mode: "import")
-            guard let work = response.work, !work.title.isEmpty, !work.chapters.isEmpty, work.chapters.count <= 10000 else { throw SourceError.message("The source returned an incomplete chapter list.") }
+            let work: Work? = TappedComicSources.sources.contains(source)
+                ? try await TappedComicSources.work(url: url, source: source, loader: loader(for: source))
+                : try await extract(browser, url: url, source: source, mode: "import").work
+            guard let work, !work.title.isEmpty, !work.chapters.isEmpty, work.chapters.count <= 10000 else { throw SourceError.message("The source returned an incomplete chapter list.") }
             try Task.checkCancellation()
             guard !job.isDeleted else { throw CancellationError() }
             try context.save(); mutating = true
@@ -94,15 +102,25 @@ enum DeviceComicService {
         guard sources.contains(comic.sourceKey), let sourceURL = UserDefaults.standard.string(forKey: "reading.chapterSource." + chapter.id.uuidString).flatMap(URL.init(string:)) else {
             throw SourceError.message("Open this comic's source in Add and import it to reconnect its chapter links. Saved pages remain readable.")
         }
-        let loader = loaders[comic.sourceKey] ?? DeviceSourcePageLoader()
-        loaders[comic.sourceKey] = loader
+        let loader = loader(for: comic.sourceKey)
         try await Task.sleep(for: .seconds(1))
-        try await loader.load(sourceURL)
-        let response = try await extract(loader.webView, url: sourceURL, source: comic.sourceKey, mode: "pages")
-        guard let urls = response.pages, !urls.isEmpty else { throw SourceError.message("No pages were returned. Open the chapter in Add, then retry.") }
+        let urls: [String]
+        if TappedComicSources.sources.contains(comic.sourceKey) {
+            urls = try await TappedComicSources.pages(chapterURL: sourceURL, source: comic.sourceKey, loader: loader)
+        } else {
+            try await loader.load(sourceURL)
+            urls = try await extract(loader.webView, url: sourceURL, source: comic.sourceKey, mode: "pages").pages ?? []
+        }
+        guard !urls.isEmpty else { throw SourceError.message("No pages were returned. Open the chapter in Add, then retry.") }
         let result = try pageResponses(urls)
         try saveManifest(urls, comic: comic.id, chapter: chapter.id)
         return result
+    }
+    private static func loader(for source: String) -> DeviceSourcePageLoader {
+        if let loader = loaders[source] { return loader }
+        let loader = DeviceSourcePageLoader()
+        loaders[source] = loader
+        return loader
     }
     static func imageRequest(_ url: URL, comic: UUID, chapter: UUID) -> URLRequest {
         let referrer = UserDefaults.standard.string(forKey: "reading.chapterSource." + chapter.uuidString) ?? UserDefaults.standard.string(forKey: "reading.source." + comic.uuidString)

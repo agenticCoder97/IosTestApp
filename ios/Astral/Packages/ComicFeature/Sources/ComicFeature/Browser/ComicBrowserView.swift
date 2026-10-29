@@ -191,7 +191,7 @@ struct ComicBrowserView: View {
 }
 
 extension ComicSource {
-    static let browserOrder: [ComicSource] = [.mangadex, .toongod, .hentai20, .nhentai]
+    static let browserOrder: [ComicSource] = [.mangadex, .mangafire, .toongod, .hentai20, .nhentai]
 }
 
 @MainActor @Observable
@@ -223,6 +223,7 @@ final class ComicBrowserViewModel {
         case .toongod: return ["toongod.org", "toongod.com"]
         case .hentai20: return ["hentai20.io"]
         case .mangadex: return ["mangadex.org"]
+        case .mangafire: return ["mangafire.to"]
         }
     }
 
@@ -239,18 +240,21 @@ final class ComicBrowserViewModel {
         case .toongod: return URL(string: "https://www.toongod.org/?s=\(query)&post_type=wp-manga")
         case .hentai20: return URL(string: "https://hentai20.io/?s=\(query)&post_type=wp-manga")
         case .nhentai: return URL(string: "https://nhentai.net/search/?q=\(query)")
+        case .mangafire: return URL(string: "https://mangafire.to/browse?keyword=\(query)&sort=relevance:desc")
         }
     }
 
     var sourceURL: URL {
-        if let saved = savedURLs[selectedSource] {
-            return saved
-        }
+        savedURLs[selectedSource] ?? homeURL
+    }
+
+    var homeURL: URL {
         switch selectedSource {
         case .nhentai: return URL(string: "https://nhentai.net")!
         case .toongod: return URL(string: "https://www.toongod.org")!
         case .hentai20: return URL(string: "https://hentai20.io")!
         case .mangadex: return URL(string: "https://mangadex.org")!
+        case .mangafire: return URL(string: "https://mangafire.to")!
         }
     }
 
@@ -394,6 +398,8 @@ final class ComicBrowserViewModel {
             canScrape = path.contains("/manga/")
         case .mangadex:
             canScrape = path.contains("/title/")
+        case .mangafire:
+            canScrape = DeviceComicService.canonical(url, source: selectedSource.rawValue) != nil
         }
     }
 
@@ -404,13 +410,6 @@ final class ComicBrowserViewModel {
 
     func resetToSourceHome() {
         savedURLs.removeValue(forKey: selectedSource)
-        let homeURL: URL
-        switch selectedSource {
-        case .nhentai: homeURL = URL(string: "https://nhentai.net")!
-        case .toongod: homeURL = URL(string: "https://www.toongod.org")!
-        case .hentai20: homeURL = URL(string: "https://hentai20.io")!
-        case .mangadex: homeURL = URL(string: "https://mangadex.org")!
-        }
         webView?.load(URLRequest(url: homeURL))
         addressBarText = homeURL.absoluteString
     }

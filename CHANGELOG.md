@@ -4,6 +4,12 @@ A running log of what shipped to `development`. Most recent first.
 
 Add a new entry whenever you merge a feature/fix PR into `development`. Keep entries terse — the PR body has the detail; this is the index.
 
+## feature/mangafire-source — 2026-10-29
+
+- [ios] MangaFire is a comic source in Add: search, import from a title or chapter page, and read. Its API only answers the site's own scripts, so the hidden loader opens the page and the importer keeps copies of the responses the site receives (`SourceResponseTap`); it steps through MangaFire's chapter-list pager to collect every chapter. No tokens are computed or replayed.
+- Kagane was investigated and left out: its image server refuses page downloads that don't come from its own web client.
+- Verified on the iPhone 17 simulator: a 168-chapter series imported and chapters 1 and 2 read; unit tests cover the URL rules and response parsing.
+
 ## fix/toongod-challenge-reader-gaps — 2026-10-29
 
 - [ios] Comic and fan fiction browsers let Cloudflare's challenge widget (`challenges.cloudflare.com`) load inside the page, so ToonGod's "Performing security verification" can complete. Other sites stay blocked, in frames too.

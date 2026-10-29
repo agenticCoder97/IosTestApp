@@ -10,6 +10,7 @@ public final class DeviceSourcePageLoader: NSObject, WKNavigationDelegate {
     private var timeout: Task<Void, Never>?
     public override init() {
         let config = WKWebViewConfiguration(); config.websiteDataStore = .default(); config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        SourceResponseTap.install(in: config.userContentController)
         webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: config)
         super.init(); webView.navigationDelegate = self
     }
